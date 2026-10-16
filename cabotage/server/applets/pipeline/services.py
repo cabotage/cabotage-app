@@ -23,6 +23,7 @@ from cabotage.server.models.projects import (
     Project,
     Release,
 )
+from cabotage.utils.datetimes import iso_utc
 
 PIPELINE_STAGES = {
     "image": (Image, Image.built),
@@ -120,10 +121,6 @@ def percentiles(
 
 def seconds(value: SupportsFloat | None) -> float | None:
     return round(float(value), 2) if value is not None else None
-
-
-def iso_utc(value: datetime.datetime | None) -> str | None:
-    return value.isoformat() + "Z" if value else None
 
 
 class _PipelineStage(TypedDict):

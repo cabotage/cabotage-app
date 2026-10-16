@@ -70,7 +70,7 @@ from cabotage.server.acl import (
     ViewOrganizationPermission,
     ViewProjectPermission,
 )
-from cabotage.server.applets.pipeline.services import iso_utc, pipeline_live_run
+from cabotage.server.applets.pipeline.services import pipeline_live_run
 from cabotage.server.models.auth import (
     GitHubAppInstallation,
     GitHubIdentity,
@@ -164,6 +164,7 @@ from cabotage.utils.build_log_stream import (
     read_log_stream,
     stream_key,
 )
+from cabotage.utils.datetimes import iso_utc, parse_iso_utc
 from cabotage.utils.docker_auth import (
     generate_docker_registry_jwt,
 )
@@ -8772,30 +8773,16 @@ def job_history(
 def _parse_log_window() -> (
     tuple[datetime.datetime, datetime.datetime] | tuple[None, None]
 ):
-    """Parse optional validated UTC ``start``/``end`` window params for a logs view.
+    """The logs view's optional ``start``/``end`` window, as naive UTC.
 
-    Accepts ISO-8601 timestamps (e.g. ``2026-10-11T14:27:00.000Z``, matching
-    ``iso_utc``'s output). Returns a ``(start, end)`` tuple of naive UTC
-    :class:`datetime.datetime` values, or ``(None, None)`` when the params
-    are missing or fail to parse/validate — callers fall back to current
-    (unwindowed) behavior in that case.
+    Returns ``(None, None)`` unless both params parse (see ``parse_iso_utc``)
+    and ``end`` is after ``start``; callers then show unwindowed logs.
     """
-    start_raw = request.args.get("start", "")
-    end_raw = request.args.get("end", "")
-    if not start_raw or not end_raw:
+    start = parse_iso_utc(request.args.get("start"))
+    end = parse_iso_utc(request.args.get("end"))
+    if start is None or end is None or end <= start:
         return None, None
-    try:
-        start_dt = datetime.datetime.fromisoformat(start_raw.replace("Z", "+00:00"))
-        end_dt = datetime.datetime.fromisoformat(end_raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None, None
-    if start_dt.tzinfo is not None:
-        start_dt = start_dt.astimezone(datetime.UTC).replace(tzinfo=None)
-    if end_dt.tzinfo is not None:
-        end_dt = end_dt.astimezone(datetime.UTC).replace(tzinfo=None)
-    if end_dt <= start_dt:
-        return None, None
-    return start_dt, end_dt
+    return start, end
 
 
 def _log_window_clear_url() -> str | None:

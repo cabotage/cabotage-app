@@ -49,6 +49,7 @@ from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.mfa import CabotageWebauthnUtil
+from cabotage.utils.datetimes import iso_utc
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -342,9 +343,7 @@ def create_app():
 
     @app.template_filter("isoformat_utc")
     def isoformat_utc_filter(value):
-        if value is None:
-            return ""
-        return value.isoformat() + "Z"
+        return iso_utc(value) or ""
 
     @app.template_filter("duration")
     def duration_filter(obj):

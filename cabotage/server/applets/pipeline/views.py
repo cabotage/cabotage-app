@@ -12,7 +12,6 @@ from cabotage.server.acl import ViewOrganizationPermission, ViewProjectPermissio
 from cabotage.server.applets.pipeline.constants import INFRA_PIPELINE_INACTIVE_LIMIT
 from cabotage.server.applets.pipeline.services import (
     PIPELINE_STAGES,
-    iso_utc,
     percentiles,
     pipeline_app_env_inventory,
     pipeline_app_env_inventory_all,
@@ -37,6 +36,7 @@ from cabotage.server.user.views import (
     _resolve_app_env,
     user_blueprint,
 )
+from cabotage.utils.datetimes import iso_utc
 
 
 def _requested_window() -> tuple[datetime.datetime, datetime.datetime | None]:
