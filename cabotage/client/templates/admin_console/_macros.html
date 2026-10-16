@@ -28,6 +28,11 @@
   {%- endif -%}
 {% endmacro %}
 
+{% macro state_dot(row) %}
+  {%- set s = row.status if row else 'never' -%}
+  <span class="status-dot {% if s == 'failed' %}status-dot-error{% elif s == 'deploying' %}status-dot-warning status-dot-pulse{% elif s == 'deployed' %}status-dot-success{% else %}status-dot-neutral{% endif %}" role="img" aria-label="{{ {'failed': 'Failed', 'deploying': 'Deploying', 'deployed': 'Deployed'}.get(s, 'Never deployed') }}"></span>
+{%- endmacro %}
+
 {% macro search_form(endpoint, term, placeholder, keep={}) %}
   <form class="adm-search" method="get" action="{{ url_for(endpoint) }}" role="search">
     {% for name, value in keep.items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
@@ -78,3 +83,78 @@
   </div>
 {% endmacro %}
 
+{# Safe ActivityRow list; the resource links to the narrowest admin page it belongs to. #}
+{% macro activity_feed(rows, empty='No recorded activity.', show_resource=true) %}
+  {% if rows %}
+    <ol class="adm-att-list adm-activity">
+      {% for row in rows %}
+        <li>
+          <div class="adm-att-main">
+            <div class="adm-primary">{{ row.summary }}</div>
+            {% if show_resource and row.resource_name %}
+              <div class="adm-sub adm-mono adm-clip" title="{{ row.resource_name }}">
+                {%- if row.application_id -%}
+                  <a class="adm-link" href="{{ url_for('admin_console.application', application_id=row.application_id) }}">{{ row.resource_name }}</a>
+                {%- elif row.project_id -%}
+                  <a class="adm-link" href="{{ url_for('admin_console.project', project_id=row.project_id) }}">{{ row.resource_name }}</a>
+                {%- elif row.organization_id -%}
+                  <a class="adm-link" href="{{ url_for('admin_console.organization', organization_id=row.organization_id) }}">{{ row.resource_name }}</a>
+                {%- else -%}
+                  {{ row.resource_name }}
+                {%- endif -%}
+              </div>
+            {% endif %}
+            <div class="adm-sub">{{ row.actor or 'system' }} · {{ when(row.timestamp) }}</div>
+          </div>
+        </li>
+      {% endfor %}
+    </ol>
+  {% else %}
+    <p class="adm-att-empty">{{ empty }}</p>
+  {% endif %}
+{% endmacro %}
+
+{# Platform-wide deployment rows (queries.DeploymentRow with scope columns). #}
+{% macro deployment_table(rows, show_scope=true, empty='No deployments yet.') %}
+  <div class="adm-panel">
+    {% if rows %}
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            {% if show_scope %}<th>Application</th>{% endif %}
+            <th>Environment</th>
+            <th class="num">Release</th>
+            <th class="adm-hide-sm">Trigger</th>
+            <th class="end">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                {% if row.is_live and row.organization_slug %}
+                  <a class="adm-link" href="{{ url_for('user.deployment_detail', org_slug=row.organization_slug, project_slug=row.project_slug, app_slug=row.application_slug, deployment_id=row.id) }}" title="Open deployment">{{ deploy_state(row) }}</a>
+                {% else %}
+                  {{ deploy_state(row) }}
+                {% endif %}
+              </td>
+              {% if show_scope %}
+                <td>
+                  <a class="adm-link adm-primary" href="{{ url_for('admin_console.application', application_id=row.application_id) }}">{{ row.application_name }}</a>
+                  <div class="adm-sub adm-mono">{{ row.organization_slug | admin_slug }}/{{ row.project_slug | admin_slug }}/{{ row.application_slug | admin_slug }}{% if not row.is_live %} · deleted{% endif %}</div>
+                </td>
+              {% endif %}
+              <td>{% if row.environments_enabled %}{{ row.environment_name or '—' }}{% else %}<span class="adm-sub">default</span>{% endif %}</td>
+              <td class="num">{% if row.version %}v{{ row.version }}{% else %}<span class="adm-sub">—</span>{% endif %}</td>
+              <td class="adm-hide-sm adm-sub">{{ (row.trigger or '') | replace('_', ' ') }}{% if row.triggered_by %} · {{ row.triggered_by | display_username }}{% endif %}</td>
+              <td class="end adm-sub">{{ when(row.created) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="adm-empty">{{ empty }}</div>
+    {% endif %}
+  </div>
+{% endmacro %}
