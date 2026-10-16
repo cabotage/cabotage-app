@@ -397,7 +397,7 @@ def _collect(
                 direct_weight_by_scope[scope_key] += cost
 
     # --- Storage -----------------------------------------------------
-    storage_items, storage_resource_scopes = _collect_storage(
+    storage_items, _storage_resource_scopes = _collect_storage(
         period_start, period_end, rates
     )
     line_items.extend(storage_items)
@@ -752,12 +752,10 @@ def _collect_storage(
     def _existed_during_hour(resource: Resource) -> bool:
         if resource.created is not None and resource.created > naive_period_end:
             return False
-        if (
+        return not (
             resource.deleted_at is not None
             and resource.deleted_at <= naive_period_start
-        ):
-            return False
-        return True
+        )
 
     postgres_resources: list[PostgresResource] = PostgresResource.query.all()
     for pg_resource in postgres_resources:

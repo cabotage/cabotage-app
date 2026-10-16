@@ -744,7 +744,7 @@ def seed_pypi_scale(admin: User, dev_user: User) -> None:
     env_pydotorg_staging = _get_or_create_environment(
         proj_pydotorg, "Staging", "staging", sort_order=50
     )
-    app_pydotorg_web, pydotorg_web_prod = _seed_simple_app(
+    app_pydotorg_web, _pydotorg_web_prod = _seed_simple_app(
         proj_pydotorg,
         env_pydotorg_prod,
         "Web",
@@ -927,7 +927,7 @@ def seed_pypi_scale(admin: User, dev_user: User) -> None:
     env_pycon_staging = _get_or_create_environment(
         proj_pycon_site, "Staging", "staging", sort_order=50
     )
-    app_pycon_site, pycon_site_prod = _seed_simple_app(
+    app_pycon_site, _pycon_site_prod = _seed_simple_app(
         proj_pycon_site,
         env_pycon_prod,
         "PyCon Site",
