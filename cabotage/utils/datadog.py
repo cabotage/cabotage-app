@@ -1,6 +1,6 @@
 """Datadog log destination settings shared by deployment and configuration UI."""
 
-from typing import TYPE_CHECKING, Literal, TypeGuard, TypedDict, cast
+from typing import TYPE_CHECKING, Literal, TypedDict, TypeGuard, cast
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
