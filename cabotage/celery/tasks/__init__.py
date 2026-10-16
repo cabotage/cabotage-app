@@ -9,6 +9,15 @@ from .deploy import (
     run_deploy,
 )
 from .github import process_github_hook
+from .grafana import (
+    enqueue_reconcile_organization,
+)
+from .grafana import (
+    reconcile_organization as reconcile_grafana_organization,
+)
+from .grafana import (
+    reconcile_organizations as reconcile_grafana_organizations,
+)
 from .maintain import (
     reap_pods,
     reap_stale_builds,
@@ -40,6 +49,7 @@ __all__ = (
     "deploy_tailscale_operator",
     "dispatch_alert_notification",
     "dispatch_pipeline_notification",
+    "enqueue_reconcile_organization",
     "process_github_hook",
     "prune_images",
     "reap_finished_jobs",
@@ -47,6 +57,8 @@ __all__ = (
     "reap_stale_builds",
     "reconcile_alerts",
     "reconcile_backing_services",
+    "reconcile_grafana_organization",
+    "reconcile_grafana_organizations",
     "reconcile_notifications",
     "reconcile_tailscale_integration_states",
     "refresh_tailscale_oidc_tokens",

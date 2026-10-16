@@ -33,6 +33,7 @@ from .auth_associations import (
 )
 
 if TYPE_CHECKING:
+    from cabotage.server.models.grafana import OrganizationGrafanaIntegration
     from cabotage.server.models.projects import Project
 
 # Must be set before model classes are defined — FsUserMixin uses
@@ -386,6 +387,9 @@ class Organization(Model):
         back_populates="organization", uselist=False
     )
     discord_integration: Mapped[DiscordIntegration | None] = relationship(
+        back_populates="organization", uselist=False
+    )
+    grafana_integration: Mapped[OrganizationGrafanaIntegration | None] = relationship(
         back_populates="organization", uselist=False
     )
     github_app_installations: Mapped[list[GitHubAppInstallation]] = relationship(
