@@ -43,9 +43,7 @@ class Feedback(Model):
     remote_addr: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime,
-        default=lambda: datetime.datetime.now(datetime.timezone.utc).replace(
-            tzinfo=None
-        ),
+        default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
 
     user = relationship("User")

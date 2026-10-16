@@ -1,10 +1,10 @@
 from urllib.parse import urlsplit, urlunsplit
 
-from flask import abort, Blueprint, current_app, jsonify, request
+from flask import Blueprint, abort, current_app, jsonify, request
 from flask_login import current_user, login_required
 
 from cabotage.server import db
-from cabotage.server.models.feedback import Feedback, FEEDBACK_KINDS
+from cabotage.server.models.feedback import FEEDBACK_KINDS, Feedback
 
 MAX_MESSAGE_LENGTH = 5000
 MAX_URL_LENGTH = 2048

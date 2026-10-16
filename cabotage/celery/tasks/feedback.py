@@ -7,9 +7,9 @@ notify.py, which handles org-routed alert and pipeline notifications.
 import logging
 from urllib.parse import urlsplit
 
+import requests
 from celery import shared_task
 from flask import current_app
-import requests
 
 from cabotage.celery.tasks.notify import (
     COLOR_BLUE,
