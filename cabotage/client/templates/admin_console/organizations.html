@@ -1,0 +1,49 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header %}
+{% from "admin_console/_macros.html" import crumbs, search_form, state_segments, pager, no_results, deleted_badge, when %}
+
+{% block page_title %}Organizations{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'organizations'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header('Organizations') %}{% endcall %}
+
+  <div class="adm-toolbar">
+    {{ search_form('admin_console.organizations', term, 'Name, slug or ID', {'state': state}) }}
+    {{ state_segments('admin_console.organizations', state, term) }}
+  </div>
+
+  <div class="adm-panel">
+    {% if page.items %}
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Organization</th>
+            <th class="num">Projects</th>
+            <th class="num">Apps</th>
+            <th class="num adm-hide-sm">Members</th>
+            <th class="end">Last deploy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for org, stats in page.items %}
+            <tr class="{% if org.deleted_at %}adm-deleted{% endif %}">
+              <td>
+                <a class="adm-link adm-primary" href="{{ url_for('admin_console.organization', organization_id=org.id) }}">{{ org.name }}</a>
+                {% if org.deleted_at %}{{ deleted_badge(org.deleted_at) }}{% endif %}
+                <div class="adm-sub adm-mono">{{ org.slug | admin_slug }}</div>
+              </td>
+              <td class="num">{{ stats.projects }}</td>
+              <td class="num">{{ stats.applications }}</td>
+              <td class="num adm-hide-sm">{{ stats.members }}</td>
+              <td class="end adm-sub">{{ when(stats.last_deploy) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {{ no_results(term, 'admin_console.organizations', 'organizations', {'state': state}) }}
+    {% endif %}
+  </div>
+  {{ pager(page, 'admin_console.organizations', {'q': term, 'state': state}, 'organizations') }}
+{% endblock console %}

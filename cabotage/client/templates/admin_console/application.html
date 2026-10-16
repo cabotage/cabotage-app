@@ -1,0 +1,84 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header %}
+{% from "admin_console/_macros.html" import crumbs, native, deleted_badge, deploy_state, when %}
+
+{% block page_title %}{{ app.name }}{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([
+  {'label': org.slug | admin_slug, 'url': url_for('admin_console.organization', organization_id=org.id)},
+  {'label': project.slug | admin_slug, 'url': url_for('admin_console.project', project_id=project.id)},
+  {'label': app.slug | admin_slug}
+]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% set live = not app.deleted_at and not project.deleted_at and not org.deleted_at %}
+  {% set slugs = {'org_slug': org.slug, 'project_slug': project.slug, 'app_slug': app.slug} %}
+  {% call page_header(app.name, (org.slug | admin_slug) ~ '/' ~ (project.slug | admin_slug) ~ '/' ~ (app.slug | admin_slug)) %}
+    {% if live %}
+      <div class="adm-native">
+        {{ native(url_for('user.project_application', **slugs), 'Open') }}
+        {{ native(url_for('user.application_config', **slugs), 'Config') }}
+        {{ native(url_for('user.application_deployments', **slugs), 'Deployments') }}
+        {{ native(url_for('user.project_application_logs_view', **slugs), 'Logs') }}
+        {{ native(url_for('user.project_application_settings', **slugs), 'Settings') }}
+      </div>
+    {% endif %}
+  {% endcall %}
+
+  {% if not live %}
+    {% set gone = app.deleted_at or project.deleted_at or org.deleted_at %}
+    <p class="adm-note adm-note-warn">Deleted {{ when(gone) }}. Kubernetes cleanup was queued at deletion; shown read-only.</p>
+  {% endif %}
+
+      <div class="adm-panel">
+        <dl class="adm-facts">
+          <div><dt>ID</dt><dd class="adm-mono">{{ app.id }}</dd></div>
+          <div><dt>Project</dt><dd><a class="adm-link" href="{{ url_for('admin_console.project', project_id=project.id) }}">{{ project.name }}</a></dd></div>
+          <div><dt>Repository</dt><dd>{% if app.github_repository %}<a class="adm-link" href="https://github.com/{{ app.github_repository }}" rel="noopener noreferrer">{{ app.github_repository }}</a>{% if app.github_repository_is_private %} <span class="adm-sub">private</span>{% endif %}{% else %}<span class="adm-sub">Not connected</span>{% endif %}</dd></div>
+          <div><dt>Auto-deploy branch</dt><dd class="adm-mono">{{ app.auto_deploy_branch or '—' }}</dd></div>
+          <div><dt>Identifier</dt><dd class="adm-mono">{{ app.k8s_identifier }}</dd></div>
+          <div><dt>Created</dt><dd>{{ when(app.created) }}</dd></div>
+        </dl>
+      </div>
+
+      <section class="adm-section">
+        <div class="adm-section-head">
+          <h2 class="adm-label">{% if project.environments_enabled %}Environments{% else %}Deployment{% endif %}</h2>
+        </div>
+        <div class="adm-panel">
+          {% if detail.environments %}
+            <table class="adm-table">
+              <thead><tr><th>Environment</th><th>Latest deployment</th><th class="num">Release</th><th class="end">Started</th></tr></thead>
+              <tbody>
+                {% for row in detail.environments %}
+                  {% set ae_live = live and not row.app_env.deleted_at and not row.environment.deleted_at %}
+                  <tr class="{% if not ae_live %}adm-deleted{% endif %}">
+                    <td>
+                      {% if ae_live and project.environments_enabled %}
+                        <a class="adm-link adm-primary" href="{{ url_for('user.project_application', env_slug=row.environment.slug, **slugs) }}">{{ row.environment.name }}</a>
+                      {% elif ae_live %}
+                        <a class="adm-link adm-primary" href="{{ url_for('user.project_application', **slugs) }}">{{ row.environment.name if project.environments_enabled else 'Default' }}</a>
+                      {% else %}
+                        <span class="adm-primary">{{ row.environment.name }}</span>
+                      {% endif %}
+                      {% if row.app_env.deleted_at %}{{ deleted_badge(row.app_env.deleted_at) }}{% endif %}
+                    </td>
+                    <td>
+                      {% if row.latest and ae_live %}
+                        <a class="adm-link" href="{{ url_for('user.deployment_detail', deployment_id=row.latest.id, **slugs) }}">{{ deploy_state(row.latest) }}</a>
+                      {% else %}
+                        {{ deploy_state(row.latest) }}
+                      {% endif %}
+                    </td>
+                    <td class="num">{% if row.latest and row.latest.version %}v{{ row.latest.version }}{% else %}<span class="adm-sub">—</span>{% endif %}</td>
+                    <td class="end adm-sub">{{ when(row.latest.created if row.latest else none) }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          {% else %}
+            <div class="adm-empty">Not enrolled in any environment.</div>
+          {% endif %}
+        </div>
+      </section>
+
+{% endblock console %}
