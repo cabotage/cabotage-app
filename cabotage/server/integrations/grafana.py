@@ -93,12 +93,10 @@ def _is_valid_internal_url(value: str | None) -> bool:
     if "@" in parsed.netloc:
         return False
     try:
-        parsed.port
+        _ = parsed.port
     except ValueError:
         return False
-    if parsed.query or parsed.fragment:
-        return False
-    return True
+    return not (parsed.query or parsed.fragment)
 
 
 def _is_valid_same_origin_path(value: str | None) -> bool:

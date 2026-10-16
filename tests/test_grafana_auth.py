@@ -116,7 +116,7 @@ def _tenants(client, key=None):
 
 
 def test_forged_identity_and_tenant_headers_do_not_select_another_org(gateway):
-    client, user, _, integration, _, _ = gateway
+    client, user, _, _integration, _, _ = gateway
     response = _auth(
         client,
         **{

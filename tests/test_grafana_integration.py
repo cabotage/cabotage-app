@@ -918,12 +918,14 @@ class TestReconcileGrafanaOrganization:
         # Celery task ever runs.
         db_session.commit()
 
-        with patch(
-            "cabotage.server.integrations.grafana.requests.request",
-            side_effect=_FailFirstMembershipList(fake_grafana),
+        with (
+            patch(
+                "cabotage.server.integrations.grafana.requests.request",
+                side_effect=_FailFirstMembershipList(fake_grafana),
+            ),
+            pytest.raises(GrafanaIntegrationError),
         ):
-            with pytest.raises(GrafanaIntegrationError):
-                reconcile_grafana_organization(org.id)
+            reconcile_grafana_organization(org.id)
 
         db_session.refresh(gi)
         assert gi.grafana_org_id is not None
