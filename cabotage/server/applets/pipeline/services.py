@@ -8,7 +8,11 @@ from sqlalchemy import ColumnElement, Uuid, case, desc, func, or_
 from sqlalchemy.orm.attributes import InstrumentedAttribute
 
 from cabotage.server import db
-from cabotage.server.applets.pipeline.constants import PIPELINE_HANDOFF, PIPELINE_STALE
+from cabotage.server.applets.pipeline.constants import (
+    PIPELINE_HANDOFF,
+    PIPELINE_RANGES,
+    PIPELINE_STALE,
+)
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
@@ -26,6 +30,34 @@ PIPELINE_STAGES = {
     "deploy": (Deployment, Deployment.complete),
 }
 """Stage -> (model, column marking success); error marks failure for all stages."""
+
+
+def pipeline_range(range_key: str | None) -> str:
+    """The requested range key if it's a known range, else the 30-day default."""
+    return range_key if range_key in PIPELINE_RANGES else "30d"
+
+
+def pipeline_window(
+    range_key: str | None,
+    since: str | None,
+    until: str | None,
+) -> tuple[datetime.datetime, datetime.datetime | None]:
+    """Start and optional end of the requested window.
+
+    `since`/`until` (inclusive UTC days) narrow a brushed window; otherwise
+    the window is the trailing range. Raises OverflowError when the window
+    would end past the last representable day.
+    """
+    try:
+        since_day = datetime.date.fromisoformat(since or "")
+        until_day = datetime.date.fromisoformat(until or "")
+    except ValueError:
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+        days = PIPELINE_RANGES[pipeline_range(range_key)]
+        return now - datetime.timedelta(days=days), None
+    start = datetime.datetime.combine(min(since_day, until_day), datetime.time())
+    end = datetime.datetime.combine(max(since_day, until_day), datetime.time())
+    return start, end + datetime.timedelta(days=1)
 
 
 def pipeline_finished(

@@ -9,10 +9,7 @@ from werkzeug.wrappers import Response
 
 from cabotage.server import db
 from cabotage.server.acl import ViewOrganizationPermission, ViewProjectPermission
-from cabotage.server.applets.pipeline.constants import (
-    INFRA_PIPELINE_INACTIVE_LIMIT,
-    PIPELINE_RANGES,
-)
+from cabotage.server.applets.pipeline.constants import INFRA_PIPELINE_INACTIVE_LIMIT
 from cabotage.server.applets.pipeline.services import (
     PIPELINE_STAGES,
     iso_utc,
@@ -21,10 +18,12 @@ from cabotage.server.applets.pipeline.services import (
     pipeline_app_env_inventory_all,
     pipeline_finished,
     pipeline_live_run,
+    pipeline_range,
     pipeline_rollup_rows,
     pipeline_rollup_stats,
     pipeline_rollup_summary,
     pipeline_run_duration,
+    pipeline_window,
     row_duration,
     seconds,
 )
@@ -40,27 +39,14 @@ from cabotage.server.user.views import (
 )
 
 
-def _pipeline_range() -> str:
-    range_key = request.args.get("range", "30d")
-    return range_key if range_key in PIPELINE_RANGES else "30d"
-
-
-def _pipeline_window() -> tuple[datetime.datetime, datetime.datetime | None]:
-    """Start and optional end of the requested window.
-
-    `since`/`until` (inclusive UTC days) narrow a brushed window; otherwise
-    the window is the trailing range.
-    """
+def _requested_window() -> tuple[datetime.datetime, datetime.datetime | None]:
+    """The query string's pipeline window; an unrepresentable end is a 400."""
     try:
-        since = datetime.date.fromisoformat(request.args.get("since", ""))
-        until = datetime.date.fromisoformat(request.args.get("until", ""))
-    except ValueError:
-        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
-        return now - datetime.timedelta(days=PIPELINE_RANGES[_pipeline_range()]), None
-    start = datetime.datetime.combine(min(since, until), datetime.time())
-    end = datetime.datetime.combine(max(since, until), datetime.time())
-    try:
-        return start, end + datetime.timedelta(days=1)
+        return pipeline_window(
+            request.args.get("range"),
+            request.args.get("since"),
+            request.args.get("until"),
+        )
     except OverflowError:
         abort(400)
 
@@ -86,7 +72,7 @@ def project_application_pipeline(
         application=application,
         environment=app_env.environment if app_env else None,
         app_env=app_env,
-        current_range=_pipeline_range(),
+        current_range=pipeline_range(request.args.get("range")),
     )
 
 
@@ -105,7 +91,7 @@ def project_application_pipeline_stats(
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
     )
-    start, end = _pipeline_window()
+    start, end = _requested_window()
 
     trend = collections.defaultdict(dict)
     stages = {}
@@ -195,7 +181,7 @@ def project_application_pipeline_runs(
     if offset > 2**63 - 1:
         abort(400)
 
-    start, end = _pipeline_window()
+    start, end = _requested_window()
     query = Deployment.query.filter(
         Deployment.application_environment_id == app_env.id,
         Deployment.updated >= start,
@@ -298,7 +284,7 @@ def project_application_pipeline_slowest(
     stage = request.args.get("stage", "image")
     if stage not in PIPELINE_STAGES:
         stage = "image"
-    model, filters = pipeline_finished(stage, app_env.id, *_pipeline_window())
+    model, filters = pipeline_finished(stage, app_env.id, *_requested_window())
     rows = (
         model.query.filter(*filters)
         .order_by(desc(model.updated - model.created))
@@ -366,7 +352,7 @@ def project_pipeline(org_slug: str, project_slug: str) -> str:
         "user/project_pipeline.html",
         organization=organization,
         project=project,
-        current_range=_pipeline_range(),
+        current_range=pipeline_range(request.args.get("range")),
     )
 
 
@@ -386,7 +372,7 @@ def project_pipeline_rollup(org_slug: str, project_slug: str) -> Response:
     if not ViewProjectPermission(project.id).can():
         abort(403)
 
-    start, end = _pipeline_window()
+    start, end = _requested_window()
     inventory = pipeline_app_env_inventory(organization, project=project)
     stats = pipeline_rollup_stats(
         [meta["app_env_id"] for meta in inventory], start, end
@@ -407,7 +393,7 @@ def organization_pipeline(org_slug: str) -> str:
     return render_template(
         "user/organization_pipeline.html",
         organization=organization,
-        current_range=_pipeline_range(),
+        current_range=pipeline_range(request.args.get("range")),
     )
 
 
@@ -422,7 +408,7 @@ def organization_pipeline_rollup(org_slug: str) -> Response:
     if not ViewOrganizationPermission(organization.id).can():
         abort(403)
 
-    start, end = _pipeline_window()
+    start, end = _requested_window()
     inventory = pipeline_app_env_inventory(organization)
     app_env_ids = [meta["app_env_id"] for meta in inventory]
     stats = pipeline_rollup_stats(app_env_ids, start, end)
@@ -436,7 +422,7 @@ def infra_pipeline() -> str:
     _require_admin()
     return render_template(
         "user/infra_pipeline.html",
-        current_range=_pipeline_range(),
+        current_range=pipeline_range(request.args.get("range")),
     )
 
 
@@ -445,7 +431,7 @@ def infra_pipeline() -> str:
 def infra_pipeline_rollup() -> Response:
     _require_admin()
 
-    start, end = _pipeline_window()
+    start, end = _requested_window()
     inventory = pipeline_app_env_inventory_all()
     app_env_ids = [meta["app_env_id"] for meta in inventory]
     stats = pipeline_rollup_stats(app_env_ids, start, end)
