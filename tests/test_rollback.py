@@ -26,7 +26,14 @@ from cabotage.server.models.projects import (
     Project,
     Release,
 )
-from cabotage.server.rollback import plan_rollback
+from cabotage.server.rollback import (
+    ProcessScale,
+    deployed_ingresses,
+    parked_scale,
+    plan_rollback,
+    prune_stale_scale,
+    restore_parked_scale,
+)
 from cabotage.server.wsgi import app as _app
 
 T0 = datetime.datetime(2026, 1, 1, 12, 0, 0)
@@ -301,6 +308,104 @@ def test_rollback_rejected_after_environment_deleted(history, deleted):
     assert submit.status_code == 404
     run_deploy.delay.assert_not_called()
     assert len(_deployments(app_env)) == before
+
+
+def _ingress(name, *hosts):
+    return {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "enabled": True,
+        "hosts": [
+            {
+                "id": str(uuid.uuid4()),
+                "hostname": host,
+                "tls_enabled": True,
+                "is_auto_generated": False,
+            }
+            for host in hosts
+        ],
+        "paths": [],
+    }
+
+
+@pytest.fixture
+def routed(history):
+    """On top of history: v2 added a hostname and an ingress, and scaled worker."""
+    client, user, app_env, base, _secret, v1, v2, old, live = history
+    v1.ingresses = {"default": _ingress("default", "a.example")}
+    v2.ingresses = {
+        "default": _ingress("default", "a.example", "b.example"),
+        "admin": _ingress("admin", "admin.example"),
+    }
+    app_env.process_counts = {"web": 2, "worker": 3}
+    app_env.process_pod_classes = {"worker": "m1.xlarge"}
+    db.session.flush()
+    return client, user, app_env, base, v1, v2, old, live
+
+
+def test_plan_discloses_routing_and_stopped_processes(routed):
+    client, _user, _app_env, base, _v1, _v2, old, _live = routed
+
+    with patch("cabotage.server.rollback._release_tag_exists", return_value=True):
+        plan = plan_rollback(old)
+        html = client.get(f"{base}/deployments/{old.id}/rollback").get_data(
+            as_text=True
+        )
+
+    assert plan.hosts_removed == ["admin.example", "b.example"]
+    assert plan.hosts_added == []
+    assert plan.ingresses_changed == ["admin", "default"]
+    assert plan.processes_stopped == [ProcessScale("worker", 3, "m1.xlarge")]
+    for text in ("b.example", "worker 3 × m1.xlarge", "keep_routing", "keep_scale"):
+        assert text in html
+
+
+@pytest.mark.parametrize("keep", [False, True])
+def test_rollback_keeps_routing_and_scale_only_when_asked(routed, keep):
+    client, _user, app_env, base, v1, v2, old, _live = routed
+    form = {"keep_routing": "y", "keep_scale": "y"} if keep else {}
+
+    with (
+        patch("cabotage.server.rollback._release_tag_exists", return_value=True),
+        patch("cabotage.server.user.views.run_deploy"),
+        patch("cabotage.server.user.views.dispatch_pipeline_notification"),
+    ):
+        resp = client.post(f"{base}/deployments/{old.id}/rollback", data=form)
+
+    assert resp.status_code == 302
+    new = _deployments(app_env)[0]
+    assert deployed_ingresses(new) == (v2.ingresses if keep else v1.ingresses)
+    new.complete = True
+    assert prune_stale_scale(new, set(v1.processes)) == ["worker"]
+    assert app_env.process_counts == {"web": 2}
+    assert parked_scale(app_env) == (
+        {"worker": {"count": 3, "pod_class": "m1.xlarge"}} if keep else {}
+    )
+
+
+@pytest.mark.parametrize("normal_deploy_between", [False, True])
+def test_parked_scale_returns_with_the_process(routed, normal_deploy_between):
+    _client, _user, app_env, _base, v1, v2, _old, live = routed
+    application = live.application
+    rollback = _deployment(application, app_env, v1, 20)
+    rollback.deploy_metadata = {"trigger": "rollback", "keep_scale": True}
+    prune_stale_scale(rollback, set(v1.processes))
+    if normal_deploy_between:
+        _deployment(application, app_env, v1, 30)
+    else:
+        with patch("cabotage.server.rollback._release_tag_exists", return_value=True):
+            started = plan_rollback(live).processes_started
+        assert started == [ProcessScale("worker", 3, "m1.xlarge")]
+
+    restored = restore_parked_scale(_deployment(application, app_env, v2, 40))
+
+    if normal_deploy_between:
+        assert restored == []
+        assert "worker" not in app_env.process_counts
+    else:
+        assert restored == ["worker"]
+        assert app_env.process_counts["worker"] == 3
+        assert app_env.process_pod_classes["worker"] == "m1.xlarge"
 
 
 def test_completion_notification_keeps_rollback_context(history):

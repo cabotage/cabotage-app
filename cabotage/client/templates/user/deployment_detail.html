@@ -161,7 +161,7 @@
                 <span class="deploy-meta-label">Rollback</span>
                 <span class="deploy-meta-value text-base-content/70">
                   {% if rb.get('rollback_from_version') %}v{{ rb.get('rollback_from_version') }} → {% endif %}v{{ rb.get('rollback_to_version') }}
-                  <span class="text-base-content/40">by {{ rb.get('triggered_by', '?') }}</span>
+                  <span class="text-base-content/40">by {{ rb.get('triggered_by', '?') }}{% if rb.get('ingresses_from_release_id') %} · kept live routing{% endif %}{% if rb.get('keep_scale') %} · kept scale{% endif %}</span>
                 </span>
               </div>
             {% endif %}

@@ -140,6 +140,61 @@
           {% endif %}
         </section>
 
+        {% if plan.routing_changes %}
+          <section>
+            <h3 class="text-sm font-medium text-base-content">Routing</h3>
+            <p class="text-xs text-base-content/50 mt-1">
+              Ingresses and hostnames go back to what v{{ tr.version }} shipped with.
+            </p>
+            <dl class="rollback-changes mt-2">
+              {% if plan.hosts_removed %}
+                <dt>Stops routing</dt>
+                <dd>{% for host in plan.hosts_removed %}<code class="rollback-chip rollback-chip-removed">{{ host }}</code>{% endfor %}</dd>
+              {% endif %}
+              {% if plan.hosts_added %}
+                <dt>Routes again</dt>
+                <dd>{% for host in plan.hosts_added %}<code class="rollback-chip rollback-chip-added">{{ host }}</code>{% endfor %}</dd>
+              {% endif %}
+              {% if plan.ingresses_changed %}
+                <dt>Ingresses changed</dt>
+                <dd>{% for name in plan.ingresses_changed %}<code class="rollback-chip">{{ name }}</code>{% endfor %}</dd>
+              {% endif %}
+            </dl>
+            <label class="label cursor-pointer justify-start gap-3 mt-2">
+              <input type="checkbox" name="keep_routing" value="y" form="rollback-form" class="checkbox checkbox-primary checkbox-sm">
+              <span class="text-sm text-base-content/60">Keep the live routing</span>
+            </label>
+          </section>
+        {% endif %}
+
+        {% if plan.processes_stopped or plan.processes_started %}
+          <section>
+            <h3 class="text-sm font-medium text-base-content">Processes</h3>
+            <dl class="rollback-changes mt-2">
+              {% if plan.processes_stopped %}
+                <dt>Stops</dt>
+                <dd>{% for proc in plan.processes_stopped %}<code class="rollback-chip rollback-chip-removed">{{ proc.name }} {{ proc.count }} × {{ proc.pod_class }}</code>{% endfor %}</dd>
+              {% endif %}
+              {% if plan.processes_started %}
+                <dt>Starts</dt>
+                <dd>{% for proc in plan.processes_started %}<code class="rollback-chip rollback-chip-added">{{ proc.name }} {{ proc.count }} × {{ proc.pod_class }}</code>{% endfor %}</dd>
+              {% endif %}
+            </dl>
+            {% if plan.processes_started|selectattr('count', 'equalto', 0)|list %}
+              <p class="text-xs text-base-content/50 mt-2">Processes starting with 0 replicas stay idle until you scale them.</p>
+            {% endif %}
+            {% if plan.processes_stopped %}
+              <p class="text-xs text-base-content/50 mt-2">
+                Stopped processes lose their scale and pod size. If you keep them, the next deploy that runs the process again restores them.
+              </p>
+              <label class="label cursor-pointer justify-start gap-3 mt-2">
+                <input type="checkbox" name="keep_scale" value="y" form="rollback-form" class="checkbox checkbox-primary checkbox-sm">
+                <span class="text-sm text-base-content/60">Keep scale for stopped processes</span>
+              </label>
+            {% endif %}
+          </section>
+        {% endif %}
+
         {% if plan.release_commands %}
           <section>
             <h3 class="text-sm font-medium text-base-content">Release commands run again</h3>
@@ -163,6 +218,7 @@
   {% endif %}
 
   <form method="post"
+        id="rollback-form"
         action="{{ url_for('user.deployment_rollback', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=plan.target.id) }}"
         class="flex items-center justify-end gap-2">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>

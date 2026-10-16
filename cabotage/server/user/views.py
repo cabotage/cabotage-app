@@ -6603,7 +6603,11 @@ def deployment_rollback(org_slug, project_slug, app_slug, deployment_id):
             plan=plan,
         ), (200 if request.method == "GET" else 409)
 
-    deploy_metadata = plan.deploy_metadata(current_user.username)
+    deploy_metadata = plan.deploy_metadata(
+        current_user.username,
+        keep_routing="keep_routing" in request.form,
+        keep_scale="keep_scale" in request.form,
+    )
     deployment = _start_deployment(
         org,
         application,
