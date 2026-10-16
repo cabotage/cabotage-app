@@ -67,7 +67,7 @@ def connect(org_slug):
     return redirect(authorize_url)
 
 
-@slack_oauth_bp.route("/callback")
+@slack_oauth_bp.route("/callback", methods=["GET", "POST"])
 @login_required
 def callback():
     error = request_arg("error")
@@ -80,22 +80,29 @@ def callback():
         return redirect(url_for("user.organizations"))
 
     state = request_arg("state")
-    expected_state = session.pop("slack_oauth_state", None)
-    org_slug = session.pop("slack_oauth_org_slug", None)
+    expected_state = session.get("slack_oauth_state")
+    org_slug = session.get("slack_oauth_org_slug")
 
     if not state or not expected_state or state != expected_state:
+        session.pop("slack_oauth_state", None)
+        session.pop("slack_oauth_org_slug", None)
         flash("Invalid OAuth state. Please try again.", "error")
         if org_slug:
             return redirect(url_for("user.organization_settings", org_slug=org_slug))
         return redirect(url_for("user.organizations"))
 
     if not org_slug:
+        session.pop("slack_oauth_state", None)
         flash("Missing organization context. Please try again.", "error")
         return redirect(url_for("user.organizations"))
 
     organization = Organization.query.filter_by(slug=org_slug).first_or_404()
     if not AdministerOrganizationPermission(organization.id).can():
+        session.pop("slack_oauth_state", None)
+        session.pop("slack_oauth_org_slug", None)
         abort(403)
+    session.pop("slack_oauth_state", None)
+    session.pop("slack_oauth_org_slug", None)
 
     code = request_arg("code")
     if not code:
