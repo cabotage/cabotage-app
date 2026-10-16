@@ -3,17 +3,16 @@
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from threading import Barrier
 
 import pytest
-from flask import g
+from flask import abort, g, redirect, request
+from flask_login import login_required
 from sqlalchemy import delete
 
 from cabotage.server import db, security
-from flask import abort, redirect, request
-from flask_login import login_required
 from cabotage.server.admin_passkey import require_admin_action, require_admin_session
 from cabotage.server.models.admin_security import AdminChallenge, AdminGrant
 from cabotage.server.models.auth import (
@@ -26,10 +25,18 @@ from tests.admin_passkey_helpers import SigningPasskey
 from tests.test_organization_requests import (
     _delete_org,
     _login,
-    admin_user as admin_user,
-    app as app,
-    client as client,
-    regular_user as regular_user,
+)
+from tests.test_organization_requests import (
+    admin_user as admin_user,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    app as app,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    client as client,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    regular_user as regular_user,  # noqa: PLC0414
 )
 
 
@@ -255,9 +262,9 @@ def test_expired_elevation_returns_entry_intent_then_fresh_action(
     old_proof = _proof(client, passkey, tenant)
     with client.session_transaction() as state:
         old_grant_id = state["admin_grant"]
-    db.session.get(AdminGrant, old_grant_id).expires_at = datetime.now(
-        timezone.utc
-    ).replace(tzinfo=None) - timedelta(seconds=1)
+    db.session.get(AdminGrant, old_grant_id).expires_at = datetime.now(UTC).replace(
+        tzinfo=None
+    ) - timedelta(seconds=1)
     db.session.commit()
     response = client.post(
         _settings(tenant), data=_data(tenant), headers={"X-Admin-Fetch": "1"}
@@ -414,9 +421,9 @@ def test_entry_revocation_blocks_reads_and_pending_actions(
         original_state = dict(state)
         grant_id = state["admin_grant"]
     if revocation == "expiry":
-        db.session.get(AdminGrant, grant_id).expires_at = datetime.now(
-            timezone.utc
-        ).replace(tzinfo=None) - timedelta(seconds=1)
+        db.session.get(AdminGrant, grant_id).expires_at = datetime.now(UTC).replace(
+            tzinfo=None
+        ) - timedelta(seconds=1)
     elif revocation == "demotion":
         admin_user.admin = False
     elif revocation == "deactivation":
@@ -453,9 +460,9 @@ def test_action_expires_without_extending_entry(client, admin_user, passkey, ten
         grant_id = state["admin_grant"]
     before = db.session.get(AdminGrant, grant_id).expires_at
     proof = _proof(client, passkey, tenant)
-    db.session.get(AdminChallenge, proof).expires_at = datetime.now(
-        timezone.utc
-    ).replace(tzinfo=None) - timedelta(seconds=1)
+    db.session.get(AdminChallenge, proof).expires_at = datetime.now(UTC).replace(
+        tzinfo=None
+    ) - timedelta(seconds=1)
     db.session.commit()
     assert (
         client.post(

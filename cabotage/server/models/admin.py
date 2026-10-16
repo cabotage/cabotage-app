@@ -2,6 +2,7 @@ from flask_admin.base import AdminIndexView as _AdminIndexView
 from flask_admin.contrib import sqla
 from flask_admin.form import SecureForm
 from werkzeug.wrappers import Response
+
 from cabotage.server.admin_passkey import has_admin_session, require_admin_session
 
 

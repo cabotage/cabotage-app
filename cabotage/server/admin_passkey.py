@@ -3,7 +3,7 @@
 import hashlib
 import json
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from urllib.parse import urlencode, urlsplit
 from uuid import UUID
@@ -28,16 +28,19 @@ from flask_login.utils import current_user, login_required
 from flask_security.signals import wan_deleted
 from flask_wtf.csrf import validate_csrf
 from sqlalchemy import ColumnElement, delete, insert, select, update
-from webauthn import generate_authentication_options, options_to_json
-from webauthn import verify_authentication_response
+from webauthn import (
+    generate_authentication_options,
+    options_to_json,
+    verify_authentication_response,
+)
 from webauthn.helpers import parse_authentication_credential_json
 from webauthn.helpers.exceptions import WebAuthnException
 from webauthn.helpers.structs import (
     PublicKeyCredentialDescriptor,
     UserVerificationRequirement,
 )
-from wtforms.validators import ValidationError
 from werkzeug.wrappers import Response
+from wtforms.validators import ValidationError
 
 from cabotage.server import db, security
 from cabotage.server.models.admin_security import AdminChallenge, AdminGrant
@@ -50,7 +53,7 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _admin() -> User:
@@ -119,7 +122,7 @@ def has_admin_session() -> bool:
 
 
 def _epoch(value: datetime) -> float:
-    return value.replace(tzinfo=timezone.utc).timestamp()
+    return value.replace(tzinfo=UTC).timestamp()
 
 
 def admin_access_state() -> dict[str, object]:
@@ -514,8 +517,8 @@ def verify() -> Response:
         db.session.rollback()
         abort(403, "Passkey verification failed")
     # Flask-Security's legacy mixin annotates instance values as Column objects.
-    setattr(registered, "sign_count", verified.new_sign_count)
-    setattr(registered, "lastuse_datetime", _now())
+    setattr(registered, "sign_count", verified.new_sign_count)  # noqa: B010
+    setattr(registered, "lastuse_datetime", _now())  # noqa: B010
     if row["grant_id"] is None:
         _ = db.session.execute(
             delete(AdminChallenge).where(AdminChallenge.expires_at <= _now())

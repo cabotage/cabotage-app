@@ -12,10 +12,18 @@ from cabotage.server.models.auth import User
 from tests.admin_passkey_helpers import SigningPasskey
 from tests.test_organization_requests import (
     _login,
-    admin_user as admin_user,
-    app as app,
-    client as client,
-    regular_user as regular_user,
+)
+from tests.test_organization_requests import (
+    admin_user as admin_user,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    app as app,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    client as client,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    regular_user as regular_user,  # noqa: PLC0414
 )
 
 

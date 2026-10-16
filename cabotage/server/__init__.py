@@ -188,6 +188,7 @@ def create_app() -> Flask:
     )
 
     from flask_admin.theme import Bootstrap4Theme
+
     from cabotage.server.models.admin import AdminIndexView
 
     admin = Admin(
@@ -396,16 +397,18 @@ def create_app() -> Flask:
     babel.init_app(app)
 
     # register blueprints
+    from cabotage.server.admin_passkey import (
+        blueprint as admin_passkey_blueprint,
+    )
+    from cabotage.server.admin_passkey import (
+        has_admin_session,
+        register_admin_guards,
+    )
     from cabotage.server.alerting.views import alerting_blueprint
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
     from cabotage.server.registry_auth.views import registry_auth_blueprint
     from cabotage.server.user.views import user_blueprint
-    from cabotage.server.admin_passkey import (
-        blueprint as admin_passkey_blueprint,
-        has_admin_session,
-        register_admin_guards,
-    )
 
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
