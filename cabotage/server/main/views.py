@@ -1,8 +1,9 @@
-from flask import Blueprint, current_app, render_template
+from flask import Blueprint, current_app, has_request_context, render_template
 from flask_login import current_user
 from sqlalchemy import func
 
 from cabotage.server import db
+from cabotage.server.main.legal import legal_home, legal_nav, render_legal_page
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.projects import Application, Deployment, Project
@@ -70,3 +71,31 @@ def home():
 @main_blueprint.route("/about/")
 def about():
     return render_template("main/about.html")
+
+
+@main_blueprint.app_context_processor
+def inject_legal_links() -> dict[str, object]:
+    # Templates rendered outside a request (e.g. emails) have no footer to fill.
+    if not has_request_context():
+        return {}
+    return {"legal_nav": legal_nav(), "legal_home": legal_home()}
+
+
+@main_blueprint.route("/legal/")
+def legal():
+    return render_legal_page("index")
+
+
+@main_blueprint.route("/legal/terms/")
+def terms():
+    return render_legal_page("terms")
+
+
+@main_blueprint.route("/legal/privacy/")
+def privacy():
+    return render_legal_page("privacy")
+
+
+@main_blueprint.route("/legal/acceptable-use/")
+def acceptable_use():
+    return render_legal_page("acceptable_use")
