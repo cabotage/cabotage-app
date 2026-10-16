@@ -169,7 +169,7 @@
     <a href="{{ url_for('user.application_deployments', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
        class="btn btn-ghost btn-sm">Cancel</a>
     <button type="submit"
-            class="btn btn-warning btn-sm gap-1.5"
+            class="btn btn-warning btn-sm gap-1.5 rollback-confirm"
             {% if not plan.allowed %}disabled{% endif %}>
       {{ icon('rotate-ccw', 'w-3.5 h-3.5') }}
       Roll back{% if tr %} to v{{ tr.version }}{% endif %}

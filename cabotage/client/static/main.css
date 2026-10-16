@@ -2871,6 +2871,9 @@ a.pipeline-stage-body:hover {
 .rollback-side-target {
   border-color: color-mix(in srgb, var(--color-warning, oklch(var(--wa))) 35%, transparent) !important;
 }
+.rollback-confirm {
+  color: oklch(0.13 0.015 275);
+}
 .rollback-changes {
   display: grid;
   grid-template-columns: max-content 1fr;
