@@ -117,6 +117,11 @@ from cabotage.server.query_helpers import (
     extract_latest_variants,
     split_image_processes,
 )
+from cabotage.server.rollback import (
+    environment_is_active,
+    plan_rollback,
+    rollback_summary,
+)
 from cabotage.server.user import github_installations
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
@@ -5547,11 +5552,15 @@ def application_deployments(org_slug: str, project_slug: str, app_slug: str):
         sorted_releases, deployments.items
     )
 
+    active = app_env.latest_deployment_completed
+    active_release_id = (active.release or {}).get("id") if active else None
     return render_template(
         "user/application_deployments.html",
         page=page,
         application=application,
         deployments=deployments.items,
+        active_deployment_id=active.id if active else None,
+        active_release_id=active_release_id,
         environment=app_env.environment if project.environments_enabled else None,
         app_env=app_env,
         deploy_form=ReleaseDeployForm(),
@@ -5747,7 +5756,20 @@ def deployment_detail(
     deployment = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
     ).first_or_404()
-    return render_template("user/deployment_detail.html", deployment=deployment)
+    active = deployment.application_environment.latest_deployment_completed
+    active_release_id = (active.release or {}).get("id") if active else None
+    return render_template(
+        "user/deployment_detail.html",
+        deployment=deployment,
+        is_active=active is not None and active.id == deployment.id,
+        can_roll_back=(
+            environment_is_active(deployment.application_environment)
+            and deployment.complete
+            and not deployment.error
+            and active_release_id is not None
+            and (deployment.release or {}).get("id") != active_release_id
+        ),
+    )
 
 
 @user_blueprint.route(
@@ -6464,26 +6486,13 @@ def application_scale_legacy(application_id):
     )
 
 
-@user_blueprint.route(
-    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>/deploy",
-    methods=["POST"],
-)
-@login_required
-def release_deploy(org_slug, project_slug, app_slug, release_id):
-    org, _project, application = _lookup_app_context(
-        org_slug, project_slug, app_slug, require_admin=True
-    )
-    release = Release.query.filter_by(
-        id=release_id, application_id=application.id
-    ).first_or_404()
+def _start_deployment(org, application, release, deploy_metadata, detail):
+    """Create a Deployment of ``release`` and kick off the rollout."""
     deployment = Deployment(
         application_id=release.application.id,
         application_environment_id=release.application_environment_id,
         release=release.asdict,
-        deploy_metadata={
-            "trigger": "manual_deploy",
-            "triggered_by": current_user.username,
-        },
+        deploy_metadata=deploy_metadata,
     )
     db.session.add(deployment)
     db.session.flush()
@@ -6507,7 +6516,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
             str(release.application_environment_id)
             if release.application_environment_id
             else None,
-            detail=f"Triggered by: {current_user.username}",
+            detail=detail,
         )
         deployment_id = deployment.id
         run_deploy.delay(deployment_id=deployment.id)
@@ -6527,9 +6536,87 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
             str(release.application_environment_id)
             if release.application_environment_id
             else None,
-            detail=f"Triggered by: {current_user.username}",
+            detail=detail,
             complete=True,
         )
+    return deployment
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/releases/<release_id>/deploy",
+    methods=["POST"],
+)
+@login_required
+def release_deploy(org_slug, project_slug, app_slug, release_id):
+    org, _project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    release = Release.query.filter_by(
+        id=release_id, application_id=application.id
+    ).first_or_404()
+    deployment = _start_deployment(
+        org,
+        application,
+        release,
+        deploy_metadata={
+            "trigger": "manual_deploy",
+            "triggered_by": current_user.username,
+        },
+        detail=f"Triggered by: {current_user.username}",
+    )
+    return redirect(
+        url_for(
+            "user.deployment_detail",
+            org_slug=org_slug,
+            project_slug=project_slug,
+            app_slug=app_slug,
+            deployment_id=deployment.id,
+        )
+    )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/applications/<app_slug>/deployments/<deployment_id>/rollback",
+    methods=["GET", "POST"],
+)
+@login_required
+def deployment_rollback(org_slug, project_slug, app_slug, deployment_id):
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    target = Deployment.query.filter_by(
+        id=deployment_id, application_id=application.id
+    ).first_or_404()
+    if not environment_is_active(target.application_environment):
+        abort(404)
+    plan = plan_rollback(target)
+    if request.method == "GET" or not plan.allowed:
+        return render_template(
+            "user/deployment_rollback.html",
+            application=application,
+            app_env=target.application_environment,
+            environment=(
+                target.application_environment.environment
+                if project.environments_enabled
+                else None
+            ),
+            plan=plan,
+        ), (200 if request.method == "GET" else 409)
+
+    deploy_metadata = plan.deploy_metadata(
+        current_user.username,
+        keep_routing=request.form.get("keep_routing") == "y",
+        keep_scale=request.form.get("keep_scale") == "y",
+    )
+    deployment = _start_deployment(
+        org,
+        application,
+        assume_not_none(
+            plan.target_release, because="an allowed plan has a target release"
+        ),
+        deploy_metadata=deploy_metadata,
+        detail=rollback_summary(deploy_metadata),
+    )
     return redirect(
         url_for(
             "user.deployment_detail",

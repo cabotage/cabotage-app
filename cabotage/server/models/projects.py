@@ -777,6 +777,8 @@ class Deployment(Model, Timestamp):
         meta = self.deploy_metadata or {}
         if meta.get("auto_deploy") and not meta.get("trigger"):
             return "auto"
+        if meta.get("trigger") == "rollback":
+            return "rollback"
         return "manual"
 
     @property
