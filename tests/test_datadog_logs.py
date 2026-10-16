@@ -275,11 +275,13 @@ def test_unreadable_tenant_secret_aborts_export(app):
         buildtime=False,
         key_slug="vault:tenant/project/app/configuration/DD_API_KEY/2",
     )
-    with patch.object(
-        deploy_module.config_writer, "read", side_effect=KeyError("unavailable")
+    with (
+        patch.object(
+            deploy_module.config_writer, "read", side_effect=KeyError("unavailable")
+        ),
+        pytest.raises(KeyError),
     ):
-        with pytest.raises(KeyError):
-            deploy_module.sync_log_export(_Secrets().api, _make_release(configuration))
+        deploy_module.sync_log_export(_Secrets().api, _make_release(configuration))
 
 
 def test_sync_writes_and_then_removes_only_its_own_output(app):

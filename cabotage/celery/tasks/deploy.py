@@ -28,8 +28,8 @@ from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.projects import (
-    ApplicationEnvironment,
     DEFAULT_POD_CLASS,
+    ApplicationEnvironment,
     Configuration,
     Deployment,
     EnvironmentConfiguration,
@@ -44,8 +44,6 @@ from cabotage.server.models.utils import (
     repair_ingress_hostname,
     safe_k8s_name,
 )
-
-from cabotage.utils.datadog import DATADOG_SITES
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
     get_redis_client,
@@ -54,6 +52,7 @@ from cabotage.utils.build_log_stream import (
     refresh_heartbeat,
     stream_key,
 )
+from cabotage.utils.datadog import DATADOG_SITES
 from cabotage.utils.github import (
     CheckRun,
     cabotage_url,
