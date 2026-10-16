@@ -37661,27 +37661,6 @@
       "severity": "error"
     },
     {
-      "column": 32,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 39,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
       "column": 21,
       "path": "cabotage/server/user/views.py",
       "name": "implicit-any-empty-container",

@@ -885,7 +885,7 @@
           {{ scale_form.hidden_tag() }}
           {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
           <div class="process-grid">
-            {% for process_name in latest_release_processes %}
+            {% for process_name in deployed_processes %}
               {% set count = app_env.process_counts.get(process_name, 0) %}
               {% set pod_class = app_env.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
               <div class="process-card {{ 'process-card-active' if count > 0 else 'process-card-idle' }}">
@@ -929,7 +929,7 @@
             {% endfor %}
           </div>
 
-          {% if latest_release_job_processes %}
+          {% if deployed_job_processes %}
           <div class="flex items-center gap-1.5 mt-4 mb-2">
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Jobs</h2>
             <div class="info-popup-anchor">
@@ -960,7 +960,7 @@
             </div>
           </div>
           <div class="process-grid">
-            {% for process_name, proc in latest_release_job_processes.items() %}
+            {% for process_name, proc in deployed_job_processes.items() %}
               {% set count = app_env.process_counts.get(process_name, 0) %}
               {% set pod_class = app_env.process_pod_classes.get(process_name, DEFAULT_POD_CLASS) %}
               {% set schedule = '' %}
@@ -1029,10 +1029,10 @@
           </div>
         </form>
 
-        {% if latest_release_release_commands %}
+        {% if deployed_release_commands %}
           <div class="proc-footer">
             <div class="proc-footer-cmds">
-              {% for process_name, proc in latest_release_release_commands.items() %}
+              {% for process_name, proc in deployed_release_commands.items() %}
                 <div class="proc-cmd-chip-anchor">
                   <div class="proc-cmd-chip">
                     {{ icon('terminal', 'w-2.5 h-2.5 proc-cmd-icon') }}

@@ -3256,9 +3256,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
     deployed_image = None
     latest_deploy_release = None
     latest_release_image = None
-    latest_release_processes = {}
-    latest_release_release_commands = {}
-    latest_release_job_processes = {}
+    deployed_processes = {}
+    deployed_release_commands = {}
+    deployed_job_processes = {}
     last_job_logs = {}
     release_by_id = {}
     image_by_id = {}
@@ -3293,15 +3293,17 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_deploy_release = resolver.get_release(latest_deployment)
         latest_release_image = resolver.get_image_for_release(latest_release)
 
+        # The Processes section shows what's running, so read the deployed
+        # image, not a newer release that may still be building or failed.
         (
-            latest_release_processes,
-            latest_release_release_commands,
+            deployed_processes,
+            deployed_release_commands,
             _,
-            latest_release_job_processes,
-        ) = split_image_processes(latest_release_image)
+            deployed_job_processes,
+        ) = split_image_processes(deployed_image)
 
         # Fetch most recent job log per job process for the "last ran" display
-        for proc_name in latest_release_job_processes:
+        for proc_name in deployed_job_processes:
             last_log = (
                 JobLog.query.filter_by(
                     application_id=application.id,
@@ -3448,9 +3450,9 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         deployed_image=deployed_image,
         latest_deploy_release=latest_deploy_release,
         latest_release_image=latest_release_image,
-        latest_release_processes=latest_release_processes,
-        latest_release_release_commands=latest_release_release_commands,
-        latest_release_job_processes=latest_release_job_processes,
+        deployed_processes=deployed_processes,
+        deployed_release_commands=deployed_release_commands,
+        deployed_job_processes=deployed_job_processes,
         last_job_logs=last_job_logs,
         release_by_id=release_by_id,
         image_by_id=image_by_id,

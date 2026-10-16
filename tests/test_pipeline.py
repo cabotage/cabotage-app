@@ -455,3 +455,23 @@ def test_live_run_only_includes_current_pipeline_stages(pipeline_app, metadata):
         assert run["image"] is None
         assert run["release"] is None
         assert run["started"] == start.isoformat() + "Z"
+
+
+def test_overview_processes_follow_deployed_image(pipeline_app):
+    client, application, app_env, base = pipeline_app
+    start = datetime.datetime(2000, 1, 10, 12)
+    deployed_img = _make_image(application, app_env, start, start)
+    deployed_img.processes = {"web": {"cmd": "gunicorn", "env": []}}
+    deployed_rel = _make_release(application, app_env, deployed_img, start, start)
+    _make_deployment(application, app_env, deployed_rel, start, start)
+    later = start + datetime.timedelta(hours=1)
+    next_img = _make_image(application, app_env, later, later)
+    next_img.processes = {"queue-consumer": {"cmd": "celery", "env": []}}
+    _make_release(application, app_env, next_img, later, later, built=False)
+    db.session.flush()
+
+    response = client.get(base.removesuffix("/pipeline"))
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert '<code class="text-xs text-accent font-semibold">web</code>' in html
+    assert "queue-consumer" not in html
