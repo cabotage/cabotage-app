@@ -391,6 +391,8 @@ def create_app():
     babel.init_app(app)
 
     # register blueprints
+    # Applet views add their routes to user_blueprint; import before registering.
+    import cabotage.server.applets.pipeline.views  # noqa: F401
     from cabotage.server.alerting.views import alerting_blueprint
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
