@@ -12,7 +12,7 @@ from flask import current_app
 from requests.exceptions import HTTPError, RequestException
 
 from cabotage._types import assume_not_none
-from cabotage.server.models.projects import Deployment, Release
+from cabotage.server.models.projects import ApplicationEnvironment, Deployment, Release
 
 
 @dataclasses.dataclass
@@ -75,6 +75,11 @@ def _release_tag_exists(release: Release) -> bool:
             return False
         current_app.logger.warning("Registry check failed for rollback: %s", exc)
     return True
+
+
+def environment_is_active(app_env: ApplicationEnvironment) -> bool:
+    """False once the app environment or its environment is soft-deleted."""
+    return app_env.deleted_at is None and app_env.environment.deleted_at is None
 
 
 def plan_rollback(target: Deployment) -> RollbackPlan:

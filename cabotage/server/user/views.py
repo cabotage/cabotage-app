@@ -117,7 +117,11 @@ from cabotage.server.query_helpers import (
     extract_latest_variants,
     split_image_processes,
 )
-from cabotage.server.rollback import plan_rollback, rollback_summary
+from cabotage.server.rollback import (
+    environment_is_active,
+    plan_rollback,
+    rollback_summary,
+)
 from cabotage.server.user import github_installations
 from cabotage.server.user.forms import (
     AddApplicationToEnvironmentForm,
@@ -5759,7 +5763,8 @@ def deployment_detail(
         deployment=deployment,
         is_active=active is not None and active.id == deployment.id,
         can_roll_back=(
-            deployment.complete
+            environment_is_active(deployment.application_environment)
+            and deployment.complete
             and not deployment.error
             and active_release_id is not None
             and (deployment.release or {}).get("id") != active_release_id
@@ -6582,6 +6587,8 @@ def deployment_rollback(org_slug, project_slug, app_slug, deployment_id):
     target = Deployment.query.filter_by(
         id=deployment_id, application_id=application.id
     ).first_or_404()
+    if not environment_is_active(target.application_environment):
+        abort(404)
     plan = plan_rollback(target)
     if request.method == "GET" or not plan.allowed:
         return render_template(

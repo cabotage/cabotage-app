@@ -279,6 +279,30 @@ def test_rollback_blocked(history, case):
     assert len(_deployments(app_env)) == before
 
 
+@pytest.mark.parametrize("deleted", ["app_env", "environment"])
+def test_rollback_rejected_after_environment_deleted(history, deleted):
+    client, _user, app_env, base, _secret, _v1, _v2, old, _live = history
+    target = app_env if deleted == "app_env" else app_env.environment
+    target.deleted_at = T0
+    db.session.flush()
+    before = len(_deployments(app_env))
+
+    with (
+        patch("cabotage.server.rollback._release_tag_exists", return_value=True),
+        patch("cabotage.server.user.views.run_deploy") as run_deploy,
+    ):
+        detail = client.get(f"{base}/deployments/{old.id}")
+        page = client.get(f"{base}/deployments/{old.id}/rollback")
+        submit = client.post(f"{base}/deployments/{old.id}/rollback")
+
+    assert detail.status_code == 200
+    assert "Roll back to this" not in detail.get_data(as_text=True)
+    assert page.status_code == 404
+    assert submit.status_code == 404
+    run_deploy.delay.assert_not_called()
+    assert len(_deployments(app_env)) == before
+
+
 def test_completion_notification_keeps_rollback_context(history):
     _client, user, app_env, _base, _secret, v1, v2, old, _live = history
     rollback = _deployment(old.application, app_env, v1, 20)
