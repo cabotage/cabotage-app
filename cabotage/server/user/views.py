@@ -7329,7 +7329,7 @@ def project_application_observe_metric(
     if group not in _OBSERVE_GROUPS:
         group = "total"
 
-    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
@@ -8399,7 +8399,7 @@ def _query_mimir_instant(query, tenant_id=None):
 def project_application_live_stats(
     org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
 ):
-    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=False
     )
@@ -9829,7 +9829,7 @@ def _pipeline_live_run(
 def project_application_pipeline_live(
     org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
 ) -> Response:
-    org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    _org, project, application = _lookup_app_context(org_slug, project_slug, app_slug)
     app_env = _resolve_app_env(
         application, env_slug=env_slug, project=project, required=True
     )
