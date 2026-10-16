@@ -1,11 +1,10 @@
-from flask import Blueprint, current_app, render_template
-from flask_login import current_user
-from sqlalchemy import func
+from typing import cast
 
-from cabotage.server import db
-from cabotage.server.models.auth import Organization
-from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.projects import Application, Deployment, Project
+from flask import Blueprint, current_app, render_template, request
+from flask_login import current_user
+
+from cabotage.server.main.dashboard import dashboard_context
+from cabotage.server.models.auth import User
 
 main_blueprint = Blueprint(
     "main",
@@ -14,59 +13,27 @@ main_blueprint = Blueprint(
 
 
 @main_blueprint.route("/")
-def home():
-    org_count = 0
-    project_count = 0
-    app_count = 0
-    deploy_count = 0
-    organization_requests_enabled = current_app.config.get(
-        "ORGANIZATION_REQUESTS_ENABLED", False
+def home() -> str:
+    organization_requests_enabled = bool(
+        current_app.config.get("ORGANIZATION_REQUESTS_ENABLED", False)
     )
-    if current_user.is_authenticated:
-        user_orgs = (
-            db.session.query(OrganizationMember.organization_id)
-            .join(Organization, OrganizationMember.organization_id == Organization.id)
-            .filter(
-                OrganizationMember.user_id == current_user.id,
-                Organization.deleted_at.is_(None),
-            )
+    user = cast(User, current_user)
+    if not user.is_authenticated:
+        return render_template(
+            "main/home.html",
+            organization_requests_enabled=organization_requests_enabled,
         )
-        org_count = user_orgs.count()
-        project_count = Project.query.filter(
-            Project.organization_id.in_(user_orgs),
-            Project.deleted_at.is_(None),
-        ).count()
-        app_count = (
-            Application.query.join(Project)
-            .filter(
-                Project.organization_id.in_(user_orgs),
-                Project.deleted_at.is_(None),
-                Application.deleted_at.is_(None),
-            )
-            .count()
-        )
-        deploy_count = (
-            db.session.query(func.count(Deployment.id))
-            .join(Application)
-            .join(Project)
-            .filter(
-                Project.organization_id.in_(user_orgs),
-                Project.deleted_at.is_(None),
-                Application.deleted_at.is_(None),
-                Deployment.complete == True,
-            )
-            .scalar()
-        )
+
+    # Platform admins can widen the dashboard to every organization.
+    show_all = user.admin and request.args.get("scope") == "all"
     return render_template(
         "main/home.html",
-        org_count=org_count,
-        project_count=project_count,
-        app_count=app_count,
-        deploy_count=deploy_count,
+        scope="all" if show_all else "mine",
         organization_requests_enabled=organization_requests_enabled,
+        **dashboard_context(user, show_all),
     )
 
 
 @main_blueprint.route("/about/")
-def about():
+def about() -> str:
     return render_template("main/about.html")
