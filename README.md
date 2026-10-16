@@ -17,6 +17,15 @@ See [the PyPI infrastructure pull
 request](https://github.com/python/pypi-infra/pull/3) for more on design goals.
 
 
+## Datadog logs
+
+Tenants can send their application logs to their own Datadog account. It is
+off unless the platform runs the log exporter and sets
+`LOG_EXPORT_ENABLED`; see [docs/log-export.md](docs/log-export.md). When it is
+on, **Guide → Datadog logs** (`/guide/datadog-logs`) covers setup and
+troubleshooting for tenants.
+
+
 ## Pipeline
 
 Open **Observe → Pipeline** to review build and deployment times. Redeploys

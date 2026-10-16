@@ -2636,6 +2636,19 @@ document.addEventListener('click', function (e) {
   }
 });
 
+function initLoggingSettings() {
+  document.querySelectorAll('[data-logging-settings] [data-logging-field]').forEach(function (row) {
+    var override = row.querySelector('[data-logging-override]');
+    var input = row.querySelector('[data-logging-input]');
+    if (!override || !input || override.disabled) return;
+    function syncOverride() {
+      input.disabled = !override.checked;
+    }
+    override.addEventListener('change', syncOverride);
+    syncOverride();
+  });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
@@ -2670,6 +2683,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initConfirmDialogs();
   initTfSelect();
   initSecuritySettings();
+  initLoggingSettings();
   initHdrActionTips();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();

@@ -1,0 +1,74 @@
+<div class="guide-prose">
+  <p class="guide-lead">Send application stdout and stderr to your own Datadog account. Export stays off until you enable it for an application environment.</p>
+
+  <div class="guide-note">
+    <strong>Already using Datadog?</strong>
+    <p>Keep your existing <code>DD_API_KEY</code> value and flags unchanged. Log export runs in the platform's shared log exporter; it does not replace your metrics/APM Agent or change its destination.</p>
+  </div>
+
+  <h2 id="enable-export">Enable log export</h2>
+  <p>An organization Admin can make these changes. Select your application and environment, then open <strong>Config → Logging</strong>.</p>
+  <ol class="guide-instructions">
+    <li>
+      <strong>Choose your destination and enable export.</strong>
+      <dl class="guide-config-list">
+        <div>
+          <dt><code>DD_API_KEY</code></dt>
+          <dd>Leave the API key field blank to keep the existing key. A replacement is stored as a runtime secret and also changes the key used by the metrics/APM Agent.</dd>
+        </div>
+        <div>
+          <dt><code>DD_SITE</code></dt>
+          <dd>Select your account's Datadog site. This sets the log destination only.</dd>
+        </div>
+        <div>
+          <dt><code>DD_LOGS_ENABLED</code></dt>
+          <dd>Choose <strong>Enabled</strong>, then save. An API key alone never enables export.</dd>
+        </div>
+      </dl>
+      <p>Logging and <strong>Config → Variables</strong> edit the same settings; changes in either appear in the other. Shared values stay inherited unless you explicitly choose an application override.</p>
+      <p><strong>Test saved destination</strong> sends one synthetic message using saved settings, even while export is disabled. Intake acceptance does not verify the application collector or enable export.</p>
+    </li>
+    <li>
+      <strong>Create a release, then deploy it.</strong>
+      <p>Use the application's <strong>Overview</strong> tab. Logging shows whether saved settings are included in the last completed deployment or require deployment; it does not report delivery health. No image rebuild is needed for a configuration-only change.</p>
+    </li>
+    <li>
+      <strong>Check Datadog Live Tail.</strong>
+      <p>Emit a non-sensitive log message and search for <code>service:&lt;application-slug&gt;</code>. Confirm it reaches the intended account.</p>
+    </li>
+  </ol>
+
+  <h2 id="scope">What gets exported</h2>
+  <p>Only application process logs, including workers and release, postdeploy, and scheduled jobs. Cabotage's log viewer and existing Alloy/Loki collection keep working.</p>
+  <p>Project/environment variables can be shared through explicit application subscriptions. Subscribe the enable flag only in applications you want to export; there is no organization-wide switch.</p>
+  <p><strong>Delivery is best-effort, not an audit archive.</strong> Exporter restarts and configuration reloads, prolonged destination outages, and pods removed before their last lines are read can lose logs. Lines written in the first minute after enabling export may not be delivered.</p>
+
+  <h2 id="disable-export">Turn off export</h2>
+  <p>Choose <strong>Disabled</strong> in Logging, or set <code>DD_LOGS_ENABLED=false</code> in Variables, then create a release and deploy it. Keep the API key if your metrics/APM Agent uses it. Already-running jobs retain their original settings.</p>
+
+  <h2 id="troubleshooting">Troubleshooting</h2>
+  <details class="guide-disclosure">
+    <summary>Deployment rejects the key or site <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <p>Check that the application has a readable <code>DD_API_KEY</code> and an explicit <code>DD_SITE</code>; platform credentials are never used as a fallback.</p>
+    <p>Supported sites: <code>datadoghq.com</code>, <code>datadoghq.eu</code>, <code>us3.datadoghq.com</code>, <code>us5.datadoghq.com</code>, <code>ap1.datadoghq.com</code>, <code>ap2.datadoghq.com</code>, <code>uk1.datadoghq.com</code>, <code>ddog-gov.com</code>, and <code>us2.ddog-gov.com</code>.</p>
+  </details>
+  <details class="guide-disclosure">
+    <summary>Pods are running, but logs are missing <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <p>Confirm the new release was deployed and the key belongs to the selected site. Ask your platform operator to check the <code>tenant-log-export</code> Fluent Bit logs for authentication or network errors; do not paste API keys into support messages.</p>
+  </details>
+  <details class="guide-disclosure">
+    <summary>Logs arrive as JSON text <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <p>Application JSON is preserved in the message. Configure a Datadog parsing pipeline and field remappers for your application's message, severity, timestamp, and trace IDs.</p>
+  </details>
+
+  <details class="guide-disclosure guide-operator-notes">
+    <summary>For platform operators <span aria-hidden="true">{{ icon('chevron-right', 'guide-disclosure-icon') }}</span></summary>
+    <ul>
+      <li>Pod logs are collected by <code>resident-alloy</code>, which forwards opted-in pods (label <code>log-export.cabotage.io=true</code>) over OTLP to the <code>tenant-log-export</code> Fluent Bit. Tenant pods get only the label; they mount nothing and run no extra container.</li>
+      <li>Each deploy writes or removes one output per application environment in Secret <code>cabotage/tenant-log-export</code>, and a reconciler rebuilds it from live releases every 10 minutes; override with <code>CABOTAGE_LOG_EXPORT_NAMESPACE</code> and <code>CABOTAGE_LOG_EXPORT_SECRET</code>. Deploys with export enabled fail if that Secret is missing.</li>
+      <li>Fluent Bit hot-reloads after the kubelet syncs the Secret, which can take about a minute. A reload briefly pauses every tenant's export and can drop a few in-flight lines; an invalid file blocks reloads until fixed.</li>
+      <li>API keys live only in that Secret, never in tenant pod specs; restrict access to Secrets in the <code>cabotage</code> namespace. Each output retries 5 times with a <code>64M</code> filesystem buffer, so one dead destination does not block others.</li>
+      <li>Opted-in pods are excluded from shared Datadog log collection, not metrics/APM. Opting out restores shared collection on the next deploy.</li>
+    </ul>
+  </details>
+</div>
