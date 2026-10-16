@@ -53,7 +53,7 @@ class AccountChange:
 
 
 def _now_iso() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+    return datetime.datetime.now(datetime.UTC).isoformat()
 
 
 def _datastore() -> SQLAlchemyUserDatastore:

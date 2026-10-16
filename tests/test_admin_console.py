@@ -19,10 +19,18 @@ from cabotage.server.models.projects import (
 from tests.admin_passkey_helpers import SigningPasskey
 from tests.test_organization_requests import (
     _login,
-    admin_user as admin_user,
-    app as app,
-    client as client,
-    regular_user as regular_user,
+)
+from tests.test_organization_requests import (
+    admin_user as admin_user,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    app as app,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    client as client,  # noqa: PLC0414
+)
+from tests.test_organization_requests import (
+    regular_user as regular_user,  # noqa: PLC0414
 )
 
 
@@ -87,7 +95,7 @@ def inventory(app: Flask) -> Iterator[dict[str, tuple[InventoryRow, InventoryRow
     }
     for deleted in (False, True):
         slug = f"console-{marker}-{int(deleted)}"
-        deleted_at = datetime.datetime.now(datetime.timezone.utc) if deleted else None
+        deleted_at = datetime.datetime.now(datetime.UTC) if deleted else None
         org = Organization(name=slug, slug=slug, deleted_at=deleted_at)
         db.session.add(org)
         db.session.flush()

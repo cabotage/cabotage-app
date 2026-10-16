@@ -412,7 +412,6 @@ def create_app() -> Flask:
     from cabotage.server.registry_auth.views import registry_auth_blueprint
     from cabotage.server.user.views import user_blueprint
 
-
     app.register_blueprint(user_blueprint)
     app.register_blueprint(main_blueprint)
     app.register_blueprint(oidc_blueprint)

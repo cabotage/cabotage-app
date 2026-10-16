@@ -16,7 +16,9 @@ from cabotage.server.models.projects import (
     IngressHost,
     Project,
 )
-from tests.test_organization_requests import app as app
+from tests.test_organization_requests import (
+    app as app,  # noqa: PLC0414
+)
 
 
 @pytest.fixture
@@ -134,7 +136,7 @@ def test_instance_link_rejects_deleted_relationships(
         "project": selected.application.project,
         "organization": selected.application.project.organization,
     }
-    rows[deleted_relationship].deleted_at = datetime.datetime.now(datetime.timezone.utc)
+    rows[deleted_relationship].deleted_at = datetime.datetime.now(datetime.UTC)
     db.session.flush()
     with app.test_request_context("/admin/"):
         assert get_instance_application() is None

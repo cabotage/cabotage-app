@@ -750,7 +750,7 @@ def user_stats(user_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, UserStats]:
 
 def _user_query() -> Query[User]:
     # github_identity is a backref declared on GitHubIdentity.
-    github_identity = getattr(User, "github_identity")
+    github_identity = getattr(User, "github_identity")  # noqa: B009
     return (
         type_cast(Query[User], User.query)
         .outerjoin(GitHubIdentity, GitHubIdentity.user_id == User.id)
