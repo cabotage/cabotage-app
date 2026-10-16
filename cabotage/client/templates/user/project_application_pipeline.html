@@ -97,6 +97,11 @@ a.pipe-row:focus-visible { outline: 2px solid var(--color-primary); outline-offs
 .pipe-dot-ok { background: var(--pipe-ok); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-ok) 40%, transparent); }
 .pipe-dot-fail { background: var(--pipe-fail); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-fail) 40%, transparent); }
 .pipe-dot-run { background: var(--pipe-run); animation: pulse-dot 2s ease-in-out infinite; }
+.pipe-dot-stalled { background: var(--text-muted); }
+/* A first run in flight has no finished history yet: show only its live row. */
+#pipe-body[data-live-only] > :not([data-runs]),
+#pipe-body[data-live-only] #runs,
+#pipe-body[data-live-only] #runs-pager { display: none; }
 .pipe-fall { display: flex; gap: 2px; height: 0.5rem; }
 .pipe-fall > span { border-radius: 0.25rem; min-width: 2px; }
 .seg-image { background: var(--pipe-image); }
@@ -270,7 +275,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     </section>
 
     {# Recent runs #}
-    <div class="flex items-center justify-between mb-2">
+    <div class="flex items-center justify-between mb-2" data-runs>
       <h2 class="pipe-section-title">Recent runs</h2>
       <span class="pipe-legend pipe-legend-optional">
         <span><span class="pipe-swatch seg-image"></span>Image</span>
@@ -278,7 +283,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         <span><span class="pipe-swatch seg-deploy"></span>Deploy</span>
       </span>
     </div>
-    <section class="pipe-card mb-5" aria-label="Recent runs">
+    <section class="pipe-card mb-5" aria-label="Recent runs" data-runs>
       <div class="pipe-table">
         <div class="pipe-row pipe-row-head pipe-label" aria-hidden="true">
           <span>Status</span><span>Started</span><span>Commit</span><span>Trigger</span><span>Timeline</span>
@@ -343,7 +348,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     stage: 'image',
     stats: null,     // trailing range: drives the charts
     scoped: null,    // brushed window: drives the summary
-    byDay: {}
+    byDay: {},
+    empty: false     // trailing range has no finished runs
   };
   var charts = [];
   var activePlot = null;
@@ -734,11 +740,18 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     });
   }
 
+  function syncBody() {
+    var liveOnly = state.empty && !lane.hidden;
+    var body = document.getElementById('pipe-body');
+    document.getElementById('pipe-empty').hidden = !state.empty || liveOnly;
+    body.hidden = state.empty && !liveOnly;
+    body.toggleAttribute('data-live-only', liveOnly);
+  }
+
   function renderStats() {
     var d = state.stats;
-    var empty = !d.summary.runs && !d.duration_trend.length;
-    document.getElementById('pipe-empty').hidden = !empty;
-    document.getElementById('pipe-body').hidden = empty;
+    var empty = state.empty = !d.summary.runs && !d.duration_trend.length;
+    syncBody();
     root.querySelectorAll('[data-range-label]').forEach(function(el) { el.textContent = parseInt(state.range, 10) + ' days'; });
     if (empty) return;
     state.byDay = {};
@@ -894,6 +907,10 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       var failed = present.filter(function(st) { return run[st].status === 'error'; })[0] || last;
       return ['fail', STAGE_FAILED[failed], failed];
     }
+    if (run.status === 'stalled') {
+      var stalled = present.filter(function(st) { return run[st].status === 'stalled'; })[0] || last;
+      return ['stalled', 'Stalled', stalled];
+    }
     if (run.status === 'success') return ['ok', STAGE_DONE[last], last];
     // Between stages the next one is about to start; name what's coming.
     var active = run[last].status === 'running' ? last : STAGES[STAGES.indexOf(last) + 1] || last;
@@ -904,7 +921,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     if (!run || state.offset) return false;
     var now = serverNow();
     if (state.brush && state.brush.until < new Date(now).toISOString().slice(0, 10)) return false;
-    return run.status === 'running' || (now - Date.parse(run.finished)) / 1000 < LIVE_LINGER;
+    if (run.status === 'running' || run.status === 'stalled') return true;
+    return (now - Date.parse(run.finished)) / 1000 < LIVE_LINGER;
   }
 
   function renderLive() {
@@ -914,6 +932,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     var show = laneWanted(run) && !(row && row.dataset.status !== 'run');
     document.querySelectorAll('#runs a[data-id]').forEach(function(a) { a.hidden = show && a === row; });
     lane.hidden = !show;
+    syncBody();
     if (!show) { live.sig = null; tickLive(); return; }
 
     var sig = JSON.stringify(run);
@@ -956,18 +975,24 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     clearTimeout(live.tick);
     var run = live.run;
     if (lane.hidden || !run) return;
-    var now = serverNow(), secs = {}, total = 0;
+    var now = serverNow(), secs = {}, spans = {}, total = 0;
     STAGES.forEach(function(stage) {
       var s = run[stage];
       if (!s) return;
-      if (s.reused) {
+      // Reused images aren't part of this run; a stalled stage has no meaningful end.
+      if (s.reused || s.status === 'stalled') {
         live.els['seg-' + stage].style.flex = '0 0 0%';
         setText(live.els['dur-' + stage], '\u2014');
         return;
       }
-      secs[stage] = Math.max(0, ((s.finished ? Date.parse(s.finished) : now) - Date.parse(s.started)) / 1000);
+      spans[stage] = [Date.parse(s.started), s.finished ? Date.parse(s.finished) : now];
+      secs[stage] = Math.max(0, (spans[stage][1] - spans[stage][0]) / 1000);
       total += secs[stage];
     });
+    // Image and release builds can overlap; count shared time once, as finished runs do.
+    if (spans.image && spans.release) {
+      total -= Math.max(0, (Math.min(spans.image[1], spans.release[1]) - Math.max(spans.image[0], spans.release[0])) / 1000);
+    }
     // Share the listed runs' scale so the lane reads against them; outgrow it if slower.
     var scale = Math.max(runsScale || (state.stats && state.stats.summary.run_p95) || 0, total) || 1;
     var running = run.status === 'running';
@@ -975,7 +1000,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       live.els['seg-' + stage].style.flex = '0 0 ' + (secs[stage] / scale * 100).toFixed(2) + '%';
       setText(live.els['dur-' + stage], fmtTick(secs[stage], run[stage].status === 'running'));
     });
-    setText(live.els.total, fmtTick(total, running));
+    setText(live.els.total, run.status === 'stalled' ? '\u2014' : fmtTick(total, running));
     setText(live.els.rel, relTime(run.started));
     if (!running) return;
     if (reduceMotion.matches) live.tick = setTimeout(tickLive, 1000);
