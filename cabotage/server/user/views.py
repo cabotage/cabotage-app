@@ -6605,8 +6605,8 @@ def deployment_rollback(org_slug, project_slug, app_slug, deployment_id):
 
     deploy_metadata = plan.deploy_metadata(
         current_user.username,
-        keep_routing="keep_routing" in request.form,
-        keep_scale="keep_scale" in request.form,
+        keep_routing=request.form.get("keep_routing") == "y",
+        keep_scale=request.form.get("keep_scale") == "y",
     )
     deployment = _start_deployment(
         org,

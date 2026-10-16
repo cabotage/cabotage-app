@@ -221,7 +221,8 @@ def test_confirm_page_renders_plan(history):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert f"Roll back to v{v1.version}" in html
-    assert f"Reverts to v{v1.version} value" in html
+    assert "SECRET_KEY" in html  # changed since v1
+    assert "DEBUG" in html  # added after v1, removed by the rollback
     assert "Can't roll back" not in html
 
 
@@ -356,14 +357,17 @@ def test_plan_discloses_routing_and_stopped_processes(routed):
     assert plan.hosts_added == []
     assert plan.ingresses_changed == ["admin", "default"]
     assert plan.processes_stopped == [ProcessScale("worker", 3, "m1.xlarge")]
-    for text in ("b.example", "worker 3 × m1.xlarge", "keep_routing", "keep_scale"):
+    for text in ("b.example", "stops routing", "3 × m1.xlarge", "scale cleared"):
         assert text in html
+    assert 'name="keep_routing" value="y"' in html
+    assert 'name="keep_scale" value="y"' in html
 
 
 @pytest.mark.parametrize("keep", [False, True])
 def test_rollback_keeps_routing_and_scale_only_when_asked(routed, keep):
     client, _user, app_env, base, v1, v2, old, _live = routed
-    form = {"keep_routing": "y", "keep_scale": "y"} if keep else {}
+    choice = "y" if keep else "n"
+    form = {"keep_routing": choice, "keep_scale": choice}
 
     with (
         patch("cabotage.server.rollback._release_tag_exists", return_value=True),
