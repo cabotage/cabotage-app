@@ -108,7 +108,7 @@ class ActivityFactory(ModelFactory):
                 "activities",
             ),
             primaryjoin=(
-                "%s.id == Activity.transaction_id" % manager.transaction_cls.__name__
+                "{}.id == Activity.transaction_id".format(manager.transaction_cls.__name__)
             ),
             foreign_keys=[Activity.transaction_id],
         )
