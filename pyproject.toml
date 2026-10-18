@@ -95,14 +95,7 @@ ignore = [
     "RUF012",   # mutable-class-default
     "BLE001",   # blind-except
     "DTZ001",   # call-datetime-without-tzinfo
-    "EXE002",   # shebang-missing-executable-file
     "TRY002",   # raise-vanilla-class
-    "RUF015",   # unnecessary-iterable-allocation-for-first-element
-    "UP031",    # printf-string-formatting
-    "ISC004",   # implicit-string-concatenation-in-collection-literal
-    "FURB192",  # sorted-min-max
-    "DTZ005",   # call-datetime-now-without-tzinfo
-    "FURB162",  # fromisoformat-replace-z
 ]
 
 [tool.pyrefly]
