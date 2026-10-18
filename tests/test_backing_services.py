@@ -439,7 +439,7 @@ class TestResourceModels:
         types = {r.type for r in resources}
         assert types == {"postgres", "redis"}
 
-        pg_loaded = [r for r in resources if r.type == "postgres"][0]
+        pg_loaded = next(r for r in resources if r.type == "postgres")
         assert isinstance(pg_loaded, PostgresResource)
         assert pg_loaded.backup_strategy == "streaming"
 
@@ -1810,9 +1810,9 @@ class TestCeleryTasks:
             )
 
             patch_calls = mock_custom_api.patch_namespaced_custom_object.call_args_list
-            scheduled_backup_patch = [
+            scheduled_backup_patch = next(
                 call for call in patch_calls if call[0][3] == "scheduledbackups"
-            ][0]
+            )
             assert "immediate" not in scheduled_backup_patch[0][5]["spec"]
         finally:
             _reset_tenant_postgres_backups(app)
