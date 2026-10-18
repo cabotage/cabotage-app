@@ -1632,8 +1632,10 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
                 command=[
                     "sh",
                     "-c",
-                    ("test -f /var/run/secrets/vault/vault-token && "
-                    "test -f /var/run/secrets/vault/consul-token"),
+                    (
+                        "test -f /var/run/secrets/vault/vault-token && "
+                        "test -f /var/run/secrets/vault/consul-token"
+                    ),
                 ],
             ),
             period_seconds=1,
