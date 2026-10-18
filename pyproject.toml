@@ -92,11 +92,14 @@ exclude-newer = "1 week"
 # FIXME: temporary "fix" to update ruff without a huge diff
 # these require either an unsafe or manual fix
 ignore = [
-    "RUF012",   # mutable-class-default
     "BLE001",   # blind-except
     "DTZ001",   # call-datetime-without-tzinfo
     "TRY002",   # raise-vanilla-class
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"cabotage/server/config.py" = ["RUF012"]    # config class is never instantiated
+"cabotage/server/models/*" = ["RUF012"]     # ClassVar conflicts with DeclarativeBase typing
 
 [tool.pyrefly]
 preset = "all"
