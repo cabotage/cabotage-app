@@ -87,6 +87,7 @@ exclude_dirs = ["bin", "lib", "tests"]
 
 [tool.uv]
 exclude-newer = "1 week"
+exclude-newer-package = { certifi = "2026-10-19T00:00:00Z" }
 
 [tool.ruff.lint]
 # FIXME: temporary "fix" to update ruff without a huge diff
