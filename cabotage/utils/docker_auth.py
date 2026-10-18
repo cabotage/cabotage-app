@@ -30,7 +30,7 @@ from cabotage.server import vault
 
 
 def number_to_bytes(num: int, num_bytes: int) -> bytes:
-    padded_hex = "%0*x" % (2 * num_bytes, num)
+    padded_hex = "{:0{}x}".format(num, 2 * num_bytes)
     big_endian = binascii.a2b_hex(padded_hex.encode("ascii"))
     return big_endian
 
