@@ -239,9 +239,7 @@ def reap_pods() -> None:
             assume_not_none(pod.status, because=K8S_OBJECT_HAS_STATUS).start_time,
             because=K8S_POD_HAS_START_TIME,
         ))
-    lookback = datetime.datetime.now().replace(
-        tzinfo=datetime.UTC
-    ) - datetime.timedelta(days=7)
+    lookback = datetime.datetime.now(tz=datetime.UTC) - datetime.timedelta(days=7)
 
     # https://github.com/kubernetes/community/blob/a27eb0e0dbf559dd5c7be668d18709b5b6110631/contributors/devel/sig-architecture/api-conventions.md?plain=1#L231-L232
     # > all objects MUST have metadata as per api convention
