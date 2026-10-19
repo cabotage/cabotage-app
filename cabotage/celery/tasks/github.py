@@ -12,6 +12,7 @@ from cabotage.celery.tasks import (
 )
 from cabotage.celery.tasks.branch_deploy import (
     create_branch_deploy,
+    eligible_branch_deploy_app_envs,
     sync_branch_deploy,
     teardown_branch_deploy,
 )
@@ -1172,7 +1173,7 @@ def process_pull_request_hook(hook):
     base_ref = pr["base"]["ref"]
     hook.commit_sha = head_sha
 
-    projects = (
+    projects: list[Project] = (
         Project.query.join(Application)
         .filter(
             Application.github_app_installation_id == installation_id,
@@ -1191,18 +1192,16 @@ def process_pull_request_hook(hook):
         # Only process PRs that target the same branch as an app in the
         # preview base environment is configured to auto-deploy from.
         base_env = project.branch_deploy_base_environment
-        base_app_envs = (
-            ApplicationEnvironment.query.filter_by(
-                environment_id=base_env.id,
-            )
-            .join(Application)
-            .filter(
-                Application.github_app_installation_id == installation_id,
-                Application.github_repository == repository_name,
-                Application.deleted_at.is_(None),
-            )
-            .all()
-        )
+        if base_env is None:
+            # unreachable, it is filtered on the base environment id
+            continue
+        # Only apps from this PR's repository decide whether the PR qualifies.
+        base_app_envs = [
+            ae
+            for ae in eligible_branch_deploy_app_envs(base_env)
+            if ae.application.github_app_installation_id == installation_id
+            and ae.application.github_repository == repository_name
+        ]
         # Teardown doesn't depend on branch validation — always honor
         # closed events so stacked PRs closed out of order get cleaned up.
         if action == "closed":
@@ -1210,6 +1209,15 @@ def process_pull_request_hook(hook):
             continue
 
         auto_deploy_branches = {ae.effective_auto_deploy_branch for ae in base_app_envs}
+        if not auto_deploy_branches:
+            logger.info(
+                "skipping project %s: no applications from %s are eligible for "
+                "branch deploys in base environment %s",
+                project.slug,
+                repository_name,
+                base_env.slug,
+            )
+            continue
         if base_ref not in auto_deploy_branches:
             # base_ref is not a direct auto-deploy branch; check if it
             # chains to one via stacked PRs (e.g. frontend -> backend -> main).

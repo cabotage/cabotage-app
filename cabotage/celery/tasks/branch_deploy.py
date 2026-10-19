@@ -14,6 +14,7 @@ from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.projects import (
+    Application,
     ApplicationEnvironment,
     Configuration,
     Environment,
@@ -24,6 +25,7 @@ from cabotage.server.models.projects import (
     Ingress,
     IngressHost,
     IngressPath,
+    Project,
     activity_plugin,
 )
 from cabotage.server.models.resources import PostgresResource, RedisResource
@@ -80,6 +82,25 @@ def _clone_backing_services_for_branch_deploy(base_environment, environment):
         db.session.add(cloned)
 
     db.session.flush()
+
+
+def eligible_branch_deploy_app_envs(
+    base_env: Environment,
+) -> list[ApplicationEnvironment]:
+    """Return the base environment's app_envs that take part in branch deploys."""
+    app_envs: list[ApplicationEnvironment] = (
+        ApplicationEnvironment.query.filter_by(
+            environment_id=base_env.id,
+            deleted_at=None,
+        )
+        .join(Application)
+        .filter(
+            Application.deleted_at.is_(None),
+            Application.branch_deploys_enabled.is_(True),
+        )
+        .all()
+    )
+    return app_envs
 
 
 def _create_app_env_for_branch_deploy(
@@ -853,11 +874,20 @@ def maybe_update_pr_comment_for_app_env(app_env):
         update_pr_comment(env)
 
 
-def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref=None):
+def create_branch_deploy(
+    project: Project,
+    pr_number: int,
+    head_sha: str,
+    installation_id: int,
+    head_ref: str | None = None,
+) -> None:
     """Create an ephemeral environment for a PR and build images for all enrolled apps."""
     from cabotage.celery.tasks.resources import reconcile_backing_services
 
     base_env = project.branch_deploy_base_environment
+    if base_env is None:
+        # unreachable - the PR hook guarantees a base environment
+        return
     env_slug = f"pr-{pr_number}"
 
     existing = Environment.query.filter_by(project_id=project.id, slug=env_slug).first()
@@ -867,6 +897,8 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         )
         update_pr_comment(existing)
         return
+
+    base_app_envs = eligible_branch_deploy_app_envs(base_env)
 
     environment = Environment(
         project_id=project.id,
@@ -911,16 +943,9 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     db.session.add(activity)
 
     new_app_envs = []
-    for app in project.active_applications:
-        base_app_env = ApplicationEnvironment.query.filter_by(
-            application_id=app.id,
-            environment_id=base_env.id,
-            deleted_at=None,
-        ).first()
-        if not base_app_env:
-            continue
+    for base_app_env in base_app_envs:
         app_env = _create_app_env_for_branch_deploy(
-            app,
+            base_app_env.application,
             environment,
             base_env,
             auto_deploy_branch=head_ref,
