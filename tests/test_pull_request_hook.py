@@ -11,7 +11,9 @@ from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
+    Configuration,
     Environment,
+    EnvironmentConfigSubscription,
     EnvironmentConfiguration,
     Hook,
     Project,
@@ -1562,3 +1564,145 @@ class TestBranchDeployAppOptOut:
         # The stacked-PR check ran (no short-circuit) and found no eligible chain.
         mock_session.get.assert_called()
         mock_create.assert_not_called()
+
+    # -- backing services ---------------------------------------------------
+
+    @staticmethod
+    def _make_managed_redis(project, environment, slug):
+        """A base-env Redis plus the env config it manages (its connection URL)."""
+        redis = RedisResource(
+            environment_id=environment.id,
+            name=slug,
+            slug=slug,
+            service_version="8",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(redis)
+        db.session.flush()
+        redis_config = EnvironmentConfiguration(
+            project_id=project.id,
+            environment_id=environment.id,
+            resource_id=redis.id,
+            name=f"{slug.upper().replace('-', '_')}_URL",
+            value="rediss://base",
+            secret=True,
+            buildtime=False,
+        )
+        db.session.add(redis_config)
+        db.session.flush()
+        return redis_config
+
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    def test_only_resources_used_solely_by_opted_out_apps_are_skipped(
+        self,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """One base env, five resources, one per branch of the skip rule."""
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            branch_deploys_enabled=False,
+        )
+        web_env = _make_app_env(web, environment)
+        oauth_env = _make_app_env(oauth, environment)
+
+        # Skip only if someone uses it and none of them are eligible.
+        oauth_cache = self._make_managed_redis(
+            branch_deploy_project, environment, "oauth-cache"
+        )
+        db.session.add(
+            EnvironmentConfigSubscription(
+                application_environment_id=oauth_env.id,
+                environment_configuration_id=oauth_cache.id,
+            )
+        )
+
+        # An app_env uses the resource by subscribing to one of its managed
+        # configs, or by referencing one via ${shared.NAME} in its own config.
+        web_cache = self._make_managed_redis(
+            branch_deploy_project, environment, "web-cache"
+        )
+        db.session.add(
+            EnvironmentConfigSubscription(
+                application_environment_id=oauth_env.id,
+                environment_configuration_id=web_cache.id,
+            )
+        )
+        db.session.add(
+            Configuration(
+                application_id=web.id,
+                application_environment_id=web_env.id,
+                name="REDIS_DSN",
+                value="${shared.WEB_CACHE_URL}",
+                secret=False,
+            )
+        )
+
+        # Unused resources are cloned.
+        self._make_managed_redis(branch_deploy_project, environment, "unused-cache")
+
+        # Nothing can use a resource with no managed configs, clone as before.
+        db.session.add(
+            RedisResource(
+                environment_id=environment.id,
+                name="bare-cache",
+                slug="bare-cache",
+                service_version="8",
+                size_class="cache.small",
+                storage_size=1,
+            )
+        )
+
+        # A plain env config that references the resource counts as a use by
+        # everyone, because any app may subscribe to it.
+        env_cache = self._make_managed_redis(
+            branch_deploy_project, environment, "env-cache"
+        )
+        db.session.add(
+            EnvironmentConfigSubscription(
+                application_environment_id=oauth_env.id,
+                environment_configuration_id=env_cache.id,
+            )
+        )
+        db.session.add(
+            EnvironmentConfiguration(
+                project_id=branch_deploy_project.id,
+                environment_id=environment.id,
+                name="SHARED_REDIS_DSN",
+                value="${shared.ENV_CACHE_URL}",
+                secret=False,
+                buildtime=False,
+            )
+        )
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        pr_env = Environment.query.filter_by(
+            project_id=branch_deploy_project.id, slug="pr-42"
+        ).one()
+        cloned = {
+            r.slug for r in RedisResource.query.filter_by(environment_id=pr_env.id)
+        }
+
+        # oauth-cache is the only one skipped.
+        assert cloned == {"web-cache", "unused-cache", "bare-cache", "env-cache"}
