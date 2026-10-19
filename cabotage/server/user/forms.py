@@ -429,6 +429,14 @@ class EditApplicationSettingsForm(FlaskForm):
         "Watch Paths",
         description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
     )
+    branch_deploys_enabled = BooleanField(
+        "Include in Branch Deploys",
+        description=(
+            "Clone this app into pull request preview environments. "
+            "Turning this off does not remove the app from PR environments "
+            "that already exist."
+        ),
+    )
     github_app_installation_id = SelectField(
         "GitHub App Installation",
         [Optional()],
