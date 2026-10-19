@@ -587,6 +587,12 @@ class Application(Model, Timestamp):
         default=False,
     )
 
+    branch_deploys_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+    )
+
     @property
     def default_app_env(self):
         """Return the implicit/default ApplicationEnvironment for this app."""
