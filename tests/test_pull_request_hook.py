@@ -1426,3 +1426,139 @@ class TestStackedPullRequestBranchDeploy:
             mock_session.get.assert_not_called()
             # But create_branch_deploy should still be called
             mock_create.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Per-app opt-out (Application.branch_deploys_enabled)
+# ---------------------------------------------------------------------------
+
+
+class TestBranchDeployAppOptOut:
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    def test_opted_out_app_is_not_cloned(
+        self,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            branch_deploys_enabled=False,
+        )
+        _make_app_env(web, environment)
+        _make_app_env(oauth, environment)
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(_make_pr_hook(installation_id, action="opened"))
+
+        pr_env = Environment.query.filter_by(
+            project_id=branch_deploy_project.id, slug="pr-42"
+        ).one()
+        cloned = sorted(
+            ae.application.slug for ae in pr_env.active_application_environments
+        )
+        assert cloned == ["wiki-web"]
+        built = sorted(
+            ae.application.slug for ae in mock_build_images.call_args.args[0]
+        )
+        assert built == ["wiki-web"]
+        mock_precreate.assert_called_once_with(pr_env)
+        mock_update_comment.assert_called_once_with(pr_env)
+
+    @pytest.mark.parametrize(
+        ("app_kwargs", "app_env_kwargs"),
+        [
+            pytest.param({"branch_deploys_enabled": False}, {}, id="opted-out"),
+            pytest.param(
+                {},
+                {"deleted_at": datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)},
+                id="soft-deleted",
+            ),
+        ],
+    )
+    @patch("cabotage.celery.tasks.github.create_branch_deploy")
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_ineligible_app_env_does_not_qualify_pr(
+        self,
+        mock_gh_app,
+        mock_session,
+        mock_create,
+        app_kwargs,
+        app_env_kwargs,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """The only app_env in the base env is ineligible, so nothing qualifies."""
+        application = _make_app(branch_deploy_project, installation_id, **app_kwargs)
+        _make_app_env(application, environment, **app_env_kwargs)
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(_make_pr_hook(installation_id, action="opened"))
+
+        mock_create.assert_not_called()
+        mock_session.post.assert_not_called()
+        mock_session.get.assert_not_called()
+        assert (
+            Environment.query.filter_by(
+                project_id=branch_deploy_project.id, slug="pr-42"
+            ).first()
+            is None
+        )
+
+    @patch("cabotage.celery.tasks.github.create_branch_deploy")
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_opted_out_app_branch_does_not_qualify_pr(
+        self,
+        mock_gh_app,
+        mock_session,
+        mock_create,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """An opted-out app's auto-deploy branch must not make a PR qualify."""
+        mock_gh_app.bearer_token = "bt"
+        access_resp = MagicMock()
+        access_resp.json.return_value = {"token": "fake-token"}
+        mock_session.post.return_value = access_resp
+        pulls_resp = MagicMock()
+        pulls_resp.status_code = 200
+        pulls_resp.json.return_value = []
+        mock_session.get.return_value = pulls_resp
+
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            auto_deploy_branch="release",
+            branch_deploys_enabled=False,
+        )
+        _make_app_env(web, environment)
+        _make_app_env(oauth, environment)
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(
+            _make_pr_hook(installation_id, action="opened", base_ref="release")
+        )
+
+        # The stacked-PR check ran (no short-circuit) and found no eligible chain.
+        mock_session.get.assert_called()
+        mock_create.assert_not_called()
