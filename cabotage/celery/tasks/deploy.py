@@ -1826,6 +1826,8 @@ def render_process_container(
         args=[
             "envconsul",
             "-kill-signal=SIGTERM",
+            # The supervisor's kill signal does not set the child's kill signal.
+            "-exec-kill-signal=SIGTERM",
             f"-config=/etc/cabotage/envconsul-{process_name}.hcl",
         ],
         resources=kubernetes.client.V1ResourceRequirements(
