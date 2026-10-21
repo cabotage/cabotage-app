@@ -1751,6 +1751,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             "--timed-reload=300s",
             "--shutdown-timeout=10s",
             "--connect-timeout=10s",
+            "--max-concurrent-conns=400",
             "--disable-authentication",
             "--quiet=handshake-errs",
             "--quiet=conns",
