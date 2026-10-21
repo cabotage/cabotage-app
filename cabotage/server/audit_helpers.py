@@ -64,6 +64,7 @@ _PROJECT_DIFF_FIELDS = {
     "name": "name",
     "environments_enabled": "environments",
     "branch_deploys_enabled": "branch deploys",
+    "branch_deploy_fallback_to_base": "fall back to base environment",
 }
 
 _INGRESS_DIFF_FIELDS = {

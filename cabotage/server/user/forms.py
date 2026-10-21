@@ -218,6 +218,15 @@ class EditProjectSettingsForm(FlaskForm):
         [],
         description="Automatically create ephemeral environments for pull requests.",
     )
+    branch_deploy_fallback_to_base = BooleanField(
+        "Fall Back to Base Environment",
+        [],
+        description=(
+            "Let previews resolve ${app.url} and ${app.host} references to apps "
+            "that are not included in branch deploys against this project's base "
+            "environment. The preview then talks to the real service."
+        ),
+    )
     branch_deploy_base_environment_id = SelectField(
         "Base Environment",
         [Optional()],
