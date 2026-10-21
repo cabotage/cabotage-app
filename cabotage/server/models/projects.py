@@ -140,6 +140,9 @@ class Project(Model, Timestamp):
     branch_deploys_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    branch_deploy_fallback_to_base: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     branch_deploy_base_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("project_environments.id"),
