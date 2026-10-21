@@ -72,11 +72,26 @@ def resolve_template_variables(
 
             sibling_app_env = siblings.get(app_slug)
             if sibling_app_env is None:
-                raise TemplateResolutionError(
-                    f"Referenced application '{app_slug}' not found in project "
-                    f"'{application_environment.application.project.slug}' "
-                    f"environment '{application_environment.environment.slug}'"
+                base_app_env = _base_environment_app_env(
+                    application_environment, app_slug
                 )
+                if base_app_env is None:
+                    raise TemplateResolutionError(
+                        f"Referenced application '{app_slug}' not found in project "
+                        f"'{application_environment.application.project.slug}' "
+                        f"environment '{application_environment.environment.slug}'"
+                    )
+                if prop in ("svc", "hostname", "port"):
+                    raise TemplateResolutionError(
+                        f"Referenced application '{app_slug}' is not in branch "
+                        f"deploy environment "
+                        f"'{application_environment.environment.slug}'; internal "
+                        f"service references (.svc/.hostname/.port) cannot cross "
+                        f"namespaces, use .url or .host"
+                    )
+                # Public ingress addresses can be used from any namespace, so
+                # resolve them against the app's base environment.
+                return _resolve_ingress(base_app_env, name, app_slug, prop)
 
             if prop in ("svc", "hostname", "port"):
                 return _resolve_tcp_service(sibling_app_env, name, app_slug, prop)
@@ -106,6 +121,30 @@ def _get_sibling_app_envs(
         .all()
     )
     return {ae.application.slug: ae for ae in sibling_app_envs}
+
+
+def _base_environment_app_env(
+    app_env: ApplicationEnvironment, app_slug: str
+) -> ApplicationEnvironment | None:
+    """Return the referenced app's app_env in the base environment."""
+    from cabotage.server.models.projects import Application, ApplicationEnvironment
+
+    base_environment_id = app_env.environment.forked_from_environment_id
+    if base_environment_id is None:
+        return None
+
+    base_app_env: ApplicationEnvironment | None = (
+        ApplicationEnvironment.query.join(ApplicationEnvironment.application)
+        .filter(
+            ApplicationEnvironment.environment_id == base_environment_id,
+            ApplicationEnvironment.deleted_at.is_(None),
+            Application.project_id == app_env.application.project_id,
+            Application.slug == app_slug,
+            Application.deleted_at.is_(None),
+        )
+        .first()
+    )
+    return base_app_env
 
 
 def _resolve_ingress(
