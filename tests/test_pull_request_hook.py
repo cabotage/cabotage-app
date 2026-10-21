@@ -1706,3 +1706,49 @@ class TestBranchDeployAppOptOut:
 
         # oauth-cache is the only one skipped.
         assert cloned == {"web-cache", "unused-cache", "bare-cache", "env-cache"}
+
+    # -- existing previews --------------------------------------------------
+
+    @patch("cabotage.celery.tasks.github.sync_branch_deploy")
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_push_to_existing_preview_syncs_even_when_app_opted_out(
+        self,
+        mock_gh_app,
+        mock_session,
+        mock_sync,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """The flag decides whether a preview is created, not whether it syncs."""
+        application = _make_app(
+            branch_deploy_project, installation_id, branch_deploys_enabled=False
+        )
+        _make_app_env(application, environment)
+        db.session.add(
+            Environment(
+                project_id=branch_deploy_project.id,
+                name="PR #42",
+                slug="pr-42",
+                ephemeral=True,
+                uses_environment_namespace=True,
+                forked_from_environment_id=environment.id,
+            )
+        )
+        db.session.flush()
+        hook = _make_pr_hook(installation_id, action="synchronize")
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(hook)
+
+        mock_sync.assert_called_once_with(
+            branch_deploy_project,
+            42,
+            hook.payload["pull_request"]["head"]["sha"],
+            installation_id,
+        )
+        mock_session.post.assert_not_called()
+        mock_session.get.assert_not_called()
