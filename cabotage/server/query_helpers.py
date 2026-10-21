@@ -17,15 +17,14 @@ from cabotage.server.models.projects import (
     Release,
 )
 
-
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from cabotage._types.query_helpers import (
-        IngressItem,
-        ConfigItem,
-        ConfigDiff,
         ChangeDetails,
+        ConfigDiff,
+        ConfigItem,
+        IngressItem,
     )
     from cabotage.utils.procfile import Procfile
 
@@ -58,10 +57,10 @@ def compute_app_status_sets(app_ids):
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
             or_(
-                Deployment.complete == True,  # noqa: E712
+                Deployment.complete == True,
                 and_(
-                    Deployment.complete == False,  # noqa: E712
-                    Deployment.error == False,  # noqa: E712
+                    Deployment.complete == False,
+                    Deployment.error == False,
                 ),
             ),
         )
@@ -79,7 +78,7 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.error == True,  # noqa: E712
+            Image.error == True,
         )
         .group_by(Image.application_id)
         .subquery()
@@ -94,7 +93,7 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.built == True,  # noqa: E712
+            Image.built == True,
         )
         .group_by(Image.application_id)
         .subquery()
@@ -118,8 +117,8 @@ def compute_app_status_sets(app_ids):
             Image.application_id.in_(app_ids),
             ApplicationEnvironment.deleted_at.is_(None),
             ApplicationEnvironment.k8s_identifier.is_(None),
-            Image.built == False,  # noqa: E712
-            Image.error == False,  # noqa: E712
+            Image.built == False,
+            Image.error == False,
         )
         .distinct()
     }
@@ -194,7 +193,7 @@ def compute_ae_status_sets(ae_ids):
         )
         .filter(
             Deployment.application_environment_id.in_(ae_ids),
-            Deployment.complete == True,  # noqa: E712
+            Deployment.complete == True,
         )
         .group_by(Deployment.application_environment_id)
         .all()
@@ -207,18 +206,18 @@ def compute_ae_status_sets(ae_ids):
     image_stats = (
         db.session.query(
             Image.application_environment_id,
-            func.max(
-                case((Image.error == True, Image.version), else_=None)  # noqa: E712
-            ).label("max_error_v"),
-            func.max(
-                case((Image.built == True, Image.version), else_=None)  # noqa: E712
-            ).label("max_built_v"),
+            func.max(case((Image.error == True, Image.version), else_=None)).label(
+                "max_error_v"
+            ),
+            func.max(case((Image.built == True, Image.version), else_=None)).label(
+                "max_built_v"
+            ),
             func.count(
                 case(
                     (
                         and_(
-                            Image.built == False,  # noqa: E712
-                            Image.error == False,  # noqa: E712
+                            Image.built == False,
+                            Image.error == False,
                         ),
                         1,
                     )
@@ -549,9 +548,7 @@ def split_image_processes(
     service_procs = {
         k: v
         for k, v in all_procs.items()
-        if not (
-            k.startswith("release") or k.startswith("postdeploy") or k.startswith("job")
-        )
+        if not (k.startswith(("release", "postdeploy", "job")))
     }
     release_cmds = {k: v for k, v in all_procs.items() if k.startswith("release")}
     postdeploy_cmds = {k: v for k, v in all_procs.items() if k.startswith("postdeploy")}

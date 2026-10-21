@@ -3,18 +3,20 @@ from typing import TYPE_CHECKING
 
 import kubernetes.client
 from celery import shared_task
-from kubernetes.client.exceptions import ApiException
-
 from flask import current_app
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import (
     db,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.auth import TailscaleIntegration
 
 if TYPE_CHECKING:
     from kubernetes.client import CoreV1Api
+
     from cabotage.server.models.auth import Organization
 
 log = logging.getLogger(__name__)
@@ -264,7 +266,7 @@ def reconcile_tailscale_integration_states():
                 integration.operator_state = "missing"
                 db.session.commit()
             continue
-        except Exception:  # nosec B112 — don't let one org's error stop the reconcile loop
+        except Exception:  # nosec B112 — don't let one org's error stop the reconcile loop # noqa: S112
             continue
 
         status = crd.get("status", {}).get("reconcile_operator", {})

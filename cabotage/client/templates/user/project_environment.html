@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, page_header, application_card, service_card, danger_zone_delete, env_tab_nav %}
+{% from "_macros.html" import icon, resource_path, page_header, application_card, service_card, danger_zone_delete, env_tab_nav, info_popup, info_popup_row %}
 
 {% block title %}
   {{ environment.name }} - {{ project.name }} - Cabotage
@@ -225,33 +225,17 @@
               {% if config.buildtime %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
-                  <div class="info-popup">
-                    <div class="info-popup-header">
-                      {{ icon('box', 'w-3 h-3 info-popup-header-icon') }}
-                      <span class="info-popup-header-text">Build-time Variable</span>
-                    </div>
-                    <div class="info-popup-body">
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">Injected during <strong>docker build</strong> as a build arg. Available only at image build time — not at runtime.</span>
-                      </div>
-                    </div>
-                  </div>
+                  {% call info_popup('Build-time Variable', 'box') %}
+                    {% call info_popup_row() %}Injected during <strong>docker build</strong> as a build arg. Available only at image build time — not at runtime.{% endcall %}
+                  {% endcall %}
                 </div>
               {% endif %}
               {% if config.secret %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
-                  <div class="info-popup">
-                    <div class="info-popup-header">
-                      {{ icon('shield', 'w-3 h-3 info-popup-header-icon') }}
-                      <span class="info-popup-header-text">Secret Variable</span>
-                    </div>
-                    <div class="info-popup-body">
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">Stored encrypted and delivered via <strong>Vault</strong> at runtime. The value is never displayed after being set.</span>
-                      </div>
-                    </div>
-                  </div>
+                  {% call info_popup('Secret Variable', 'shield') %}
+                    {% call info_popup_row() %}Stored encrypted and delivered via <strong>Vault</strong> at runtime. The value is never displayed after being set.{% endcall %}
+                  {% endcall %}
                 </div>
               {% endif %}
               {% if config.subscriptions|length > 0 %}

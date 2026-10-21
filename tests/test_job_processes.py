@@ -234,11 +234,13 @@ class TestRenderCronjob:
         }
         release = _make_release(job_processes=job_procs)
 
-        with patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"):
-            with pytest.raises(deploy_module.DeployError, match="SCHEDULE"):
-                deploy_module.render_cronjob(
-                    "test-ns", release, "sa-name", "job-cleanup", "deploy-123"
-                )
+        with (
+            patch(f"{_DEPLOY_MODULE}.k8s_resource_prefix", return_value="proj-app"),
+            pytest.raises(deploy_module.DeployError, match="SCHEDULE"),
+        ):
+            deploy_module.render_cronjob(
+                "test-ns", release, "sa-name", "job-cleanup", "deploy-123"
+            )
 
     def test_cronjob_history_limit_matches_schedule(self, mock_app):
         job_procs = {

@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path, info_popup, info_popup_row %}
 
 {% block css %}
 <style>
@@ -718,33 +718,12 @@
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
             <div class="info-popup-anchor">
               {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
-              <div class="info-popup">
-                <div class="info-popup-header">
-                  {{ icon('terminal', 'w-3 h-3 info-popup-header-icon') }}
-                  <span class="info-popup-header-text">Procfile Processes</span>
-                </div>
-                <div class="info-popup-body">
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">web</code>
-                    <span class="info-popup-desc">Receives HTTP traffic from the load balancer. Scalable.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">worker</code>
-                    <span class="info-popup-desc">Runs background jobs and queue consumers. Scalable.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">release</code>
-                    <span class="info-popup-desc">Runs once per release build. Use for DB migrations.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">postdeploy</code>
-                    <span class="info-popup-desc">Runs once after each deploy. For cache warming, etc.</span>
-                  </div>
-                </div>
-                <div class="info-popup-footer">
-                  <a href="{{ url_for('user.guide') }}#processes" class="info-popup-link">Learn more in the Guide →</a>
-                </div>
-              </div>
+              {% call info_popup('Procfile Processes', 'terminal', link=url_for('user.guide') ~ '#processes') %}
+                {% call info_popup_row('web') %}Receives HTTP traffic from the load balancer. Scalable.{% endcall %}
+                {% call info_popup_row('worker') %}Runs background jobs and queue consumers. Scalable.{% endcall %}
+                {% call info_popup_row('release') %}Runs once per release build. Use for DB migrations.{% endcall %}
+                {% call info_popup_row('postdeploy') %}Runs once after each deploy. For cache warming, etc.{% endcall %}
+              {% endcall %}
             </div>
           </div>
           <div class="dropdown dropdown-end dropdown-hover">
@@ -833,29 +812,11 @@
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Jobs</h2>
             <div class="info-popup-anchor">
               {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
-              <div class="info-popup">
-                <div class="info-popup-header">
-                  {{ icon('clock', 'w-3 h-3 info-popup-header-icon') }}
-                  <span class="info-popup-header-text">Scheduled Jobs</span>
-                </div>
-                <div class="info-popup-body">
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">job-*</code>
-                    <span class="info-popup-desc">Runs on a cron schedule as a Kubernetes CronJob. Define with a <code>job-</code> prefix in your Procfile.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">SCHEDULE</code>
-                    <span class="info-popup-desc">Required per-process env var, set inline in the Procfile (e.g. <code>env SCHEDULE="0 */6 * * *"</code>).</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">Controls</code>
-                    <span class="info-popup-desc">Use the toggle to suspend/resume and the dropdown to change pod size. Overlapping runs are forbidden; no retries on failure; 1-hour timeout.</span>
-                  </div>
-                </div>
-                <div class="info-popup-footer">
-                  <a href="{{ url_for('user.guide') }}#jobs" class="info-popup-link">Learn more in the Guide →</a>
-                </div>
-              </div>
+              {% call info_popup('Scheduled Jobs', 'clock', link=url_for('user.guide') ~ '#jobs') %}
+                {% call info_popup_row('job-*') %}Runs on a cron schedule as a Kubernetes CronJob. Define with a <code>job-</code> prefix in your Procfile.{% endcall %}
+                {% call info_popup_row('SCHEDULE') %}Required per-process env var, set inline in the Procfile (e.g. <code>env SCHEDULE="0 */6 * * *"</code>).{% endcall %}
+                {% call info_popup_row('Controls') %}Use the toggle to suspend/resume and the dropdown to change pod size. Overlapping runs are forbidden; no retries on failure; 1-hour timeout.{% endcall %}
+              {% endcall %}
             </div>
           </div>
           <div class="process-grid">
@@ -973,7 +934,7 @@
       </div>
     {% endif %}
 
-    {% set has_any_activity = images[:3]|length > 0 or releases[:3]|length > 0 or deployments[:3]|length > 0 %}
+    {% set has_any_activity = images or releases or deployments %}
     {% set has_live_status = has_releases and latest_release.built %}
 
     <div class="mb-4">
@@ -1060,9 +1021,9 @@
                     {{ icon('image', 'w-3 h-3 text-base-content/30') }}
                     <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Builds</span>
                   </div>
-                  {% for img in images[:3] %}
+                  {% for img in images %}
                     <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=img.id) }}"
-                       class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded">
+                       class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded"{% if loop.index > 3 %} hidden{% endif %}>
                       {% if img.built %}
                         <span class="status-dot status-dot-success flex-shrink-0"
                               style="width:5px;
@@ -1093,9 +1054,9 @@
                 {{ icon('layers', 'w-3 h-3 text-base-content/30') }}
                 <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Releases</span>
               </div>
-              {% for rel in releases[:3] %}
+              {% for rel in releases %}
                 <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=rel.id) }}"
-                   class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded">
+                   class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded"{% if loop.index > 3 %} hidden{% endif %}>
                   {% if rel.built %}
                     <span class="status-dot status-dot-success flex-shrink-0"
                           style="width:5px;
@@ -1126,9 +1087,9 @@
             {{ icon('deploy', 'w-3 h-3 text-base-content/30') }}
             <span class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Deploys</span>
           </div>
-          {% for dep in deployments[:3] %}
+          {% for dep in deployments %}
             <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=dep.id) }}"
-               class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded">
+               class="activity-row flex items-center gap-1.5 py-1 px-1.5 -mx-1.5 rounded"{% if loop.index > 3 %} hidden{% endif %}>
               {% if dep.complete %}
                 <span class="status-dot status-dot-success flex-shrink-0"
                       style="width:5px;
@@ -1426,6 +1387,54 @@
 
 {% block js %}
   <script>
+  // Fill the space beside live status without expanding stacked activity lists.
+  (function() {
+    var live = document.querySelector('[data-live-status]');
+    var activity = document.querySelector('[data-live-activity]');
+    var columns = activity && activity.querySelector('.activity-columns');
+    if (!live || !columns) return;
+    var groups = Array.from(columns.children).map(function(column) {
+      return { column: column, rows: Array.from(column.querySelectorAll('.activity-row')) };
+    });
+
+    function fitActivity() {
+      var sideBySide = getComputedStyle(live.parentElement).gridTemplateColumns.split(' ').length === 2 &&
+        getComputedStyle(columns).gridTemplateColumns.split(' ').length === 3;
+      groups.forEach(function(group) {
+        group.rows.forEach(function(row, index) {
+          row.hidden = !sideBySide && index >= 3;
+        });
+      });
+      if (!sideBySide) return;
+
+      var top = activity.getBoundingClientRect().top;
+      var border = parseFloat(getComputedStyle(activity.firstElementChild).borderBottomWidth);
+      var height = live.getBoundingClientRect().height;
+      var measurements = groups.map(function(group) {
+        var padding = parseFloat(getComputedStyle(group.column).paddingBottom);
+        var bottoms = group.rows.map(function(row) {
+          return row.getBoundingClientRect().bottom - top + padding + border;
+        });
+        if (bottoms.length) height = Math.max(height, bottoms[Math.min(3, bottoms.length) - 1]);
+        return bottoms;
+      });
+      groups.forEach(function(group, groupIndex) {
+        group.rows.forEach(function(row, index) {
+          row.hidden = index >= 3 && measurements[groupIndex][index] > height;
+        });
+      });
+    }
+
+    fitActivity();
+    if (window.ResizeObserver) {
+      var observer = new ResizeObserver(fitActivity);
+      observer.observe(live);
+      observer.observe(activity);
+    }
+    window.addEventListener('resize', fitActivity);
+    if (document.fonts) document.fonts.ready.then(fitActivity);
+  })();
+
   // Live stats polling
   (function() {
     var card = document.querySelector('[data-live-stats-url]');

@@ -1,8 +1,7 @@
 from typing import TYPE_CHECKING
 
-
 if TYPE_CHECKING:
-    from typing import TypedDict, Literal
+    from typing import Literal, TypedDict
 
     class JWK(TypedDict):
         kty: Literal["EC"]

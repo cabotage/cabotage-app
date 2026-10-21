@@ -10,9 +10,8 @@ from flask_security import hash_password
 from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import db
-from cabotage.server.models.auth import User
+from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -29,7 +28,6 @@ from cabotage.server.models.resources import (
 )
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -368,7 +366,7 @@ class TestResourceModels:
 
         assert len(environment.active_resources) == 1
 
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.flush()
 
         assert len(environment.active_resources) == 0
@@ -441,7 +439,7 @@ class TestResourceModels:
         types = {r.type for r in resources}
         assert types == {"postgres", "redis"}
 
-        pg_loaded = [r for r in resources if r.type == "postgres"][0]
+        pg_loaded = next(r for r in resources if r.type == "postgres")
         assert isinstance(pg_loaded, PostgresResource)
         assert pg_loaded.backup_strategy == "streaming"
 
@@ -1250,6 +1248,7 @@ class TestCeleryTasks:
     def _mock_k8s_apis(self):
         """Set up mock K8s APIs that return 404 for all GETs (fresh creates)."""
         import base64
+
         from kubernetes.client.exceptions import ApiException
 
         mock_custom_api = MagicMock()
@@ -1811,9 +1810,9 @@ class TestCeleryTasks:
             )
 
             patch_calls = mock_custom_api.patch_namespaced_custom_object.call_args_list
-            scheduled_backup_patch = [
+            scheduled_backup_patch = next(
                 call for call in patch_calls if call[0][3] == "scheduledbackups"
-            ][0]
+            )
             assert "immediate" not in scheduled_backup_patch[0][5]["spec"]
         finally:
             _reset_tenant_postgres_backups(app)
@@ -2486,7 +2485,7 @@ class TestCeleryTasks:
             storage_size=5,
             backup_strategy="daily",
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 
@@ -2511,7 +2510,7 @@ class TestCeleryTasks:
             size_class="cache.small",
             storage_size=1,
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 
@@ -2538,7 +2537,7 @@ class TestCeleryTasks:
             storage_size=1,
             provisioning_status="deleted",
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 
@@ -2817,7 +2816,7 @@ class TestCeleryTasks:
             storage_size=1,
             backup_strategy="none",
         )
-        r.deleted_at = datetime.datetime.now(datetime.timezone.utc)
+        r.deleted_at = datetime.datetime.now(datetime.UTC)
         db.session.add(r)
         db.session.commit()
 

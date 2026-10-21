@@ -1,8 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Column, String, Boolean, Integer, DateTime
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, String
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Mapped, mapped_column
 
 from cabotage.server import Model
 

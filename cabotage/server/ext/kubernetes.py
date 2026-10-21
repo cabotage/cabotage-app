@@ -1,15 +1,14 @@
 from typing import TYPE_CHECKING, cast
 
-from flask import g
-
 import kubernetes.config
+from flask import g
 from kubernetes.client.api_client import ApiClient
 
 if TYPE_CHECKING:
     from flask import Flask
 
 
-class Kubernetes(object):
+class Kubernetes:
     def __init__(self, app: Flask | None = None):
         self.app = app
         if app is not None:

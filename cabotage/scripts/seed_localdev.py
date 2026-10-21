@@ -9,6 +9,9 @@ realistic data so the UI is fully populated:
 """
 
 import datetime
+import sys
+
+from sqlalchemy import update
 
 from cabotage.server import create_app, db
 from cabotage.server.models import Organization, User
@@ -172,6 +175,25 @@ DOCS_PROCESSES = {
     "web": {"cmd": "nginx -g 'daemon off;'", "env": []},
 }
 
+# (age_days, image_secs, release_secs, deploy_secs, deploy_failed)
+WEB_PROD_PIPELINE_RUNS = [
+    (85, 72, 14, 32, False),
+    (75, 68, 12, 28, False),
+    (65, 58, 11, 25, True),
+    (55, 61, 13, 30, False),
+    (45, 55, 10, 22, False),
+    (38, 50, 9, 27, False),
+    (30, 48, 11, 24, False),
+    (22, 45, 8, 20, False),
+    (18, 52, 12, 26, True),
+    (14, 42, 9, 21, False),
+    (10, 40, 8, 19, False),
+    (7, 44, 10, 23, False),
+    (4, 39, 7, 18, False),
+    (2, 41, 9, 20, False),
+    (0.25, 38, 8, 17, False),
+]
+
 
 def seed():
     app = create_app()
@@ -180,7 +202,7 @@ def seed():
         print(
             "Warning: this command should only be run in development/test environments"
         )
-        exit(1)
+        sys.exit(1)
 
     with app.app_context():
         # ── Run create_admin logic first ──────────────────────────────
@@ -209,7 +231,7 @@ def seed():
             org = Organization.query.filter_by(slug="acme-corp").first()
             if org is None:
                 print("ERROR: admin exists but Acme Corp org not found!")
-                exit(1)
+                sys.exit(1)
 
         # ── Extra dev user ────────────────────────────────────────────
         dev_user = User.query.filter_by(username="dev").first()
@@ -339,36 +361,20 @@ def seed():
         else:
             configs_web_staging = list(web_staging.configurations)
 
-        # Images for Web/Production (3 images)
-        if web_prod.images.count() == 0:
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES)
-            _make_image(app_web, web_prod, build_ref="main", processes=WEB_PROCESSES)
-            latest_web_prod_img = _make_image(
+        # Pipeline runs for Web/Production (backdated after commit)
+        new_runs = WEB_PROD_PIPELINE_RUNS if web_prod.images.count() == 0 else []
+        pipeline_runs = []
+        for age_days, *durations, failed in new_runs:
+            img = _make_image(
                 app_web, web_prod, build_ref="main", processes=WEB_PROCESSES
             )
-        else:
-            latest_web_prod_img = (
-                web_prod.images.filter_by(built=True)
-                .order_by(Image.version.desc())
-                .first()
-            )
-
-        # Releases for Web/Production (2 releases)
-        if web_prod.releases.count() == 0:
-            _make_release(app_web, web_prod, latest_web_prod_img, configs_web_prod)
-            latest_web_prod_rel = _make_release(
-                app_web, web_prod, latest_web_prod_img, configs_web_prod
-            )
-        else:
-            latest_web_prod_rel = (
-                web_prod.releases.filter_by(built=True)
-                .order_by(Release.version.desc())
-                .first()
-            )
-
-        # Deployment for Web/Production
-        if web_prod.deployments.count() == 0:
-            _make_deployment(app_web, web_prod, latest_web_prod_rel, complete=True)
+            rel = _make_release(app_web, web_prod, img, configs_web_prod)
+            dep = _make_deployment(app_web, web_prod, rel, complete=not failed)
+            dep.deploy_metadata = {"auto_deploy": True}
+            if failed:
+                dep.error = True
+                dep.error_detail = "Readiness probe failed"
+            pipeline_runs.append((age_days, zip((img, rel, dep), durations)))
 
         # Process counts for Web/Production
         web_prod.process_counts = {"web": 2, "worker": 1}
@@ -547,7 +553,7 @@ def seed():
             application_environment_id=web_prod.id,
         ).count()
         if existing_job_logs == 0:
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
             for proc_name, interval_min, count in [
                 ("job-cleanup", 360, 12),
                 ("job-reports", 1440, 7),
@@ -599,6 +605,24 @@ def seed():
         }
 
         # ── Commit everything ─────────────────────────────────────────
+        db.session.commit()
+
+        # Backdate pipeline runs with core UPDATEs; the ORM's onupdate would
+        # otherwise reset `updated` to now().
+        now = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+        for age_days, stages in pipeline_runs:
+            started = now - datetime.timedelta(days=age_days)
+            for obj, secs in stages:
+                model = type(obj)
+                _ = db.session.execute(
+                    update(model)
+                    .where(model.id == obj.id)
+                    .values(
+                        created=started,
+                        updated=started + datetime.timedelta(seconds=secs),
+                    )
+                )
+                started += datetime.timedelta(seconds=secs)
         db.session.commit()
         print()
         print("Seed complete!")

@@ -1,10 +1,9 @@
 # used for local buildkit emulation only
 import subprocess  # nosec
-from typing import TYPE_CHECKING, cast, Final
 from collections.abc import Sequence
+from typing import TYPE_CHECKING, Final, cast
 
 import redis
-
 
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable
@@ -71,7 +70,9 @@ def refresh_heartbeat(
 
 def get_redis_client(broker_url: str | Sequence[str]) -> redis.Redis[bytes]:
     broker_url = broker_url if isinstance(broker_url, str) else broker_url[0]
-    return redis.Redis.from_url(broker_url)
+    # redis-py 8 gives up on any read after 5 seconds by default, which breaks
+    # read_log_stream while it waits for new log lines. Turn that limit off.
+    return redis.Redis.from_url(broker_url, socket_timeout=None)
 
 
 def run_and_stream(

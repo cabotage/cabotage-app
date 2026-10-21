@@ -1,45 +1,46 @@
 import logging
 import secrets
 import time
-from typing import TYPE_CHECKING, cast
-
 from base64 import b64encode
+from datetime import UTC
+from typing import TYPE_CHECKING, cast
 
 import kubernetes.client
 import kubernetes.watch
 import yaml
-
 from celery import shared_task
+from flask import current_app
 from kubernetes.client.exceptions import ApiException
 from sqlalchemy.orm.attributes import flag_modified
 
-from flask import current_app
-
+from cabotage.celery.tasks.notify import (
+    dispatch_autodeploy_notification,
+    dispatch_pipeline_notification,
+)
 from cabotage.server import (
     config_writer,
     db,
     github_app,
+)
+from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
-
 from cabotage.server.models.projects import (
+    DEFAULT_POD_CLASS,
     Configuration,
     Deployment,
     EnvironmentConfiguration,
     IngressHost,
     IngressSnapshot,
-    DEFAULT_POD_CLASS,
     _ingress_hostname_pairs,
     pod_classes,
 )
-
 from cabotage.server.models.utils import (
-    safe_k8s_name,
     compact_k8s_name,
     readable_k8s_hostname,
     repair_ingress_hostname,
+    safe_k8s_name,
 )
-
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
     get_redis_client,
@@ -52,10 +53,6 @@ from cabotage.utils.github import (
     CheckRun,
     cabotage_url,
     post_deployment_status_update,
-)
-from cabotage.celery.tasks.notify import (
-    dispatch_autodeploy_notification,
-    dispatch_pipeline_notification,
 )
 
 if TYPE_CHECKING:
@@ -1341,9 +1338,8 @@ def ensure_ingresses(
             try:
                 networking_api.delete_namespaced_ingress(k8s_name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(f"Failed to delete disabled Ingress/{k8s_name}: {exc}")
+                if exc.status != 404 and log:
+                    log(f"Failed to delete disabled Ingress/{k8s_name}: {exc}")
             continue
 
         ingress_object = render_ingress_object(
@@ -1403,12 +1399,10 @@ def _cleanup_orphaned_ingresses(
             try:
                 networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Failed to delete orphaned Ingress/"
-                            f"{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, log=None):
@@ -1437,11 +1431,10 @@ def cleanup_orphaned_ingresses(networking_api, release, active_ingress_names, lo
             try:
                 networking_api.delete_namespaced_ingress(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Ingress/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_deployments_and_services(
@@ -1474,11 +1467,10 @@ def cleanup_orphaned_deployments_and_services(
             try:
                 apps_api.delete_namespaced_deployment(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Deployment/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Deployment/{item.metadata.name}: {exc}"
+                    )
 
     # Clean up Services (services use app=<resource_prefix> label, not org/project/application)
     svc_label_selector = f"resident-service.cabotage.io=true,app={resource_prefix}"
@@ -1496,11 +1488,10 @@ def cleanup_orphaned_deployments_and_services(
             try:
                 core_api.delete_namespaced_service(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned Service/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned Service/{item.metadata.name}: {exc}"
+                    )
 
 
 def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
@@ -1530,11 +1521,10 @@ def cleanup_orphaned_cronjobs(batch_api, release, active_job_names, log=None):
             try:
                 batch_api.delete_namespaced_cron_job(item.metadata.name, namespace)
             except ApiException as exc:
-                if exc.status != 404:
-                    if log:
-                        log(
-                            f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
-                        )
+                if exc.status != 404 and log:
+                    log(
+                        f"Warning: failed to delete orphaned CronJob/{item.metadata.name}: {exc}"
+                    )
 
 
 def render_image_pull_secrets(release):
@@ -1642,8 +1632,10 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
                 command=[
                     "sh",
                     "-c",
-                    "test -f /var/run/secrets/vault/vault-token && "
-                    "test -f /var/run/secrets/vault/consul-token",
+                    (
+                        "test -f /var/run/secrets/vault/vault-token && "
+                        "test -f /var/run/secrets/vault/consul-token"
+                    ),
                 ],
             ),
             period_seconds=1,
@@ -1990,17 +1982,7 @@ def render_podspec(release, process_name, service_account_name):
             )
         )
         restart_policy = "OnFailure"
-    elif process_name.startswith("release"):
-        init_containers.append(
-            render_cabotage_sidecar_container(release, process_name, with_tls=False)
-        )
-        containers.append(
-            render_process_container(
-                release, process_name, datadog_tags, with_tls=False, unix=False
-            )
-        )
-        restart_policy = "Never"
-    elif process_name.startswith("postdeploy"):
+    elif process_name.startswith(("release", "postdeploy")):
         init_containers.append(
             render_cabotage_sidecar_container(release, process_name, with_tls=False)
         )
@@ -2021,9 +2003,7 @@ def render_podspec(release, process_name, service_account_name):
         )
 
     if (
-        not (
-            process_name.startswith("release") or process_name.startswith("postdeploy")
-        )
+        not (process_name.startswith(("release", "postdeploy")))
         and "DD_API_KEY" in release.configuration_objects
     ):
         try:
@@ -2206,30 +2186,16 @@ def create_deployment(
             )
     else:
         try:
-            # Use call_api directly to force application/merge-patch+json.
-            # The default patch method uses strategic merge patch, which
-            # merges container lists by name and never removes containers
-            # absent from the new spec. JSON merge patch (RFC 7386) replaces
-            # arrays entirely, ensuring stale containers/initContainers are
-            # cleared.
-            body = apps_api_instance.api_client.sanitize_for_serialization(
-                deployment_object
-            )
-            return apps_api_instance.api_client.call_api(
-                "/apis/apps/v1/namespaces/{namespace}/deployments/{name}",
-                "PATCH",
-                path_params={
-                    "namespace": namespace,
-                    "name": deployment_object.metadata.name,
-                },
-                body=body,
-                header_params={
-                    "Content-Type": "application/merge-patch+json",
-                    "Accept": "application/json",
-                },
-                response_types_map={200: "V1Deployment", 201: "V1Deployment"},
-                auth_settings=["BearerToken"],
-                _return_http_data_only=True,
+            # Force application/merge-patch+json. The default patch content
+            # type is strategic merge patch, which merges container lists by
+            # name and never removes containers absent from the new spec. JSON
+            # merge patch (RFC 7386) replaces arrays entirely, ensuring stale
+            # containers/initContainers are cleared.
+            return apps_api_instance.patch_namespaced_deployment(
+                deployment_object.metadata.name,
+                namespace,
+                deployment_object,
+                _content_type="application/merge-patch+json",
             )
         except Exception as exc:
             raise DeployError(
@@ -2352,10 +2318,11 @@ def _get_job_schedule(process_def):
 
 def _history_limit_for_schedule(schedule, hours=12):
     """Estimate how many times a cron schedule fires in the given window."""
-    from croniter import croniter
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
-    now = datetime.now(timezone.utc)
+    from croniter import croniter
+
+    now = datetime.now(UTC)
     end = now + timedelta(hours=hours)
     it = croniter(schedule, now)
     count = 0
@@ -2703,12 +2670,12 @@ def _run_job_streaming(
         container = job_object.metadata.labels.get("process", None)
         try:
             w = kubernetes.watch.Watch()
-            kwargs = dict(
-                name=pod.metadata.name,
-                namespace=namespace,
-                follow=True,
-                _preload_content=False,
-            )
+            kwargs = {
+                "name": pod.metadata.name,
+                "namespace": namespace,
+                "follow": True,
+                "_preload_content": False,
+            }
             if container:
                 kwargs["container"] = container
             for line in cast(
@@ -2851,10 +2818,8 @@ def deploy_release(deployment: Deployment):
             custom_objects_api_instance, enrollment, deployment.release_object, log=log
         )
         if any(
-            [
-                process_name.startswith("web")
-                for process_name in deployment.release_object.processes
-            ]
+            process_name.startswith("web")
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching web Service(s)")
             for process_name in deployment.release_object.processes:
@@ -2864,10 +2829,8 @@ def deploy_release(deployment: Deployment):
                         core_api_instance, deployment.release_object, process_name
                     )
         if any(
-            [
-                process_name.startswith("tcp")
-                for process_name in deployment.release_object.processes
-            ]
+            process_name.startswith("tcp")
+            for process_name in deployment.release_object.processes
         ):
             log("Fetching tcp Service(s)")
             for process_name in deployment.release_object.processes:
@@ -3331,10 +3294,8 @@ def fake_deploy_release(deployment):
     )
     deploy_log.append(yaml.dump(remove_none(cabotage_enrollment)))
     if any(
-        [
-            process_name.startswith("web")
-            for process_name in deployment.release_object.processes
-        ]
+        process_name.startswith("web")
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching web Service(s)")
         for process_name in deployment.release_object.processes:
@@ -3343,10 +3304,8 @@ def fake_deploy_release(deployment):
                 service = render_service(deployment.release_object, process_name)
                 deploy_log.append(yaml.dump(remove_none(service.to_dict())))
     if any(
-        [
-            process_name.startswith("tcp")
-            for process_name in deployment.release_object.processes
-        ]
+        process_name.startswith("tcp")
+        for process_name in deployment.release_object.processes
     ):
         deploy_log.append("Fetching tcp Service(s)")
         for process_name in deployment.release_object.processes:

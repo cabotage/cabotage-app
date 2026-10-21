@@ -1,6 +1,7 @@
 """Tests for ingress rendering (nginx + tailscale)."""
 
 import hashlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +16,9 @@ from cabotage.server.models.utils import (
     readable_k8s_hostname,
     repair_ingress_hostname,
 )
+
+if TYPE_CHECKING:
+    from typing import ClassVar
 
 # ---------------------------------------------------------------------------
 # Fake model objects that mimic Ingress/IngressSnapshot, Host, Path
@@ -89,7 +93,10 @@ class FakeRelease:
 
     application = App()
     application_environment = AppEnv()
-    processes = {"web": "gunicorn app:app", "worker": "celery -A app worker"}
+    processes: ClassVar[dict[str, str]] = {
+        "web": "gunicorn app:app",
+        "worker": "celery -A app worker",
+    }
 
 
 LABELS = {
@@ -160,11 +167,11 @@ class TestBuildIngressPaths:
 
 class TestRenderNginxIngress:
     def _make_nginx_ingress(self, **overrides):
-        defaults = dict(
-            ingress_class_name="nginx",
-            hosts=[FakeHost("app.example.com")],
-            paths=[FakePath()],
-        )
+        defaults = {
+            "ingress_class_name": "nginx",
+            "hosts": [FakeHost("app.example.com")],
+            "paths": [FakePath()],
+        }
         defaults.update(overrides)
         return FakeIngress(**defaults)
 
@@ -293,12 +300,12 @@ class TestRenderNginxIngress:
 
 class TestRenderTailscaleIngress:
     def _make_ts_ingress(self, **overrides):
-        defaults = dict(
-            name="ts-web",
-            ingress_class_name="tailscale",
-            hosts=[FakeHost("my-app")],
-            paths=[FakePath()],
-        )
+        defaults = {
+            "name": "ts-web",
+            "ingress_class_name": "tailscale",
+            "hosts": [FakeHost("my-app")],
+            "paths": [FakePath()],
+        }
         defaults.update(overrides)
         return FakeIngress(**defaults)
 

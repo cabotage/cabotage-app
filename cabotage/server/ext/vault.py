@@ -1,10 +1,9 @@
 import os
-
 from base64 import (
     b64decode,
     b64encode,
 )
-from typing import TYPE_CHECKING, overload, cast
+from typing import TYPE_CHECKING, cast, overload
 
 if TYPE_CHECKING:
     from typing import Literal
@@ -18,13 +17,12 @@ if TYPE_CHECKING:
 
 
 import hvac
-
 from flask import g
 
 from cabotage.utils.cert_hacks import construct_cert_from_public_key
 
 
-class Vault(object):
+class Vault:
     def __init__(self, app=None):
         self.app = app
         if app is not None:
@@ -35,18 +33,22 @@ class Vault(object):
         self.vault_verify = app.config.get("VAULT_VERIFY", False)
         self.vault_cert = app.config.get("VAULT_CERT", None)
         self.vault_token = app.config.get("VAULT_TOKEN", None)
-        self.vault_token_file = app.config.get(
-            "VAULT_TOKEN_FILE", os.path.expanduser("~/.vault-token")
+        self.vault_token_file = (
+            cast(  # FIXME: Remove once "typed config" is implemented
+                str,
+                app.config.get(
+                    "VAULT_TOKEN_FILE", os.path.expanduser("~/.vault-token")
+                ),
+            )
         )
         self.vault_token_unwrap = app.config.get("VAULT_TOKEN_UNWRAP", False)
         self.vault_prefix = app.config.get("VAULT_PREFIX", "secret/cabotage")
         self.vault_signing_mount = app.config.get("VAULT_SIGNING_MOUNT", "transit")
         self.vault_signing_key = app.config.get("VAULT_SIGNING_KEY", "cabotage-app")
 
-        if self.vault_token is None:
-            if os.path.exists(self.vault_token_file):
-                with open(self.vault_token_file, "r") as vault_token_file:
-                    self.vault_token = vault_token_file.read().lstrip().rstrip()
+        if self.vault_token is None and os.path.exists(self.vault_token_file):
+            with open(self.vault_token_file, "r") as vault_token_file:
+                self.vault_token = vault_token_file.read().lstrip().rstrip()
 
         # Unwrap!
         # if self.vault_token_unwrap:

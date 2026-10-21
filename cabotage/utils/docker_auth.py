@@ -6,15 +6,14 @@ from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from typing import Literal
-    from cabotage._types.docker_auth import Access, JWK
+
+    from cabotage._types.docker_auth import JWK, Access
 
 import uuid
-
 from base64 import (
     b32encode,
     urlsafe_b64encode,
 )
-
 
 from cryptography.hazmat.primitives.asymmetric.ec import EllipticCurvePublicKey
 from cryptography.hazmat.primitives.serialization import (
@@ -31,7 +30,7 @@ from cabotage.server import vault
 
 
 def number_to_bytes(num: int, num_bytes: int) -> bytes:
-    padded_hex = "%0*x" % (2 * num_bytes, num)
+    padded_hex = "{:0{}x}".format(num, 2 * num_bytes)
     big_endian = binascii.a2b_hex(padded_hex.encode("ascii"))
     return big_endian
 
