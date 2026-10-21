@@ -1207,6 +1207,11 @@ def process_pull_request_hook(hook):
         if action == "closed":
             teardown_branch_deploy(project, pr_number)
             continue
+        # Pushes to a PR that already has a preview always sync it; the
+        # eligibility gate below only decides whether a preview is created.
+        if action == "synchronize":
+            sync_branch_deploy(project, pr_number, head_sha, installation_id)
+            continue
 
         auto_deploy_branches = {ae.effective_auto_deploy_branch for ae in base_app_envs}
         if not auto_deploy_branches:
@@ -1255,8 +1260,6 @@ def process_pull_request_hook(hook):
             create_branch_deploy(
                 project, pr_number, head_sha, installation_id, head_ref
             )
-        elif action == "synchronize":
-            sync_branch_deploy(project, pr_number, head_sha, installation_id)
 
 
 @shared_task()

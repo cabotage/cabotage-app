@@ -1040,7 +1040,7 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
         project_id=project.id, slug=env_slug
     ).first()
     if not environment:
-        logger.info(
+        logger.debug(
             "no ephemeral environment %s for project %s, skipping synchronize",
             env_slug,
             project.id,
