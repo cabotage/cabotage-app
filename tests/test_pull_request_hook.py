@@ -1796,6 +1796,7 @@ class TestBranchDeployAppOptOut:
         db.session.add(pr_env)
         db.session.flush()
         web_pr_env = _make_app_env(web, pr_env)
+        branch_deploy_project.branch_deploy_fallback_to_base = True
 
         value = resolve_template_variables("${wiki-oauth.url}", web_pr_env)
 

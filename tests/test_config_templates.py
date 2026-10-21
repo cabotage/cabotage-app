@@ -46,11 +46,16 @@ class FakeOrganization:
 
 class FakeProject:
     def __init__(
-        self, organization=None, k8s_identifier="test-project", slug="test-project"
+        self,
+        organization=None,
+        k8s_identifier="test-project",
+        slug="test-project",
+        branch_deploy_fallback_to_base=False,
     ):
         self.organization = organization or FakeOrganization()
         self.k8s_identifier = k8s_identifier
         self.slug = slug
+        self.branch_deploy_fallback_to_base = branch_deploy_fallback_to_base
 
 
 class FakeApplication:
@@ -295,15 +300,33 @@ class TestBranchDeployFallback:
             ingresses=[FakeIngress(hosts=[FakeHost("oauth.example.com")])]
         )
 
+    @staticmethod
+    def _preview_app_env(fallback_to_base):
+        project = FakeProject(branch_deploy_fallback_to_base=fallback_to_base)
+        return FakeAppEnv(application=FakeApplication(project=project))
+
     @patch("cabotage.utils.config_templates._base_environment_app_env")
     def test_ingress_ref_resolves_from_base_env(self, mock_base, mock_siblings):
         mock_base.return_value = self._base_oauth_app_env()
 
-        value = resolve_template_variables("${oauth.url}", FakeAppEnv())
+        value = resolve_template_variables(
+            "${oauth.url}", self._preview_app_env(fallback_to_base=True)
+        )
 
         assert value == "https://oauth.example.com"
         mock_base.assert_called_once()
         assert mock_base.call_args.args[1] == "oauth"
+
+    @patch("cabotage.utils.config_templates._base_environment_app_env")
+    def test_fallback_disabled_raises(self, mock_base, mock_siblings):
+        mock_base.return_value = self._base_oauth_app_env()
+
+        with pytest.raises(
+            TemplateResolutionError, match="does not allow previews to fall back"
+        ):
+            resolve_template_variables(
+                "${oauth.url}", self._preview_app_env(fallback_to_base=False)
+            )
 
     @patch("cabotage.utils.config_templates._base_environment_app_env")
     def test_service_ref_to_uncloned_app_raises(self, mock_base, mock_siblings):
