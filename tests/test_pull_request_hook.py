@@ -16,6 +16,8 @@ from cabotage.server.models.projects import (
     EnvironmentConfigSubscription,
     EnvironmentConfiguration,
     Hook,
+    Ingress,
+    IngressHost,
     Project,
 )
 from cabotage.server.models.resources import PostgresResource, RedisResource
@@ -1752,3 +1754,55 @@ class TestBranchDeployAppOptOut:
         )
         mock_session.post.assert_not_called()
         mock_session.get.assert_not_called()
+
+    # -- template references to apps not cloned -----------------------------
+
+    def test_ingress_ref_to_uncloned_app_resolves_from_base_env(
+        self,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """Exercises _base_environment_app_env against the database."""
+        from cabotage.utils.config_templates import (
+            TemplateResolutionError,
+            resolve_template_variables,
+        )
+
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            branch_deploys_enabled=False,
+        )
+        _make_app_env(web, environment)
+        oauth_env = _make_app_env(oauth, environment)
+        ingress = Ingress(application_environment_id=oauth_env.id)
+        db.session.add(ingress)
+        db.session.flush()
+        db.session.add(IngressHost(ingress_id=ingress.id, hostname="oauth.example.com"))
+        db.session.flush()
+
+        pr_env = Environment(
+            project_id=branch_deploy_project.id,
+            name="PR #42",
+            slug="pr-42",
+            ephemeral=True,
+            uses_environment_namespace=True,
+            forked_from_environment_id=environment.id,
+        )
+        db.session.add(pr_env)
+        db.session.flush()
+        web_pr_env = _make_app_env(web, pr_env)
+
+        value = resolve_template_variables("${wiki-oauth.url}", web_pr_env)
+
+        assert value == "https://oauth.example.com"
+
+        # A soft-deleted base enrollment no longer satisfies the reference.
+        oauth_env.deleted_at = datetime.datetime.now(datetime.UTC)
+        db.session.flush()
+        with pytest.raises(TemplateResolutionError, match="not found in project"):
+            resolve_template_variables("${wiki-oauth.url}", web_pr_env)
