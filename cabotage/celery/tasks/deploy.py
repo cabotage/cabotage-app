@@ -1769,11 +1769,11 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         readiness_probe=readiness_probe,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
-                "memory": "128Mi",
+                "memory": "256Mi",
                 "cpu": "100m",
             },
             requests={
-                "memory": "64Mi",
+                "memory": "128Mi",
                 "cpu": "20m",
             },
         ),
