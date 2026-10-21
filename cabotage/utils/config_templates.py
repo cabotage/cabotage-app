@@ -89,6 +89,17 @@ def resolve_template_variables(
                         f"service references (.svc/.hostname/.port) cannot cross "
                         f"namespaces, use .url or .host"
                     )
+                project = application_environment.application.project
+                if not project.branch_deploy_fallback_to_base:
+                    raise TemplateResolutionError(
+                        f"Referenced application '{app_slug}' is not in branch "
+                        f"deploy environment "
+                        f"'{application_environment.environment.slug}' and the "
+                        f"project does not allow previews to fall back to the "
+                        f"base environment; enable 'Fall Back to Base "
+                        f"Environment' in project settings, include "
+                        f"'{app_slug}' in branch deploys, or use a literal value"
+                    )
                 # Public ingress addresses can be used from any namespace, so
                 # resolve them against the app's base environment.
                 return _resolve_ingress(base_app_env, name, app_slug, prop)
