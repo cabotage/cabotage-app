@@ -1,6 +1,7 @@
 import datetime
 import logging
 import re
+import uuid
 from copy import deepcopy
 
 from flask import current_app
@@ -14,6 +15,7 @@ from cabotage.server import (
     kubernetes as kubernetes_ext,
 )
 from cabotage.server.models.projects import (
+    Application,
     ApplicationEnvironment,
     Configuration,
     Environment,
@@ -24,10 +26,12 @@ from cabotage.server.models.projects import (
     Ingress,
     IngressHost,
     IngressPath,
+    Project,
     activity_plugin,
 )
-from cabotage.server.models.resources import PostgresResource, RedisResource
+from cabotage.server.models.resources import PostgresResource, RedisResource, Resource
 from cabotage.server.models.utils import readable_k8s_hostname, safe_k8s_name
+from cabotage.utils.config_templates import SHARED_TEMPLATE_PATTERN
 from cabotage.utils.github import (
     find_or_create_pr_comment,
     matches_watch_paths,
@@ -39,7 +43,58 @@ logger = logging.getLogger(__name__)
 Activity = activity_plugin.activity_cls
 
 
-def _clone_backing_services_for_branch_deploy(base_environment, environment):
+def _resource_used_only_by_ineligible_apps(
+    resource: Resource,
+    base_environment: Environment,
+    eligible_app_env_ids: set[uuid.UUID],
+) -> bool:
+    """Return True when every use of ``resource`` comes from an ineligible app."""
+    managed: list[EnvironmentConfiguration] = EnvironmentConfiguration.query.filter_by(
+        resource_id=resource.id, deleted=False
+    ).all()
+    managed_ids = {config.id for config in managed}
+    managed_names = {config.name for config in managed}
+
+    # Nothing can use a resource with no managed configs, clone as before.
+    if not managed_names:
+        return False
+
+    def references_resource(value: str) -> bool:
+        return not managed_names.isdisjoint(SHARED_TEMPLATE_PATTERN.findall(value))
+
+    # A plain env config that references the resource counts as a use by
+    # everyone, because any app may subscribe to it.
+    for env_config in base_environment.environment_configurations:
+        if env_config.resource_id is not None or env_config.deleted:
+            continue
+        if references_resource(env_config.value):
+            return False
+
+    # An app_env uses the resource by subscribing to one of its managed
+    # configs, or by referencing one via ${shared.NAME} in its own config.
+    users = set[uuid.UUID]()
+    for app_env in base_environment.active_application_environments:
+        subscribed = any(
+            sub.environment_configuration_id in managed_ids
+            for sub in app_env.environment_config_subscriptions
+        )
+        referenced = any(
+            not config.deleted and references_resource(config.value)
+            for config in app_env.configurations
+        )
+        if subscribed or referenced:
+            users.add(app_env.id)
+
+    # Skip only if someone uses it and none of them are eligible.
+    # Unused resources are cloned.
+    return bool(users) and users.isdisjoint(eligible_app_env_ids)
+
+
+def _clone_backing_services_for_branch_deploy(
+    base_environment: Environment,
+    environment: Environment,
+    eligible_app_envs: list[ApplicationEnvironment],
+) -> None:
     """Create fresh backing-service rows in a PR environment.
 
     The cloned resources inherit sizing/topology/version settings from the
@@ -48,8 +103,19 @@ def _clone_backing_services_for_branch_deploy(base_environment, environment):
     """
     from cabotage.celery.tasks.resources import _backing_service_type_enabled
 
+    eligible_app_env_ids = {app_env.id for app_env in eligible_app_envs}
     for resource in base_environment.active_resources:
         if not _backing_service_type_enabled(resource.type):
+            continue
+        if _resource_used_only_by_ineligible_apps(
+            resource, base_environment, eligible_app_env_ids
+        ):
+            logger.info(
+                "not cloning backing service %s into %s: only used by applications "
+                "excluded from branch deploys",
+                resource.slug,
+                environment.slug,
+            )
             continue
         if isinstance(resource, PostgresResource):
             cloned = PostgresResource(
@@ -80,6 +146,25 @@ def _clone_backing_services_for_branch_deploy(base_environment, environment):
         db.session.add(cloned)
 
     db.session.flush()
+
+
+def eligible_branch_deploy_app_envs(
+    base_env: Environment,
+) -> list[ApplicationEnvironment]:
+    """Return the base environment's app_envs that take part in branch deploys."""
+    app_envs: list[ApplicationEnvironment] = (
+        ApplicationEnvironment.query.filter_by(
+            environment_id=base_env.id,
+            deleted_at=None,
+        )
+        .join(Application)
+        .filter(
+            Application.deleted_at.is_(None),
+            Application.branch_deploys_enabled.is_(True),
+        )
+        .all()
+    )
+    return app_envs
 
 
 def _create_app_env_for_branch_deploy(
@@ -853,11 +938,20 @@ def maybe_update_pr_comment_for_app_env(app_env):
         update_pr_comment(env)
 
 
-def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref=None):
+def create_branch_deploy(
+    project: Project,
+    pr_number: int,
+    head_sha: str,
+    installation_id: int,
+    head_ref: str | None = None,
+) -> None:
     """Create an ephemeral environment for a PR and build images for all enrolled apps."""
     from cabotage.celery.tasks.resources import reconcile_backing_services
 
     base_env = project.branch_deploy_base_environment
+    if base_env is None:
+        # unreachable - the PR hook guarantees a base environment
+        return
     env_slug = f"pr-{pr_number}"
 
     existing = Environment.query.filter_by(project_id=project.id, slug=env_slug).first()
@@ -867,6 +961,8 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         )
         update_pr_comment(existing)
         return
+
+    base_app_envs = eligible_branch_deploy_app_envs(base_env)
 
     environment = Environment(
         project_id=project.id,
@@ -901,7 +997,7 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
         env_config_map[env_config.id] = new_env_config.id
     db.session.flush()
 
-    _clone_backing_services_for_branch_deploy(base_env, environment)
+    _clone_backing_services_for_branch_deploy(base_env, environment, base_app_envs)
 
     activity = Activity(
         verb="create",
@@ -911,16 +1007,9 @@ def create_branch_deploy(project, pr_number, head_sha, installation_id, head_ref
     db.session.add(activity)
 
     new_app_envs = []
-    for app in project.active_applications:
-        base_app_env = ApplicationEnvironment.query.filter_by(
-            application_id=app.id,
-            environment_id=base_env.id,
-            deleted_at=None,
-        ).first()
-        if not base_app_env:
-            continue
+    for base_app_env in base_app_envs:
         app_env = _create_app_env_for_branch_deploy(
-            app,
+            base_app_env.application,
             environment,
             base_env,
             auto_deploy_branch=head_ref,
@@ -951,7 +1040,7 @@ def sync_branch_deploy(project, pr_number, head_sha, installation_id):
         project_id=project.id, slug=env_slug
     ).first()
     if not environment:
-        logger.info(
+        logger.debug(
             "no ephemeral environment %s for project %s, skipping synchronize",
             env_slug,
             project.id,

@@ -57,12 +57,14 @@ _APP_DIFF_FIELDS = {
     "dockerfile_path": "Dockerfile path",
     "procfile_path": "Procfile path",
     "branch_deploy_watch_paths": "watch paths",
+    "branch_deploys_enabled": "include in branch deploys",
 }
 
 _PROJECT_DIFF_FIELDS = {
     "name": "name",
     "environments_enabled": "environments",
     "branch_deploys_enabled": "branch deploys",
+    "branch_deploy_fallback_to_base": "fall back to base environment",
 }
 
 _INGRESS_DIFF_FIELDS = {

@@ -1670,6 +1670,7 @@ def project_settings(org_slug, project_slug):
             form.branch_deploy_base_environment_id.data = ""
         if not form.branch_deploys_enabled.data:
             form.branch_deploy_base_environment_id.data = ""
+            form.branch_deploy_fallback_to_base.data = False
 
         # Convert empty string to None for the UUID FK
         if not form.branch_deploy_base_environment_id.data:

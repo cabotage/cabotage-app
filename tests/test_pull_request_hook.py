@@ -11,9 +11,13 @@ from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
+    Configuration,
     Environment,
+    EnvironmentConfigSubscription,
     EnvironmentConfiguration,
     Hook,
+    Ingress,
+    IngressHost,
     Project,
 )
 from cabotage.server.models.resources import PostgresResource, RedisResource
@@ -1426,3 +1430,380 @@ class TestStackedPullRequestBranchDeploy:
             mock_session.get.assert_not_called()
             # But create_branch_deploy should still be called
             mock_create.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Per-app opt-out (Application.branch_deploys_enabled)
+# ---------------------------------------------------------------------------
+
+
+class TestBranchDeployAppOptOut:
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    def test_opted_out_app_is_not_cloned(
+        self,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            branch_deploys_enabled=False,
+        )
+        _make_app_env(web, environment)
+        _make_app_env(oauth, environment)
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(_make_pr_hook(installation_id, action="opened"))
+
+        pr_env = Environment.query.filter_by(
+            project_id=branch_deploy_project.id, slug="pr-42"
+        ).one()
+        cloned = sorted(
+            ae.application.slug for ae in pr_env.active_application_environments
+        )
+        assert cloned == ["wiki-web"]
+        built = sorted(
+            ae.application.slug for ae in mock_build_images.call_args.args[0]
+        )
+        assert built == ["wiki-web"]
+        mock_precreate.assert_called_once_with(pr_env)
+        mock_update_comment.assert_called_once_with(pr_env)
+
+    @pytest.mark.parametrize(
+        ("app_kwargs", "app_env_kwargs"),
+        [
+            pytest.param({"branch_deploys_enabled": False}, {}, id="opted-out"),
+            pytest.param(
+                {},
+                {"deleted_at": datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)},
+                id="soft-deleted",
+            ),
+        ],
+    )
+    @patch("cabotage.celery.tasks.github.create_branch_deploy")
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_ineligible_app_env_does_not_qualify_pr(
+        self,
+        mock_gh_app,
+        mock_session,
+        mock_create,
+        app_kwargs,
+        app_env_kwargs,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """The only app_env in the base env is ineligible, so nothing qualifies."""
+        application = _make_app(branch_deploy_project, installation_id, **app_kwargs)
+        _make_app_env(application, environment, **app_env_kwargs)
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(_make_pr_hook(installation_id, action="opened"))
+
+        mock_create.assert_not_called()
+        mock_session.post.assert_not_called()
+        mock_session.get.assert_not_called()
+        assert (
+            Environment.query.filter_by(
+                project_id=branch_deploy_project.id, slug="pr-42"
+            ).first()
+            is None
+        )
+
+    @patch("cabotage.celery.tasks.github.create_branch_deploy")
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_opted_out_app_branch_does_not_qualify_pr(
+        self,
+        mock_gh_app,
+        mock_session,
+        mock_create,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """An opted-out app's auto-deploy branch must not make a PR qualify."""
+        mock_gh_app.bearer_token = "bt"
+        access_resp = MagicMock()
+        access_resp.json.return_value = {"token": "fake-token"}
+        mock_session.post.return_value = access_resp
+        pulls_resp = MagicMock()
+        pulls_resp.status_code = 200
+        pulls_resp.json.return_value = []
+        mock_session.get.return_value = pulls_resp
+
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            auto_deploy_branch="release",
+            branch_deploys_enabled=False,
+        )
+        _make_app_env(web, environment)
+        _make_app_env(oauth, environment)
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(
+            _make_pr_hook(installation_id, action="opened", base_ref="release")
+        )
+
+        # The stacked-PR check ran (no short-circuit) and found no eligible chain.
+        mock_session.get.assert_called()
+        mock_create.assert_not_called()
+
+    # -- backing services ---------------------------------------------------
+
+    @staticmethod
+    def _make_managed_redis(project, environment, slug):
+        """A base-env Redis plus the env config it manages (its connection URL)."""
+        redis = RedisResource(
+            environment_id=environment.id,
+            name=slug,
+            slug=slug,
+            service_version="8",
+            size_class="cache.small",
+            storage_size=1,
+        )
+        db.session.add(redis)
+        db.session.flush()
+        redis_config = EnvironmentConfiguration(
+            project_id=project.id,
+            environment_id=environment.id,
+            resource_id=redis.id,
+            name=f"{slug.upper().replace('-', '_')}_URL",
+            value="rediss://base",
+            secret=True,
+            buildtime=False,
+        )
+        db.session.add(redis_config)
+        db.session.flush()
+        return redis_config
+
+    @patch("cabotage.celery.tasks.branch_deploy.update_pr_comment")
+    @patch("cabotage.celery.tasks.branch_deploy._build_images_for_app_envs")
+    @patch("cabotage.celery.tasks.branch_deploy._precreate_ingresses")
+    def test_only_resources_used_solely_by_opted_out_apps_are_skipped(
+        self,
+        mock_precreate,
+        mock_build_images,
+        mock_update_comment,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """One base env, five resources, one per branch of the skip rule."""
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            branch_deploys_enabled=False,
+        )
+        web_env = _make_app_env(web, environment)
+        oauth_env = _make_app_env(oauth, environment)
+
+        # Skip only if someone uses it and none of them are eligible.
+        oauth_cache = self._make_managed_redis(
+            branch_deploy_project, environment, "oauth-cache"
+        )
+        db.session.add(
+            EnvironmentConfigSubscription(
+                application_environment_id=oauth_env.id,
+                environment_configuration_id=oauth_cache.id,
+            )
+        )
+
+        # An app_env uses the resource by subscribing to one of its managed
+        # configs, or by referencing one via ${shared.NAME} in its own config.
+        web_cache = self._make_managed_redis(
+            branch_deploy_project, environment, "web-cache"
+        )
+        db.session.add(
+            EnvironmentConfigSubscription(
+                application_environment_id=oauth_env.id,
+                environment_configuration_id=web_cache.id,
+            )
+        )
+        db.session.add(
+            Configuration(
+                application_id=web.id,
+                application_environment_id=web_env.id,
+                name="REDIS_DSN",
+                value="${shared.WEB_CACHE_URL}",
+                secret=False,
+            )
+        )
+
+        # Unused resources are cloned.
+        self._make_managed_redis(branch_deploy_project, environment, "unused-cache")
+
+        # Nothing can use a resource with no managed configs, clone as before.
+        db.session.add(
+            RedisResource(
+                environment_id=environment.id,
+                name="bare-cache",
+                slug="bare-cache",
+                service_version="8",
+                size_class="cache.small",
+                storage_size=1,
+            )
+        )
+
+        # A plain env config that references the resource counts as a use by
+        # everyone, because any app may subscribe to it.
+        env_cache = self._make_managed_redis(
+            branch_deploy_project, environment, "env-cache"
+        )
+        db.session.add(
+            EnvironmentConfigSubscription(
+                application_environment_id=oauth_env.id,
+                environment_configuration_id=env_cache.id,
+            )
+        )
+        db.session.add(
+            EnvironmentConfiguration(
+                project_id=branch_deploy_project.id,
+                environment_id=environment.id,
+                name="SHARED_REDIS_DSN",
+                value="${shared.ENV_CACHE_URL}",
+                secret=False,
+                buildtime=False,
+            )
+        )
+        db.session.commit()
+
+        from cabotage.celery.tasks.branch_deploy import create_branch_deploy
+
+        create_branch_deploy(
+            branch_deploy_project,
+            pr_number=42,
+            head_sha=uuid.uuid4().hex[:40],
+            installation_id=installation_id,
+            head_ref="feature-branch",
+        )
+
+        pr_env = Environment.query.filter_by(
+            project_id=branch_deploy_project.id, slug="pr-42"
+        ).one()
+        cloned = {
+            r.slug for r in RedisResource.query.filter_by(environment_id=pr_env.id)
+        }
+
+        # oauth-cache is the only one skipped.
+        assert cloned == {"web-cache", "unused-cache", "bare-cache", "env-cache"}
+
+    # -- existing previews --------------------------------------------------
+
+    @patch("cabotage.celery.tasks.github.sync_branch_deploy")
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_push_to_existing_preview_syncs_even_when_app_opted_out(
+        self,
+        mock_gh_app,
+        mock_session,
+        mock_sync,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """The flag decides whether a preview is created, not whether it syncs."""
+        application = _make_app(
+            branch_deploy_project, installation_id, branch_deploys_enabled=False
+        )
+        _make_app_env(application, environment)
+        db.session.add(
+            Environment(
+                project_id=branch_deploy_project.id,
+                name="PR #42",
+                slug="pr-42",
+                ephemeral=True,
+                uses_environment_namespace=True,
+                forked_from_environment_id=environment.id,
+            )
+        )
+        db.session.flush()
+        hook = _make_pr_hook(installation_id, action="synchronize")
+
+        from cabotage.celery.tasks.github import process_pull_request_hook
+
+        process_pull_request_hook(hook)
+
+        mock_sync.assert_called_once_with(
+            branch_deploy_project,
+            42,
+            hook.payload["pull_request"]["head"]["sha"],
+            installation_id,
+        )
+        mock_session.post.assert_not_called()
+        mock_session.get.assert_not_called()
+
+    # -- template references to apps not cloned -----------------------------
+
+    def test_ingress_ref_to_uncloned_app_resolves_from_base_env(
+        self,
+        db_session,
+        branch_deploy_project,
+        environment,
+        installation_id,
+    ):
+        """Exercises _base_environment_app_env against the database."""
+        from cabotage.utils.config_templates import (
+            TemplateResolutionError,
+            resolve_template_variables,
+        )
+
+        web = _make_app(branch_deploy_project, installation_id, slug="wiki-web")
+        oauth = _make_app(
+            branch_deploy_project,
+            installation_id,
+            slug="wiki-oauth",
+            branch_deploys_enabled=False,
+        )
+        _make_app_env(web, environment)
+        oauth_env = _make_app_env(oauth, environment)
+        ingress = Ingress(application_environment_id=oauth_env.id)
+        db.session.add(ingress)
+        db.session.flush()
+        db.session.add(IngressHost(ingress_id=ingress.id, hostname="oauth.example.com"))
+        db.session.flush()
+
+        pr_env = Environment(
+            project_id=branch_deploy_project.id,
+            name="PR #42",
+            slug="pr-42",
+            ephemeral=True,
+            uses_environment_namespace=True,
+            forked_from_environment_id=environment.id,
+        )
+        db.session.add(pr_env)
+        db.session.flush()
+        web_pr_env = _make_app_env(web, pr_env)
+        branch_deploy_project.branch_deploy_fallback_to_base = True
+
+        value = resolve_template_variables("${wiki-oauth.url}", web_pr_env)
+
+        assert value == "https://oauth.example.com"
+
+        # A soft-deleted base enrollment no longer satisfies the reference.
+        oauth_env.deleted_at = datetime.datetime.now(datetime.UTC)
+        db.session.flush()
+        with pytest.raises(TemplateResolutionError, match="not found in project"):
+            resolve_template_variables("${wiki-oauth.url}", web_pr_env)
