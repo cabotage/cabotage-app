@@ -1,7 +1,7 @@
 """add deployment started_at
 
 Revision ID: acdaa196ebef
-Revises: 6e1f85c42b83
+Revises: bc4b54873371
 Create Date: 2026-10-08 10:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "acdaa196ebef"
-down_revision = "6e1f85c42b83"
+down_revision = "bc4b54873371"
 branch_labels = None
 depends_on = None
 
