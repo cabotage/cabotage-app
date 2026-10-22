@@ -828,11 +828,6 @@ def discover_check_names(
                 for run in runs.json().get("check_runs", [])
                 if str((run.get("app") or {}).get("id")) != own_app_id
             )
-            status = github_session.get(
-                f"{base}/commits/{sha}/status", headers=headers, timeout=10
-            )
-            status.raise_for_status()
-            names.update(s["context"] for s in status.json().get("statuses", []))
     except requests.exceptions.RequestException, KeyError, TypeError, ValueError:
         logger.exception("Unable to discover checks for %s", repository_name)
         return None
@@ -1009,7 +1004,8 @@ def process_check_suite_hook(hook):
     if suite_app_id and str(suite_app_id) == str(github_app.app_id):
         return False
 
-    if hook.payload["check_suite"]["conclusion"] == "success":
+    suite_passed = hook.payload["check_suite"]["conclusion"] == "success"
+    if hook.payload["check_suite"]["conclusion"]:
         pushes = (
             Hook.query.filter(Hook.commit_sha == hook.commit_sha)
             .filter(Hook.headers["X-Github-Event"].astext == "push")
@@ -1110,7 +1106,12 @@ def process_check_suite_hook(hook):
                     f"no changes in watch paths"
                 )
                 continue
-            targets.append((app_env, app_env.deployment_checks or branch_contexts))
+            contexts = app_env.deployment_checks or branch_contexts
+            if not contexts and not suite_passed:
+                continue
+            targets.append((app_env, contexts))
+        if not targets:
+            return False
 
         # Check that all required status checks have passed before
         # attempting to create deployments. If not, bail out so a later
