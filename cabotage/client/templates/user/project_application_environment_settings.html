@@ -63,6 +63,50 @@
         </div>
       </div>
 
+      <div id="deployment-checks"
+           class="{% if not form.auto_deploy_wait_for_ci.data %}hidden{% endif %}">
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <div class="settings-row-icon bg-info/10 text-info">{{ icon('check-circle', 'w-4 h-4') }}</div>
+            <div>
+              <h2 id="deployment-checks-title" class="text-sm font-semibold text-base-content">Deployment Checks</h2>
+              <p class="text-xs text-base-content/40 mt-0.5">Checks that must pass on the commit being deployed</p>
+            </div>
+          </div>
+          <fieldset class="settings-row-fields" aria-labelledby="deployment-checks-title">
+            {% if check_options %}
+              <div class="check-list">
+                {% for name in check_options %}
+                  <label class="check-list-item">
+                    <input type="checkbox"
+                           name="deployment_checks"
+                           value="{{ name }}"
+                           class="checkbox checkbox-primary checkbox-xs"
+                           {% if name in selected_checks %}checked{% endif %}>
+                    <span class="check-list-name">{{ name }}</span>
+                    {% if discovered_checks is not none and name not in discovered_checks %}
+                      <span class="badge badge-sm badge-warning"
+                            title="Not on recent commits. Deploys wait until it passes.">Not seen recently</span>
+                    {% endif %}
+                  </label>
+                {% endfor %}
+              </div>
+            {% elif not can_discover_checks %}
+              <p class="text-sm text-base-content/60">Connect a GitHub repository and branch to choose checks.</p>
+            {% elif discovered_checks is not none %}
+              <p class="text-sm text-base-content/60">No checks found on recent commits to <span class="font-mono">{{ app_env.effective_auto_deploy_branch }}</span>.</p>
+            {% endif %}
+            {% if can_discover_checks and discovered_checks is none %}
+              <p class="text-xs text-warning mt-1">Couldn't load checks from GitHub. Saved selections are kept.</p>
+            {% endif %}
+            <p class="check-list-note">
+              {% if can_discover_checks %}From the latest commits to <span class="font-mono">{{ app_env.effective_auto_deploy_branch }}</span>.{% endif %}
+              With none checked, deploys wait for the branch's required status checks.
+            </p>
+          </fieldset>
+        </div>
+      </div>
+
       <div class="settings-row">
         <div class="settings-row-label">
           <div class="settings-row-icon bg-success/10 text-success">{{ icon('activity', 'w-4 h-4') }}</div>
@@ -104,3 +148,17 @@
     {% endif %}
   </div>
 {% endblock content %}
+
+{% block js %}
+  <script>
+    (function () {
+      var checkbox = document.getElementById('auto_deploy_wait_for_ci');
+      var panel = document.getElementById('deployment-checks');
+      if (checkbox && panel) {
+        checkbox.addEventListener('change', function () {
+          panel.classList.toggle('hidden', !this.checked);
+        });
+      }
+    })();
+  </script>
+{% endblock js %}
