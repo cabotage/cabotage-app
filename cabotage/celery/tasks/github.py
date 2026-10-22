@@ -1,6 +1,7 @@
 import datetime
 import logging
 
+import requests
 from celery import shared_task
 from flask import current_app
 from sqlalchemy import and_, or_
@@ -790,6 +791,52 @@ def _all_required_checks_passed(
         )
         return False
     return True
+
+
+def discover_check_names(
+    installation_id: int, repository_name: str, branch: str, commits: int = 3
+) -> list[str] | None:
+    token = github_app.fetch_installation_access_token(installation_id)
+    if token is None:
+        return None
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"token {token}",
+    }
+    base = f"https://api.github.com/repos/{repository_name}"
+    own_app_id = str(github_app.app_id)
+    names = set()
+    try:
+        resp = github_session.get(
+            f"{base}/commits",
+            headers=headers,
+            params={"sha": branch, "per_page": commits},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        for commit in resp.json():
+            sha = commit["sha"]
+            runs = github_session.get(
+                f"{base}/commits/{sha}/check-runs",
+                headers=headers,
+                params={"per_page": 100},
+                timeout=10,
+            )
+            runs.raise_for_status()
+            names.update(
+                run["name"]
+                for run in runs.json().get("check_runs", [])
+                if str((run.get("app") or {}).get("id")) != own_app_id
+            )
+            status = github_session.get(
+                f"{base}/commits/{sha}/status", headers=headers, timeout=10
+            )
+            status.raise_for_status()
+            names.update(s["context"] for s in status.json().get("statuses", []))
+    except requests.exceptions.RequestException, KeyError, TypeError, ValueError:
+        logger.exception("Unable to discover checks for %s", repository_name)
+        return None
+    return sorted(names, key=str.lower)
 
 
 def create_deployment(
