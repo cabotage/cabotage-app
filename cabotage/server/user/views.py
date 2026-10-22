@@ -52,6 +52,7 @@ from cabotage.celery.tasks import (
     teardown_tailscale_operator,
 )
 from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.github import discover_check_names
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
@@ -4499,6 +4500,10 @@ def project_application_environment_settings(
     if form.validate_on_submit():
         app_env.auto_deploy_branch = form.auto_deploy_branch.data or None
         app_env.auto_deploy_wait_for_ci = form.auto_deploy_wait_for_ci.data
+        app_env.deployment_checks = (
+            sorted({c.strip() for c in form.deployment_checks.data or [] if c.strip()})
+            or None
+        )
         app_env.github_environment_name = form.github_environment_name.data or None
         app_env.deployment_timeout = form.deployment_timeout.data
         app_env.health_check_path = form.health_check_path.data or None
@@ -4535,6 +4540,22 @@ def project_application_environment_settings(
             ("ingress domains", _ingress_hostnames([app_env])),
         ],
     )
+    branch = app_env.effective_auto_deploy_branch
+    can_discover = bool(
+        application.github_app_installation_id
+        and application.github_repository
+        and branch
+    )
+    discovered_checks = (
+        discover_check_names(
+            application.github_app_installation_id,
+            application.github_repository,
+            branch,
+        )
+        if can_discover
+        else None
+    )
+    selected_checks = form.deployment_checks.data or []
     return render_template(
         "user/project_application_environment_settings.html",
         application=application,
@@ -4543,6 +4564,12 @@ def project_application_environment_settings(
         form=form,
         unenroll_form=unenroll_form,
         unenroll_impact=unenroll_impact,
+        can_discover_checks=can_discover,
+        discovered_checks=discovered_checks,
+        selected_checks=selected_checks,
+        check_options=sorted(
+            set(discovered_checks or []) | set(selected_checks), key=str.lower
+        ),
     )
 
 
