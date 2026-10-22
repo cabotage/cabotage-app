@@ -3463,16 +3463,14 @@ def try_deploy_execution_lock(application_environment_id: uuid.UUID) -> bool:
     """False if a run_deploy task is still running for this environment."""
     key = _advisory_lock_key("deploy-exec", application_environment_id)
     return bool(
-        db.session.execute(
-            sa.text("SELECT pg_try_advisory_xact_lock(:key)"), {"key": key}
-        ).scalar()
+        db.session.execute(sa.select(sa.func.pg_try_advisory_xact_lock(key))).scalar()
     )
 
 
 def start_next_deployment(application_environment_id: uuid.UUID) -> None:
     """Start the oldest queued deployment if none is running."""
     lock_key = _advisory_lock_key("deploy-queue", application_environment_id)
-    db.session.execute(sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+    db.session.execute(sa.select(sa.func.pg_advisory_xact_lock(lock_key)))
     pending = Deployment.query.filter(
         Deployment.application_environment_id == application_environment_id,
         Deployment.complete.is_(False),
@@ -3502,10 +3500,8 @@ def run_deploy(deployment_id: uuid.UUID | str | None = None) -> None:
     try:
         # Locked while this task runs. Postgres drops the lock if the worker dies.
         with db.engine.connect() as conn:
-            _ = conn.execute(
-                sa.text("SELECT pg_advisory_xact_lock(:key)"),
-                {"key": _advisory_lock_key("deploy-exec", application_environment_id)},
-            )
+            lock_key = _advisory_lock_key("deploy-exec", application_environment_id)
+            _ = conn.execute(sa.select(sa.func.pg_advisory_xact_lock(lock_key)))
             db.session.refresh(deployment)
             # Skip if the reaper already gave up on this deployment.
             if not (deployment.complete or deployment.error):
