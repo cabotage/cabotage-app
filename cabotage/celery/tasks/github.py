@@ -1035,22 +1035,6 @@ def process_check_suite_hook(hook):
             )
             return False
 
-        # Check that all required status checks have passed before
-        # attempting to create deployments. If not, bail out so a later
-        # check_suite webhook (when more suites complete) can retry.
-        required_contexts = _required_contexts_for_branch(
-            access_token, repository_name, head_branch
-        )
-        if not _all_required_checks_passed(
-            access_token, repository_name, commit_sha, required_contexts
-        ):
-            return False
-
-        # Mark deployed *before* creating deployments to prevent races
-        # between concurrent check_suite webhooks for the same SHA.
-        push_event.deployed = True
-        db.session.commit()
-
         # Extract changed files from the push event payload to filter
         # apps by watch paths.
         changed_files = set()
@@ -1059,6 +1043,10 @@ def process_check_suite_hook(hook):
             changed_files.update(commit.get("modified", []))
             changed_files.update(commit.get("removed", []))
 
+        branch_contexts = _required_contexts_for_branch(
+            access_token, repository_name, head_branch
+        )
+        targets = []
         for app_env in env_matches:
             # Skip apps that already deployed on push (no CI wait).
             if not app_env.auto_deploy_wait_for_ci:
@@ -1075,6 +1063,23 @@ def process_check_suite_hook(hook):
                     f"no changes in watch paths"
                 )
                 continue
+            targets.append((app_env, app_env.deployment_checks or branch_contexts))
+
+        # Check that all required status checks have passed before
+        # attempting to create deployments. If not, bail out so a later
+        # check_suite webhook (when more suites complete) can retry.
+        required_contexts = sorted({c for _, contexts in targets for c in contexts})
+        if not _all_required_checks_passed(
+            access_token, repository_name, commit_sha, required_contexts
+        ):
+            return False
+
+        # Mark deployed *before* creating deployments to prevent races
+        # between concurrent check_suite webhooks for the same SHA.
+        push_event.deployed = True
+        db.session.commit()
+
+        for app_env, contexts in targets:
             print(
                 f"deploying {repository_name}@{commit_sha} to "
                 f"{app_env.application.id} env {app_env.environment.slug}"
@@ -1086,7 +1091,7 @@ def process_check_suite_hook(hook):
                 ref=commit_sha,
                 app_env=app_env,
                 branch=head_branch,
-                required_contexts=required_contexts,
+                required_contexts=contexts,
             )
 
 

@@ -1243,6 +1243,81 @@ class TestProcessCheckSuiteHook:
 
     @patch("cabotage.celery.tasks.github.github_session")
     @patch("cabotage.celery.tasks.github.github_app")
+    def test_deployment_checks_replace_branch_required_checks(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        application = _make_app(project, installation_id, "app-checks")
+        app_env = _make_app_env(application, environment, wait_for_ci=True)
+        app_env.deployment_checks = ["Tests"]
+        push_hook = _make_push_hook(installation_id, commit_sha=commit_sha)
+        hook = _make_check_suite_hook(installation_id, commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        mock_get, mock_post = _mock_github_responses(
+            required_checks=[{"context": "CLA Signing", "app_id": 15368}],
+            check_runs=[{"name": "Tests", "conclusion": "success"}],
+        )
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        process_check_suite_hook(hook)
+
+        deployment_payloads = [
+            c[1]["json"]
+            for c in mock_session.post.call_args_list
+            if c[0][0].endswith("/deployments")
+        ]
+        assert [p["required_contexts"] for p in deployment_payloads] == [["Tests"]]
+        db.session.refresh(push_hook)
+        assert push_hook.deployed is True
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
+    def test_defers_when_deployment_check_missing(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        application = _make_app(project, installation_id, "app-checks-missing")
+        app_env = _make_app_env(application, environment, wait_for_ci=True)
+        app_env.deployment_checks = ["Tests", "Docker build"]
+        push_hook = _make_push_hook(installation_id, commit_sha=commit_sha)
+        hook = _make_check_suite_hook(installation_id, commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        mock_get, mock_post = _mock_github_responses(
+            check_runs=[{"name": "Tests", "conclusion": "success"}],
+        )
+        mock_session.get.side_effect = mock_get
+        mock_session.post.side_effect = mock_post
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        assert process_check_suite_hook(hook) is False
+        assert _count_deployment_posts(mock_session) == 0
+        db.session.refresh(push_hook)
+        assert push_hook.deployed is not True
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
     def test_ruleset_checks_block_premature_deploy(
         self,
         mock_gh_app,
