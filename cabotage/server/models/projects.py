@@ -322,6 +322,7 @@ class ApplicationEnvironment(Model, Timestamp):
         default=True,
         server_default="true",
     )
+    deployment_checks: Mapped[Any | None] = mapped_column(postgresql.JSONB())
     github_environment_name: Mapped[str | None] = mapped_column(Text())
     k8s_identifier: Mapped[str | None] = mapped_column(String(64))
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
