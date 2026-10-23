@@ -266,7 +266,7 @@
           </button>
           {% if ts_integration %}
             <button type="submit" name="_action" value="delete_tailscale" class="btn btn-error btn-outline gap-2"
-                    onclick="return confirm('Remove Tailscale integration? This will tear down all Tailscale operators for this organization.')">
+                    {% if not g.admin_elevated | default(false) %}onclick="return confirm('Remove Tailscale integration? This will tear down all Tailscale operators for this organization.')"{% endif %}>
               {{ icon('trash-2', 'w-4 h-4') }}
               Remove
             </button>
@@ -304,7 +304,7 @@
           <form method="POST" action="{{ url_for('slack_oauth.disconnect', org_slug=organization.slug) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-error btn-outline btn-sm gap-2"
-                    onclick="return confirm('Disconnect Slack? Alert notifications to this workspace will stop.')">
+                    {% if not g.admin_elevated | default(false) %}onclick="return confirm('Disconnect Slack? Alert notifications to this workspace will stop.')"{% endif %}>
               {{ icon('trash-2', 'w-4 h-4') }}
               Disconnect
             </button>
@@ -370,7 +370,7 @@
           <form method="POST" action="{{ url_for('discord_oauth.disconnect', org_slug=organization.slug) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-error btn-outline btn-sm gap-2"
-                    onclick="return confirm('Disconnect Discord? Alert notifications to this server will stop.')">
+                    {% if not g.admin_elevated | default(false) %}onclick="return confirm('Disconnect Discord? Alert notifications to this server will stop.')"{% endif %}>
               {{ icon('trash-2', 'w-4 h-4') }}
               Disconnect
             </button>
