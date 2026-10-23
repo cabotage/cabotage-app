@@ -276,6 +276,7 @@ def create_app():
         login_form=ExtendedLoginForm,
     )
     from cabotage.server.integrations.discord_oauth import init_discord_oauth
+    from cabotage.server.integrations.feedback import init_feedback
     from cabotage.server.integrations.notification_routing import (
         init_notification_routing,
     )
@@ -286,6 +287,7 @@ def create_app():
     init_slack_oauth(app)
     init_discord_oauth(app)
     init_notification_routing(app)
+    init_feedback(app)
     vault_db_creds.init_app(app)
     db.init_app(app)
     principal.init_app(app)
@@ -431,6 +433,7 @@ def create_app():
 
     from cabotage.server.models.admin import AdminModelView
     from cabotage.server.models.auth import Organization, OrganizationRequest, Team
+    from cabotage.server.models.feedback import Feedback
     from cabotage.server.models.projects import (
         Alert,
         Application,
@@ -462,6 +465,8 @@ def create_app():
     admin.add_view(AdminModelView(Hook, db.session))
     admin.add_view(AdminModelView(Alert, db.session))
     admin.add_view(AdminModelView(User, db.session))
+    if app.config.get("FEEDBACK_WIDGET_ENABLED", False):
+        admin.add_view(AdminModelView(Feedback, db.session))
 
     num_proxies = app.config.get("PROXY_FIX_NUM_PROXIES", 1)
     app.wsgi_app = ProxyFix(  # ty: ignore[invalid-assignment]  # Flask types wsgi_app as a method but documents reassignment

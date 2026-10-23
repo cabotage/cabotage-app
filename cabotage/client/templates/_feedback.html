@@ -1,0 +1,63 @@
+{% from "_macros.html" import icon %}
+<div id="feedback-widget"
+     class="flex flex-col items-end gap-2 pointer-events-auto"
+     data-post-url="{{ url_for('feedback.submit_feedback') }}"
+     data-csrf="{{ csrf_token() }}"
+     data-endpoint="{{ request.endpoint or '' }}"
+     data-view-args='{{ (request.view_args or {}) | tojson }}'>
+  <div id="feedback-panel"
+       class="hidden w-80 bg-base-300 rounded-lg border border-base-content/10 shadow-xl p-4">
+    <form id="feedback-form" novalidate>
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-semibold text-base-content">Send feedback</span>
+        <button type="button"
+                id="feedback-close"
+                class="btn btn-ghost btn-xs btn-circle"
+                aria-label="Close feedback form">
+          {{ icon('x', 'w-3.5 h-3.5') }}
+        </button>
+      </div>
+      <div class="flex gap-1.5 mb-3">
+        <input type="radio"
+               name="kind"
+               value="bug"
+               aria-label="Bug"
+               class="btn btn-xs flex-1" />
+        <input type="radio"
+               name="kind"
+               value="idea"
+               aria-label="Idea"
+               class="btn btn-xs flex-1" />
+        <input type="radio"
+               name="kind"
+               value="other"
+               aria-label="Other"
+               class="btn btn-xs flex-1"
+               checked />
+      </div>
+      <textarea id="feedback-message"
+                class="textarea textarea-bordered w-full text-sm min-h-24 mb-2"
+                maxlength="5000"
+                placeholder="What's working? What's not?"
+                required></textarea>
+      <p class="text-[11px] text-base-content/40 mb-3">
+        Includes the page you're on and basic browser info so we can debug faster.
+      </p>
+      <p id="feedback-error" class="hidden text-xs text-error mb-2"></p>
+      <button type="submit"
+              id="feedback-submit"
+              class="btn btn-primary btn-sm w-full">Send feedback</button>
+    </form>
+    <div id="feedback-thanks" class="hidden text-center py-6">
+      <p class="text-sm font-semibold text-base-content mb-1">Thanks!</p>
+      <p class="text-xs text-base-content/50">Your feedback helps us improve.</p>
+    </div>
+  </div>
+  <button id="feedback-toggle"
+          class="btn btn-primary btn-circle w-12 h-12 shadow-lg"
+          aria-label="Send feedback"
+          aria-expanded="false"
+          title="Send feedback">
+    {{ icon('chat', 'w-5 h-5') }}
+  </button>
+</div>

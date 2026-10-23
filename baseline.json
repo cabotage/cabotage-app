@@ -2178,13 +2178,6 @@
       "severity": "error"
     },
     {
-      "column": 9,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unannotated-return",
-      "concise_description": "`__init__` is missing a return annotation",
-      "severity": "error"
-    },
-    {
       "column": 23,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-attribute-type",
@@ -2217,13 +2210,6 @@
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-attribute-type",
       "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -2514,20 +2500,6 @@
       "severity": "error"
     },
     {
-      "column": 28,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`build_release_buildkit` is missing an annotation for parameter `release`",
-      "severity": "error"
-    },
-    {
-      "column": 23,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 16,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-variable-type",
@@ -2549,45 +2521,10 @@
       "severity": "error"
     },
     {
-      "column": 9,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 28,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `volume_claim` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 57,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -2612,13 +2549,6 @@
       "severity": "error"
     },
     {
-      "column": 34,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 13,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unused-call-result",
@@ -2640,20 +2570,6 @@
       "severity": "error"
     },
     {
-      "column": 49,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 38,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 17,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unused-call-result",
@@ -2672,13 +2588,6 @@
       "path": "cabotage/celery/tasks/build.py",
       "name": "unused-call-result",
       "concise_description": "Result of call expression is of type `V1Status` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -2686,13 +2595,6 @@
       "path": "cabotage/celery/tasks/build.py",
       "name": "unused-call-result",
       "concise_description": "Result of call expression is of type `int` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -2718,41 +2620,6 @@
     },
     {
       "column": 25,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 40,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -5356,20 +5223,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unannotated-return",
-      "concise_description": "`_env_config_read_keys_for_release` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 39,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_env_config_read_keys_for_release` is missing an annotation for parameter `release`",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-variable-type",
@@ -5381,20 +5234,6 @@
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `obj` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 39,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -7078,34 +6917,6 @@
       "severity": "error"
     },
     {
-      "column": 47,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 56,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 26,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-variable-type",
@@ -7631,14 +7442,7 @@
       "severity": "error"
     },
     {
-      "column": 20,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `body` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 29,
+      "column": 17,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "missing-attribute",
       "concise_description": "Object of class `NoneType` has no attribute `name`",
@@ -9073,6 +8877,13 @@
       "severity": "error"
     },
     {
+      "column": 33,
+      "path": "cabotage/celery/tasks/deploy.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 38,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
@@ -9094,7 +8905,21 @@
       "severity": "error"
     },
     {
+      "column": 33,
+      "path": "cabotage/celery/tasks/deploy.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 38,
+      "path": "cabotage/celery/tasks/deploy.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 29,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -9649,6 +9474,111 @@
     {
       "column": 24,
       "path": "cabotage/celery/tasks/deploy.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`format_feedback_message` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 29,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`format_feedback_message` is missing an annotation for parameter `feedback`",
+      "severity": "error"
+    },
+    {
+      "column": 44,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `user` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `route` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `meta` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`dispatch_feedback_notification` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 36,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`dispatch_feedback_notification` is missing an annotation for parameter `feedback_id`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `feedback` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 63,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 39,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unused-call-result",
+      "concise_description": "Result of call expression is of type `str | Unknown | None` and is not used; assign to `_` if this is intentional",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "cabotage/celery/tasks/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 64,
+      "path": "cabotage/celery/tasks/feedback.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
@@ -10985,6 +10915,13 @@
     },
     {
       "column": 19,
+      "path": "cabotage/celery/tasks/github.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 13,
       "path": "cabotage/celery/tasks/github.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -15093,7 +15030,7 @@
       "severity": "error"
     },
     {
-      "column": 41,
+      "column": 42,
       "path": "cabotage/celery/tasks/resources.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -20042,20 +19979,6 @@
       "severity": "error"
     },
     {
-      "column": 13,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unused-call-result",
-      "concise_description": "Result of call expression is of type `Image` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unused-call-result",
-      "concise_description": "Result of call expression is of type `Image` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
       "column": 17,
       "path": "cabotage/scripts/seed_localdev.py",
       "name": "unknown-argument-type",
@@ -20070,21 +19993,14 @@
       "severity": "error"
     },
     {
-      "column": 17,
+      "column": 33,
       "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `latest_web_prod_img` is unknown; it is inferred as an implicit `Any`",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 13,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unused-call-result",
-      "concise_description": "Result of call expression is of type `Release` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 27,
+      "column": 42,
       "path": "cabotage/scripts/seed_localdev.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -20098,42 +20014,7 @@
       "severity": "error"
     },
     {
-      "column": 17,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `latest_web_prod_rel` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unused-call-result",
-      "concise_description": "Result of call expression is of type `Deployment` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 39,
+      "column": 45,
       "path": "cabotage/scripts/seed_localdev.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -21596,10 +21477,24 @@
       "severity": "error"
     },
     {
+      "column": 20,
+      "path": "cabotage/server/alerting/ingest.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `proj_k8s` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
       "column": 29,
       "path": "cabotage/server/alerting/ingest.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "cabotage/server/alerting/ingest.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `app_k8s` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -22317,27 +22212,6 @@
       "severity": "error"
     },
     {
-      "column": 24,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `changes_data` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 23,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `old_pod` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 23,
-      "path": "cabotage/server/audit_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `new_pod` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/server/audit_helpers.py",
       "name": "unknown-variable-type",
@@ -22514,6 +22388,20 @@
     },
     {
       "column": 24,
+      "path": "cabotage/server/config.py",
+      "name": "implicit-any-attribute",
+      "concise_description": "This expression is implicitly inferred to be `Any | None`. Please provide an explicit type annotation.",
+      "severity": "error"
+    },
+    {
+      "column": 36,
+      "path": "cabotage/server/config.py",
+      "name": "implicit-any-attribute",
+      "concise_description": "This expression is implicitly inferred to be `Any | None`. Please provide an explicit type annotation.",
+      "severity": "error"
+    },
+    {
+      "column": 34,
       "path": "cabotage/server/config.py",
       "name": "implicit-any-attribute",
       "concise_description": "This expression is implicitly inferred to be `Any | None`. Please provide an explicit type annotation.",
@@ -22723,34 +22611,6 @@
       "severity": "error"
     },
     {
-      "column": 9,
-      "path": "cabotage/server/ext/config_writer.py",
-      "name": "unannotated-return",
-      "concise_description": "`__init__` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/ext/config_writer.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`__init__` is missing an annotation for parameter `app`",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/ext/config_writer.py",
-      "name": "unannotated-return",
-      "concise_description": "`init_app` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/ext/config_writer.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`init_app` is missing an annotation for parameter `app`",
-      "severity": "error"
-    },
-    {
       "column": 14,
       "path": "cabotage/server/ext/config_writer.py",
       "name": "implicitly-defined-attribute",
@@ -22853,13 +22713,6 @@
       "path": "cabotage/server/ext/config_writer.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/ext/config_writer.py",
-      "name": "unannotated-return",
-      "concise_description": "`read` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -23000,13 +22853,6 @@
       "path": "cabotage/server/ext/consul.py",
       "name": "unknown-attribute-type",
       "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/ext/consul.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -23570,20 +23416,6 @@
       "severity": "error"
     },
     {
-      "column": 27,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unannotated-return",
-      "concise_description": "`connect_vault` is missing a return annotation",
-      "severity": "error"
-    },
-    {
       "column": 13,
       "path": "cabotage/server/ext/vault.py",
       "name": "unknown-argument-type",
@@ -23622,35 +23454,7 @@
       "column": 9,
       "path": "cabotage/server/ext/vault.py",
       "name": "unannotated-return",
-      "concise_description": "`vault_connection` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unannotated-return",
-      "concise_description": "`signing_public_key` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unannotated-return",
       "concise_description": "`signing_cert` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/ext/vault.py",
-      "name": "unannotated-return",
-      "concise_description": "`sign_payload` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -23759,13 +23563,6 @@
       "severity": "error"
     },
     {
-      "column": 37,
-      "path": "cabotage/server/ext/vault_db_creds.py",
-      "name": "unknown-attribute-type",
-      "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
-      "severity": "error"
-    },
-    {
       "column": 18,
       "path": "cabotage/server/ext/vault_db_creds.py",
       "name": "implicitly-defined-attribute",
@@ -23857,13 +23654,6 @@
       "severity": "error"
     },
     {
-      "column": 31,
-      "path": "cabotage/server/ext/vault_db_creds.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 18,
       "path": "cabotage/server/ext/vault_db_creds.py",
       "name": "implicitly-defined-attribute",
@@ -23952,6 +23742,13 @@
       "path": "cabotage/server/ext/vault_db_creds.py",
       "name": "unknown-attribute-type",
       "concise_description": "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "cabotage/server/ext/vault_db_creds.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -24592,6 +24389,146 @@
       "severity": "error"
     },
     {
+      "column": 5,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`init_feedback` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`init_feedback` is missing an annotation for parameter `app`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`_clamp` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 12,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_clamp` is missing an annotation for parameter `value`",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_clamp` is missing an annotation for parameter `limit`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`_clean_page_url` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_clean_page_url` is missing an annotation for parameter `raw`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`_clean_view_args` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_clean_view_args` is missing an annotation for parameter `raw`",
+      "severity": "error"
+    },
+    {
+      "column": 16,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "implicit-any-empty-container",
+      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 32,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`_notify` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_notify` is missing an annotation for parameter `feedback_id`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `list[str]`",
+      "severity": "error"
+    },
+    {
+      "column": 50,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 59,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`submit_feedback` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "cabotage/server/integrations/feedback.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 28,
       "path": "cabotage/server/integrations/notification_routing.py",
       "name": "implicit-reexport",
@@ -25159,6 +25096,20 @@
       "severity": "error"
     },
     {
+      "column": 9,
+      "path": "cabotage/server/integrations/slack_oauth.py",
+      "name": "unused-call-result",
+      "concise_description": "Result of call expression is of type `Response | dict[str, Any]` and is not used; assign to `_` if this is intentional",
+      "severity": "error"
+    },
+    {
+      "column": 56,
+      "path": "cabotage/server/integrations/slack_oauth.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 19,
       "path": "cabotage/server/integrations/slack_oauth.py",
       "name": "unknown-variable-type",
@@ -25265,6 +25216,13 @@
     },
     {
       "column": 34,
+      "path": "cabotage/server/integrations/slack_oauth.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 47,
       "path": "cabotage/server/integrations/slack_oauth.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -25453,34 +25411,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unannotated-return",
-      "concise_description": "`_get_slack_token` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 22,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_get_slack_token` is missing an annotation for parameter `integration`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unannotated-return",
-      "concise_description": "`_slack_join_channel` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/server/integrations/slack_oauth.py",
       "name": "unused-call-result",
@@ -25488,38 +25418,10 @@
       "severity": "error"
     },
     {
-      "column": 56,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unannotated-return",
-      "concise_description": "`_slack_leave_channel` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/server/integrations/slack_oauth.py",
       "name": "unused-call-result",
       "concise_description": "Result of call expression is of type `Response` and is not used; assign to `_` if this is intentional",
-      "severity": "error"
-    },
-    {
-      "column": 57,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -25527,20 +25429,6 @@
       "path": "cabotage/server/integrations/slack_oauth.py",
       "name": "unannotated-return",
       "concise_description": "`_send_slack_message` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 56,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_send_slack_message` is missing an annotation for parameter `attachments`",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -25614,24 +25502,10 @@
       "severity": "error"
     },
     {
-      "column": 19,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `integration` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
       "column": 16,
       "path": "cabotage/server/integrations/slack_oauth.py",
       "name": "implicit-any-empty-container",
       "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/integrations/slack_oauth.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `token` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -26552,6 +26426,13 @@
       "severity": "error"
     },
     {
+      "column": 9,
+      "path": "cabotage/server/models/feedback.py",
+      "name": "unannotated-return",
+      "concise_description": "`__repr__` is missing a return annotation",
+      "severity": "error"
+    },
+    {
       "column": 20,
       "path": "cabotage/server/models/notifications.py",
       "name": "implicit-any-type-argument",
@@ -27451,6 +27332,20 @@
       "column": 9,
       "path": "cabotage/server/models/projects.py",
       "name": "unannotated-return",
+      "concise_description": "`duration_seconds` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/models/projects.py",
+      "name": "unannotated-return",
+      "concise_description": "`trigger_type` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/models/projects.py",
+      "name": "unannotated-return",
       "concise_description": "`release_object` is missing a return annotation",
       "severity": "error"
     },
@@ -27473,6 +27368,13 @@
       "path": "cabotage/server/models/projects.py",
       "name": "implicit-any-type-argument",
       "concise_description": "Cannot determine the type parameter `_VT` for generic class `dict[_KT, _VT]`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/models/projects.py",
+      "name": "unannotated-return",
+      "concise_description": "`duration_seconds` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -27571,13 +27473,6 @@
       "path": "cabotage/server/models/projects.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/models/projects.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `path` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -28005,6 +27900,13 @@
       "path": "cabotage/server/models/projects.py",
       "name": "implicit-any-type-argument",
       "concise_description": "Cannot determine the type parameter `_VT` for generic class `dict[_KT, _VT]`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/models/projects.py",
+      "name": "unannotated-return",
+      "concise_description": "`duration_seconds` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -28904,20 +28806,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/server/models/utils.py",
-      "name": "unannotated-return",
-      "concise_description": "`compact_k8s_name` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/models/utils.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/server/models/utils.py",
       "name": "unannotated-return",
@@ -29450,69 +29338,6 @@
       "severity": "error"
     },
     {
-      "column": 5,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_diff_config_item` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_diff_config_item` is missing an annotation for parameter `new`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_strip_id` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`_diff_ingress_item` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_diff_ingress_item` is missing an annotation for parameter `old`",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_diff_ingress_item` is missing an annotation for parameter `new`",
-      "severity": "error"
-    },
-    {
-      "column": 44,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 44,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`compute_release_change_details` is missing a return annotation",
-      "severity": "error"
-    },
-    {
       "column": 23,
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-variable-type",
@@ -29524,55 +29349,6 @@
       "path": "cabotage/server/query_helpers.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 23,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `cfg_changed` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 23,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `ing_changed` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `candidate` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "unannotated-return",
-      "concise_description": "`split_image_processes` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/query_helpers.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`split_image_processes` is missing an annotation for parameter `image`",
       "severity": "error"
     },
     {
@@ -31592,6 +31368,13 @@
       "severity": "error"
     },
     {
+      "column": 21,
+      "path": "cabotage/server/user/github_oauth.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 9,
       "path": "cabotage/server/user/github_oauth.py",
       "name": "unknown-argument-type",
@@ -31830,13 +31613,6 @@
       "severity": "error"
     },
     {
-      "column": 19,
-      "path": "cabotage/server/user/github_oauth.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `url` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/server/user/github_oauth.py",
       "name": "unannotated-return",
@@ -31855,13 +31631,6 @@
       "path": "cabotage/server/user/github_oauth.py",
       "name": "implicit-any-parameter",
       "concise_description": "`_fetch_github_user_installation_repository_ids` is missing an annotation for parameter `installation_id`",
-      "severity": "error"
-    },
-    {
-      "column": 19,
-      "path": "cabotage/server/user/github_oauth.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `url` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -31939,62 +31708,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "implicit-reexport",
       "concise_description": "`login_required` is not exported from module `flask_security`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`cleanup_app_env_k8s` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`deploy_tailscale_operator` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`dispatch_pipeline_notification` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`process_github_hook` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_deploy` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_image_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`run_release_build` is not exported from module `cabotage.celery.tasks`",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-reexport",
-      "concise_description": "`teardown_tailscale_operator` is not exported from module `cabotage.celery.tasks`",
       "severity": "error"
     },
     {
@@ -32523,21 +32236,21 @@
       "severity": "error"
     },
     {
-      "column": 36,
+      "column": 32,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 46,
+      "column": 42,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 55,
+      "column": 51,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -33212,6 +32925,41 @@
       "column": 5,
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
+      "concise_description": "`_organization_application_or_404` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 38,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_organization_application_or_404` is missing an annotation for parameter `organization`",
+      "severity": "error"
+    },
+    {
+      "column": 52,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_organization_application_or_404` is missing an annotation for parameter `application_id`",
+      "severity": "error"
+    },
+    {
+      "column": 42,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 48,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
       "concise_description": "`github_install_start` is missing a return annotation",
       "severity": "error"
     },
@@ -33384,14 +33132,21 @@
       "severity": "error"
     },
     {
-      "column": 44,
+      "column": 9,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 58,
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 27,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -33504,6 +33259,20 @@
     },
     {
       "column": 63,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 23,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -35316,31 +35085,10 @@
       "severity": "error"
     },
     {
-      "column": 48,
+      "column": 44,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 62,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `ns` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `prefix` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -35351,7 +35099,28 @@
       "severity": "error"
     },
     {
-      "column": 67,
+      "column": 22,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `ns` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `prefix` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 54,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 63,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -35575,31 +35344,10 @@
       "severity": "error"
     },
     {
-      "column": 48,
+      "column": 44,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 62,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `ns` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `prefix` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
@@ -35610,7 +35358,35 @@
       "severity": "error"
     },
     {
-      "column": 67,
+      "column": 22,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `ns` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `prefix` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 54,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 63,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 71,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -37710,13 +37486,6 @@
       "severity": "error"
     },
     {
-      "column": 31,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 44,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -38200,14 +37969,14 @@
       "severity": "error"
     },
     {
-      "column": 44,
+      "column": 40,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 54,
+      "column": 50,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -38302,48 +38071,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
       "concise_description": "`application_config` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 24,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_config` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_config` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 48,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_config` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -38599,28 +38326,70 @@
       "severity": "error"
     },
     {
-      "column": 44,
+      "column": 13,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 58,
+      "column": 27,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 54,
+      "column": 36,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 63,
+      "column": 49,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -38634,21 +38403,14 @@
       "severity": "error"
     },
     {
-      "column": 17,
+      "column": 15,
       "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
+      "column": 32,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -38670,6 +38432,55 @@
     },
     {
       "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 39,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 26,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 35,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 48,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -38844,42 +38655,35 @@
       "severity": "error"
     },
     {
-      "column": 27,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 44,
+      "column": 13,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 58,
+      "column": 13,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 54,
+      "column": 13,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 63,
+      "column": 13,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
-      "column": 32,
+      "column": 13,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -38963,7 +38767,21 @@
       "severity": "error"
     },
     {
-      "column": 9,
+      "column": 29,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 39,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 53,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -38972,159 +38790,12 @@
     {
       "column": 19,
       "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 47,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 60,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 48,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 61,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 49,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 62,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 67,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 38,
-      "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
-      "concise_description": "The type of `previous_github_repository` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
+      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
       "severity": "error"
     },
     {
       "column": 32,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 44,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 54,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 59,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -39435,7 +39106,14 @@
       "column": 52,
       "path": "cabotage/server/user/views.py",
       "name": "implicit-any-parameter",
-      "concise_description": "`_render_application_settings` is missing an annotation for parameter `project`",
+      "concise_description": "`_render_application_settings` is missing an annotation for parameter `environment`",
+      "severity": "error"
+    },
+    {
+      "column": 65,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_render_application_settings` is missing an annotation for parameter `form`",
       "severity": "error"
     },
     {
@@ -39481,7 +39159,21 @@
       "severity": "error"
     },
     {
-      "column": 42,
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -39678,426 +39370,6 @@
     },
     {
       "column": 9,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 5,
-      "path": "cabotage/server/user/views.py",
-      "name": "unannotated-return",
-      "concise_description": "`project_application_ingress` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_ingress` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 43,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_ingress` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 57,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_ingress` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 67,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_ingress` is missing an annotation for parameter `env_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 19,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 25,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `org_has_tailscale` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 15,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `latest_release` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 39,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/user/views.py",
-      "name": "unannotated-return",
-      "concise_description": "`_redirect_back` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/server/user/views.py",
-      "name": "unannotated-return",
-      "concise_description": "`_render_ingress` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_render_ingress` is missing an annotation for parameter `extra`",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 21,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 56,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 65,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 44,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 31,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `is_tailscale` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 67,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 58,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 31,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 59,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 43,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 37,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 38,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 47,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 43,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 40,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `ingress_name` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 31,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `existing` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 44,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -40419,48 +39691,6 @@
       "severity": "error"
     },
     {
-      "column": 27,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_audit_log` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 37,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_audit_log` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 51,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_audit_log` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -40504,27 +39734,6 @@
     },
     {
       "column": 9,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 17,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -40734,48 +39943,6 @@
       "severity": "error"
     },
     {
-      "column": 24,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_images` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 34,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_images` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 48,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_images` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -40878,55 +40045,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
       "concise_description": "`image_detail` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 18,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_detail` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_detail` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_detail` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 52,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_detail` is missing an annotation for parameter `image_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -41133,73 +40251,10 @@
       "severity": "error"
     },
     {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_build_livelogs` is missing an annotation for parameter `ws`",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_build_livelogs` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 40,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_build_livelogs` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 54,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_build_livelogs` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 64,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`image_build_livelogs` is missing an annotation for parameter `image_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 13,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `image` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -41263,48 +40318,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
       "concise_description": "`application_releases` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_releases` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_releases` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 50,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_releases` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -41476,48 +40489,6 @@
       "severity": "error"
     },
     {
-      "column": 29,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_deployments` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 39,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_deployments` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_deployments` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -41620,55 +40591,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
       "concise_description": "`release_detail` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_detail` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 30,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_detail` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 44,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_detail` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 54,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_detail` is missing an annotation for parameter `release_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -41833,73 +40755,10 @@
       "severity": "error"
     },
     {
-      "column": 28,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_build_livelogs` is missing an annotation for parameter `ws`",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_build_livelogs` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_build_livelogs` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 56,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_build_livelogs` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 66,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`release_build_livelogs` is missing an annotation for parameter `release_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `release` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 32,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -42036,73 +40895,10 @@
       "severity": "error"
     },
     {
-      "column": 25,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_livelogs` is missing an annotation for parameter `ws`",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_livelogs` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 39,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_livelogs` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_livelogs` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_livelogs` is missing an annotation for parameter `deployment_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 18,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `deployment` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -42169,55 +40965,6 @@
       "severity": "error"
     },
     {
-      "column": 23,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_detail` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 33,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_detail` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 47,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_detail` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 57,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_detail` is missing an annotation for parameter `deployment_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 18,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -42236,55 +40983,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
       "concise_description": "`deployment_logs_view` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 26,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_view` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 36,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_view` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 50,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_view` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 60,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_view` is missing an annotation for parameter `deployment_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -42344,48 +41042,6 @@
       "severity": "error"
     },
     {
-      "column": 27,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_query` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 37,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_query` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 51,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`deployment_logs_query` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 18,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -42418,6 +41074,13 @@
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `org` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 35,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -42491,48 +41154,6 @@
       "severity": "error"
     },
     {
-      "column": 32,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_release_create` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 42,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_release_create` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 56,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`application_release_create` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -42579,27 +41200,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "not-callable",
       "concise_description": "Expected a callable, got `list[str]`",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -44892,48 +43492,6 @@
       "severity": "error"
     },
     {
-      "column": 40,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_observe_metric` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 50,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_observe_metric` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 64,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_observe_metric` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -45970,55 +44528,6 @@
       "severity": "error"
     },
     {
-      "column": 36,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_live_stats` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 46,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_live_stats` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 60,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_live_stats` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 70,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_live_stats` is missing an annotation for parameter `env_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 15,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
@@ -46299,10 +44808,24 @@
       "severity": "error"
     },
     {
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `logql` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
       "column": 19,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `escaped` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -46390,7 +44913,7 @@
       "severity": "error"
     },
     {
-      "column": 27,
+      "column": 23,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `message` is unknown; it is inferred as an implicit `Any`",
@@ -46401,62 +44924,6 @@
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
       "concise_description": "`job_history` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 17,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`job_history` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 27,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`job_history` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`job_history` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 51,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`job_history` is missing an annotation for parameter `process_name`",
-      "severity": "error"
-    },
-    {
-      "column": 65,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`job_history` is missing an annotation for parameter `env_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -46516,66 +44983,10 @@
       "severity": "error"
     },
     {
-      "column": 9,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/server/user/views.py",
       "name": "unannotated-return",
       "concise_description": "`project_application_logs_view` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 35,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_logs_view` is missing an annotation for parameter `org_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 45,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_logs_view` is missing an annotation for parameter `project_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 59,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_logs_view` is missing an annotation for parameter `app_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 69,
-      "path": "cabotage/server/user/views.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`project_application_logs_view` is missing an annotation for parameter `env_slug`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 63,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 77,
-      "path": "cabotage/server/user/views.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -46740,6 +45151,13 @@
       "severity": "error"
     },
     {
+      "column": 35,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 72,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -46866,6 +45284,13 @@
       "severity": "error"
     },
     {
+      "column": 17,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `tenant_id` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
       "column": 37,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
@@ -46874,6 +45299,13 @@
     },
     {
       "column": 51,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 59,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -47028,6 +45460,447 @@
     },
     {
       "column": 31,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`_pipeline_range` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`_pipeline_window` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`_pipeline_finished` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`_duration` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 15,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_duration` is missing an annotation for parameter `model`",
+      "severity": "error"
+    },
+    {
+      "column": 34,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`_percentiles` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 18,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_percentiles` is missing an annotation for parameter `duration`",
+      "severity": "error"
+    },
+    {
+      "column": 48,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`_seconds` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_seconds` is missing an annotation for parameter `value`",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`_iso_utc` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 14,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`_iso_utc` is missing an annotation for parameter `value`",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`project_application_pipeline` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 15,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`project_application_pipeline_stats` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 15,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 52,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 54,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `is_build_pipeline` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 22,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 39,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`project_application_pipeline_runs` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 15,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `query` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `query` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `query` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `total_count` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 19,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `deployments` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`stage` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 15,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`stage` is missing an annotation for parameter `obj`",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "cabotage/server/user/views.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`stage` is missing an annotation for parameter `done`",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 48,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 51,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 38,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 5,
+      "path": "cabotage/server/user/views.py",
+      "name": "unannotated-return",
+      "concise_description": "`project_application_pipeline_slowest` is missing a return annotation",
+      "severity": "error"
+    },
+    {
+      "column": 15,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `app_env` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 41,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 48,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `rows` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 24,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `snapshot` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 27,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 38,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 37,
+      "path": "cabotage/server/user/views.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 38,
       "path": "cabotage/server/user/views.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
