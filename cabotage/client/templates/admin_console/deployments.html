@@ -1,0 +1,86 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header, icon %}
+{% from "admin_console/_macros.html" import crumbs, segments, deployment_table %}
+
+{% block page_title %}Deployments{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'deployments'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% set history = mode == 'history' %}
+  {% set scope = {} %}
+  {% if organization_id %}{% set _ = scope.update({'organization_id': organization_id}) %}{% endif %}
+  {% if project_id %}{% set _ = scope.update({'project_id': project_id}) %}{% endif %}
+  {% if application_id %}{% set _ = scope.update({'application_id': application_id}) %}{% endif %}
+  {% set search = {} %}
+  {% if q %}{% set _ = search.update({'q': q}) %}{% endif %}
+  {% if env %}{% set _ = search.update({'env': env}) %}{% endif %}
+  {% set base = dict(scope, mode=mode, status=status, days=days, **search) %}
+  {% set window = {'1': 'the last 24 hours', '7': 'the last 7 days', '30': 'the last 30 days', 'all': 'all time'}.get(days, 'the last 7 days') %}
+
+  {% call page_header('Deployments') %}{% endcall %}
+
+  <div class="adm-toolbar">
+    <nav class="adm-seg" aria-label="View">
+      <a href="{{ url_for('admin_console.deployments', mode='triage', status='attention', days='7', **dict(scope, **search)) }}" {% if not history %}aria-current="true"{% endif %}>Needs attention</a>
+      <a href="{{ url_for('admin_console.deployments', mode='history', status='all', days='7', **dict(scope, **search)) }}" {% if history %}aria-current="true"{% endif %}>History</a>
+    </nav>
+    {% set status_args = dict(base) %}{% set _ = status_args.pop('status') %}
+    {% if history %}
+      {{ segments('admin_console.deployments', 'status', status, [('all', 'All'), ('failed', 'Failed'), ('running', 'In progress'), ('complete', 'Deployed')], status_args) }}
+    {% else %}
+      {{ segments('admin_console.deployments', 'status', status, [('attention', 'Failed or in progress'), ('failed', 'Failed'), ('running', 'In progress')], status_args) }}
+    {% endif %}
+    {% set days_args = dict(base) %}{% set _ = days_args.pop('days') %}
+    {% set day_options = [('1', '24h'), ('7', '7d'), ('30', '30d')] + ([('all', 'All time')] if history else []) %}
+    {{ segments('admin_console.deployments', 'days', days, day_options, days_args) }}
+  </div>
+
+  <form class="adm-toolbar" method="get" action="{{ url_for('admin_console.deployments') }}" role="search">
+    {% for name, value in dict(scope, mode=mode, status=status, days=days).items() %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <div class="adm-search">
+      <input class="input input-bordered input-sm" type="search" name="q" value="{{ q }}" placeholder="Organization, project, application or ID" aria-label="Organization, project or application name, slug, or exact ID" autocomplete="off" spellcheck="false" maxlength="100">
+      <input class="input input-bordered input-sm adm-search-env" type="text" name="env" value="{{ env }}" placeholder="Environment slug" aria-label="Exact environment slug" autocomplete="off" spellcheck="false" maxlength="100">
+      <button class="btn btn-ghost btn-sm" type="submit">Filter</button>
+    </div>
+    {% if q or env %}
+      <a class="adm-link adm-sub underline" href="{{ url_for('admin_console.deployments', **dict(scope, mode=mode, status=status, days=days)) }}">Clear filters</a>
+    {% endif %}
+  </form>
+
+  <p class="adm-note">
+    <span>
+      {% if history %}
+        Every deployment started in {{ window }}, newest first.
+      {% else %}
+        The latest deployment of each live application environment, when it {% if status == 'failed' %}failed{% elif status == 'running' %}is still in progress{% else %}failed or is still in progress{% endif %} and started in {{ window }}. Older deployments to the same environment are hidden; <a class="adm-link underline" href="{{ url_for('admin_console.deployments', mode='history', status='all', days='7', **dict(scope, **search)) }}">History</a> lists every deployment.
+      {% endif %}
+      {% if scope %}
+        Only
+        {% if application_id %}<a class="adm-link adm-primary" href="{{ url_for('admin_console.application', application_id=application_id) }}">application <span class="adm-mono">{{ application_id }}</span></a>
+        {%- elif project_id %}<a class="adm-link adm-primary" href="{{ url_for('admin_console.project', project_id=project_id) }}">project <span class="adm-mono">{{ project_id }}</span></a>
+        {%- else %}<a class="adm-link adm-primary" href="{{ url_for('admin_console.organization', organization_id=organization_id) }}">organization <span class="adm-mono">{{ organization_id }}</span></a>{% endif %}.
+        <a class="adm-link underline" href="{{ url_for('admin_console.deployments', mode=mode, status=status, days=days, **search) }}">Show all organizations</a>
+      {% endif %}
+    </span>
+  </p>
+
+  {% if page_number > 1 %}
+    {% set empty = 'No more deployments.' %}
+  {% elif history %}
+    {% set noun = {'failed': 'failed deployments', 'running': 'in-progress deployments', 'complete': 'completed deployments'}.get(status, 'deployments') %}
+    {% set empty = 'No ' ~ noun ~ ' started in ' ~ window ~ (' match these filters.' if (q or env or scope) else '.') %}
+  {% else %}
+    {% set empty = 'No live application environment has a latest deployment that ' ~ ({'failed': 'failed', 'running': 'is in progress'}.get(status, 'failed or is in progress')) ~ ' and started in ' ~ window ~ (' matching these filters.' if (q or env or scope) else '.') ~ ' Older failures may exist; check History.' %}
+  {% endif %}
+  {{ deployment_table(rows, empty=empty) }}
+
+  {% if page_number > 1 or has_next %}
+    <nav class="adm-pager" aria-label="Pagination">
+      <span class="adm-num">Page {{ page_number }}</span>
+      <span class="flex gap-1">
+        {% if page_number > 1 %}<a class="btn btn-ghost btn-xs" href="{{ url_for('admin_console.deployments', page=page_number - 1, **base) }}">{{ icon('chevron-left', 'w-3.5 h-3.5') }} Newer</a>{% endif %}
+        {% if has_next %}<a class="btn btn-ghost btn-xs" href="{{ url_for('admin_console.deployments', page=page_number + 1, **base) }}">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>{% endif %}
+      </span>
+    </nav>
+  {% endif %}
+{% endblock console %}
