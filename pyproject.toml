@@ -28,6 +28,7 @@ dependencies = [
     "hvac",
     "kubernetes>=36",
     "pathspec",
+    "prometheus-client>=0.26.0",
     "psycopg[binary]",
     "py-consul",
     "pygithub",
