@@ -36,6 +36,44 @@
     </div>
   </div>
 
+  {% if grafana_available %}
+  {% set grafana = organization.grafana_integration %}
+  <section class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6" aria-labelledby="grafana-heading">
+    <div class="card-body">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="grafana-heading" class="card-title text-lg">Grafana</h2>
+        <span class="badge badge-sm badge-outline">
+          {% if not grafana or not grafana.enabled %}Disabled{% elif grafana.last_error %}Sync failed{% elif grafana.ready %}Ready{% else %}Sync pending{% endif %}
+        </span>
+      </div>
+      <p class="text-sm">Dashboards, metrics, and logs for this organization. Members can view; organization admins can edit dashboards. Alerting is managed by platform operators.</p>
+      {% if grafana and grafana.last_error %}
+        <p class="text-sm text-error" role="alert">Grafana synchronization failed. Access stays closed until synchronization succeeds. Retry below.</p>
+      {% elif grafana and grafana.enabled and not grafana.ready %}
+        <p class="text-sm">Grafana is being synchronized. Refresh this page to check its status.</p>
+      {% endif %}
+      <div class="flex flex-wrap gap-2 mt-3">
+        {% if grafana and grafana.ready %}
+          <form method="POST" action="{{ url_for('grafana.open_grafana', org_slug=organization.slug) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-primary btn-sm">Open Grafana</button>
+          </form>
+        {% endif %}
+        <form method="POST" action="{{ url_for('grafana.settings', org_slug=organization.slug) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if grafana and grafana.enabled %}
+            <button type="submit" name="action" value="sync" class="btn btn-outline btn-sm">Sync access</button>
+            <button type="submit" name="action" value="disable" class="btn btn-ghost btn-sm">Disable Grafana</button>
+          {% else %}
+            <button type="submit" name="action" value="enable" class="btn btn-primary btn-sm">Enable Grafana</button>
+          {% endif %}
+        </form>
+      </div>
+      <p class="text-xs">Disabling Grafana immediately blocks access and retains existing dashboards and data.</p>
+    </div>
+  </section>
+  {% endif %}
+
   <div class="card bg-base-200/50 border border-base-300/50 max-w-2xl mt-6">
     <div class="card-body">
       <div class="flex items-start justify-between gap-6">
