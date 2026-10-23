@@ -1,0 +1,170 @@
+{#
+  Shared layout for legal policy pages.
+
+  `legal_nav` (the active profile's pages as LegalLinks, from its _nav.html) is
+  injected by cabotage.server.main.legal. Child templates set, outside any block:
+    current   - endpoint of this page, e.g. 'main.terms'
+    doc_icon  - icon name for the page header
+    toc       - list of (anchor, label) pairs for the table of contents
+  and fill the blocks doc_title, doc_subtitle, and doc_body.
+#}
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}
+  {% block doc_title %}{% endblock doc_title %} - Cabotage
+{% endblock title %}
+
+{% block css %}
+<style>
+  .legal-page { scroll-behavior: smooth; }
+  .legal-section { scroll-margin-top: 5rem; }
+
+  .toc-link {
+    position: relative;
+    padding-left: 1rem;
+    border-left: 2px solid transparent;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+  .toc-link:hover,
+  .toc-link.active {
+    border-left-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  .legal-section:target > .section-heading { color: var(--color-primary); }
+  .legal-section:target > .section-heading::after {
+    content: '';
+    position: absolute;
+    left: -1.5rem;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--color-primary);
+  }
+
+  .reading-progress {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--color-primary);
+    z-index: 100;
+    transition: width 0.1s linear;
+    opacity: 0.8;
+  }
+
+  @media (max-width: 1023px) {
+    .legal-sidebar { display: none; }
+  }
+</style>
+{% endblock css %}
+
+{% block content_full %}
+{% set about_link = {'endpoint': 'main.about', 'href': url_for('main.about'), 'label': 'About', 'icon': 'info'} %}
+{% set sequence = [about_link] + legal_nav %}
+{% set position = sequence | map(attribute='endpoint') | list %}
+{% set index = position.index(current) %}
+{% set prev_link = sequence[index - 1] %}
+{% set next_link = sequence[(index + 1) % (sequence | length)] %}
+<div class="reading-progress" id="reading-progress" style="width: 0%"></div>
+
+<div class="app-content-padded legal-page">
+  {# ── Page header ── #}
+  <div class="max-w-4xl mx-auto mb-8">
+    <div class="flex items-center gap-3 mb-2">
+      <div class="p-2 rounded-xl bg-primary/10 text-primary">
+        {{ icon(doc_icon, 'w-6 h-6') }}
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-base-content">{{ self.doc_title() }}</h1>
+        <p class="text-sm text-base-content/40 mt-0.5">{% block doc_subtitle %}{% endblock doc_subtitle %}</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="max-w-4xl mx-auto flex gap-10">
+    {# ── Sticky sidebar ToC (desktop) ── #}
+    <nav class="legal-sidebar w-56 shrink-0 hidden lg:block" aria-label="Table of contents">
+      <div class="sticky top-20">
+        <p class="text-xs font-semibold uppercase tracking-wider text-base-content/30 mb-3">On this page</p>
+        <ul class="flex flex-col gap-1 text-sm" id="toc-list">
+          {% for anchor, label in toc %}
+          <li><a href="#{{ anchor }}" class="toc-link block py-1 text-base-content/50 hover:text-primary transition-colors">{{ label }}</a></li>
+          {% endfor %}
+        </ul>
+
+        <div class="mt-6 pt-4 border-t border-base-content/5 space-y-2">
+          {% for link in sequence if link.endpoint != current %}
+          <a href="{{ link.href }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+            {{ icon(link.icon, 'w-4 h-4') }}
+            <span>{{ link.label }}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </nav>
+
+    {# ── Main content ── #}
+    <article class="flex-1 min-w-0">
+      {# Mobile ToC #}
+      <details class="lg:hidden mb-6 card bg-base-200 border border-base-300 group">
+        <summary class="flex items-center justify-between cursor-pointer px-4 py-3 text-sm font-medium text-base-content/60 hover:text-base-content transition-colors">
+          <span class="flex items-center gap-2">{{ icon('list', 'w-4 h-4') }} Table of Contents</span>
+          {{ icon('chevron-down', 'w-4 h-4 transition-transform group-open:rotate-180') }}
+        </summary>
+        <ul class="px-4 pb-3 flex flex-col gap-1 text-sm border-t border-base-content/5 pt-3">
+          {% for anchor, label in toc %}
+          <li><a href="#{{ anchor }}" class="block py-1 text-base-content/50 hover:text-primary transition-colors">{{ label }}</a></li>
+          {% endfor %}
+        </ul>
+      </details>
+
+      {% block doc_body %}{% endblock doc_body %}
+
+      {# ── Bottom navigation ── #}
+      <div class="mt-12 pt-6 border-t border-base-content/5 flex items-center justify-between">
+        <a href="{{ prev_link.href }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          {{ icon('arrow-left', 'w-4 h-4') }}
+          <span>{{ prev_link.label }}</span>
+        </a>
+        <a href="{{ next_link.href }}" class="flex items-center gap-2 text-sm text-base-content/40 hover:text-primary transition-colors">
+          <span>{{ next_link.label }}</span>
+          {{ icon('arrow-right', 'w-4 h-4') }}
+        </a>
+      </div>
+    </article>
+  </div>
+</div>
+{% endblock content_full %}
+
+{% block js %}
+<script>
+(function() {
+  var bar = document.getElementById('reading-progress');
+  if (bar) {
+    window.addEventListener('scroll', function() {
+      var h = document.documentElement;
+      var pct = (h.scrollTop / (h.scrollHeight - h.clientHeight)) * 100;
+      bar.style.width = Math.min(pct, 100) + '%';
+    }, { passive: true });
+  }
+
+  var sections = document.querySelectorAll('.legal-section');
+  var tocLinks = document.querySelectorAll('#toc-list .toc-link');
+  if (sections.length && tocLinks.length) {
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          tocLinks.forEach(function(l) { l.classList.remove('active'); });
+          var active = document.querySelector('#toc-list a[href="#' + entry.target.id + '"]');
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -60% 0px', threshold: 0 });
+    sections.forEach(function(s) { observer.observe(s); });
+  }
+})();
+</script>
+{% endblock js %}
