@@ -70,9 +70,11 @@ test: .state/docker-build-base ## Run the test suite
 		base sh -c "python3 -m flask db upgrade && python3 -m pytest tests/ -v $(ARGS)"
 
 # Separate recursive calls enforce order and stop on failure, even with make -j.
-ci: ## Run lint, fmt, then tests
+ci: ## Run lint, fmt, type and security checks, then tests
 	$(MAKE) lint
 	$(MAKE) fmt
+	$(MAKE) type-check
+	$(MAKE) security-check
 	$(MAKE) test
 
 ##@ Development
