@@ -5,15 +5,42 @@ from celery import shared_task
 from dxf import DXF
 from flask import current_app
 
-from cabotage.server.models.projects import Application
+from cabotage.server.models.projects import (
+    Application,
+    ApplicationEnvironment,
+    Deployment,
+    Release,
+)
 from cabotage.utils.docker_auth import generate_docker_registry_jwt
+
+# Release tags of this many recent successful deployments survive pruning so
+# they stay available as rollback targets.
+ROLLBACK_RETAINED_DEPLOYMENTS = 10
 
 
 def natsort(s):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]
 
 
-def _prune_repository(repository_name, dry_run=False):
+def _rollback_release_aliases(app_env: ApplicationEnvironment) -> frozenset[str]:
+    deployments = (
+        app_env.deployments.filter_by(complete=True, error=False)
+        .order_by(Deployment.created.desc())
+        .limit(ROLLBACK_RETAINED_DEPLOYMENTS)
+        .all()
+    )
+    release_ids = {d.release.get("id") for d in deployments if d.release}
+    if not release_ids:
+        return frozenset()
+    versions = Release.query.with_entities(Release.version).filter(
+        Release.id.in_(release_ids)
+    )
+    return frozenset(f"release-{version}" for (version,) in versions)
+
+
+def _prune_repository(
+    repository_name: str, dry_run: bool = False, retain: frozenset[str] = frozenset()
+):
     def auth(dxf, response):
         dxf.token = generate_docker_registry_jwt(
             access=[
@@ -64,7 +91,7 @@ def _prune_repository(repository_name, dry_run=False):
             else:
                 print(f"retaining {repository_name}:{a}")
         for a in release_aliases:
-            if a in release_aliases[: -5 or None]:
+            if a in release_aliases[: -5 or None] and a not in retain:
                 try:
                     print(f"deleting {repository_name}:{a}")
                     if not dry_run:
@@ -81,7 +108,10 @@ def _prune_repository(repository_name, dry_run=False):
 def prune_images(dry_run=False):
     for app in reversed(Application.query.all()):
         if app.project.organization is not None:
+            app_env: ApplicationEnvironment
             for app_env in app.application_environments:
                 _prune_repository(
-                    app.registry_repository_name(app_env), dry_run=dry_run
+                    app.registry_repository_name(app_env),
+                    dry_run=dry_run,
+                    retain=_rollback_release_aliases(app_env),
                 )

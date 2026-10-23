@@ -14260,20 +14260,6 @@
       "severity": "error"
     },
     {
-      "column": 23,
-      "path": "cabotage/celery/tasks/prune_images.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_prune_repository` is missing an annotation for parameter `repository_name`",
-      "severity": "error"
-    },
-    {
-      "column": 40,
-      "path": "cabotage/celery/tasks/prune_images.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_prune_repository` is missing an annotation for parameter `dry_run`",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/celery/tasks/prune_images.py",
       "name": "unannotated-return",
