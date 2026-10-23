@@ -1,0 +1,34 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import resource_path, org_tab_nav %}
+
+{% set org_slug = organization.slug %}
+
+{% block title %}
+  Pipeline - {{ org_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': 'Organizations', 'url': url_for('user.organizations')},
+    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug)},
+    {'label': 'Pipeline'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ org_tab_nav(organization, 'pipeline') }}
+{% endblock tab_bar %}
+
+{% block content %}
+{% set rollup_level = 'organization' %}
+{% set rollup_root_id = 'organization-pipeline' %}
+{% set rollup_url = url_for('user.organization_pipeline_rollup', org_slug=org_slug) %}
+{% set rollup_empty_text %}
+  No runs in the last <span data-range-label></span>. Each image build, release, and deploy for any
+  application across <span class="text-base-content">{{ organization.name }}</span> shows up here once it finishes.
+  <a class="link link-hover text-base-content ml-1"
+     href="{{ url_for('user.organization', org_slug=org_slug) }}">Go to overview</a>
+{% endset %}
+{% set show_summary = true %}
+{% include "user/_pipeline_rollup.html" %}
+{% endblock content %}
