@@ -193,7 +193,8 @@ def create_app() -> Flask:
 
     admin = Admin(
         name="cabotage_admin",
-        index_view=AdminIndexView(),
+        url="/admin/db",
+        index_view=AdminIndexView(url="/admin/db"),
         theme=Bootstrap4Theme(base_template="admin/cabotage_base.html"),
     )
 
@@ -397,6 +398,7 @@ def create_app() -> Flask:
     babel.init_app(app)
 
     # register blueprints
+    from cabotage.server.admin_console import admin_console_blueprint
     from cabotage.server.admin_passkey import (
         blueprint as admin_passkey_blueprint,
     )
@@ -416,6 +418,7 @@ def create_app() -> Flask:
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
     app.register_blueprint(admin_passkey_blueprint)
+    app.register_blueprint(admin_console_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
