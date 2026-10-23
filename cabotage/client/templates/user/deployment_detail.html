@@ -49,7 +49,7 @@
             {% elif deployment.error %}
               <span class="text-error">Failed</span>
             {% else %}
-              <span class="text-info">Deploying...</span>
+              <span class="text-info">{{ 'Queued' if deployment.queued else 'Deploying...' }}</span>
             {% endif %}
           </p>
         </div>
@@ -132,7 +132,7 @@
                 {% elif deployment.error %}
                   <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Error</span>
                 {% else %}
-                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-info status-dot-pulse"></span> Deploying</span>
+                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-info status-dot-pulse"></span> {{ 'Queued' if deployment.queued else 'Deploying' }}</span>
                 {% endif %}
               </span>
             </div>
