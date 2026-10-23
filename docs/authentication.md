@@ -222,3 +222,45 @@ The page provides:
 - **Recovery Codes** — View remaining count out of total (e.g., "9/10"), regenerate codes, low-code warning
 
 After initial MFA setup, users are redirected to the home page. When managing MFA from settings, they stay on the settings page.
+
+## Passkey-Protected Administration
+
+Global admins enter the read-only legacy database viewer at `/admin/` with a
+separate **user-verifying passkey** assertion (PIN or biometric). Passwords, TOTP,
+recovery codes, and remembered login freshness do not unlock the viewer. A
+registered passkey alone does not prove that its authenticator supports user
+verification. Enroll and verify suitable passkeys for at least two active global
+admins before rollout.
+
+Apply migration `b41d928e63af` before serving passkey-protected administration; it
+adds server-side grant and challenge tables. Entry grants expire after 15 minutes
+without extension. User records exclude password hashes, MFA secrets, recovery
+codes, and session identifiers from both list and detail views.
+
+The exact-request approval mechanism binds a separate assertion to an action,
+target, submitted body, method, URL, and uploaded file bytes and metadata.
+Action challenges expire after two minutes and approvals are single-use.
+Verification alone does not execute an action: browser confirmation is separate.
+Cancel or Escape discards the approval in the browser; the server keeps the unused
+approval until it expires. No route requires action approval yet: this layer does
+not grant cross-tenant permissions or change native organization membership
+authorization, and the database viewer is read-only.
+
+While the band is visible, the browser submits forms itself so an approval request
+can keep unsaved input on the page. Redirects from those submissions return to the
+browser as `admin_redirect` JSON, so external destinations such as GitHub open
+normally and same-site pages load once.
+
+A thin, theme-accented band remains above navigation while admin access is active.
+It shows server-derived expiry and **End access**. Expiry or ending access leaves
+the current page and unsaved form content in memory; **Verify again** renews access
+without reloading. Drafts and selected files are not copied into browser storage
+and do not survive a reload.
+The read-only database viewer shows the same band in its own styling; there,
+**Verify again** opens the full-page passkey check and returns to the record.
+
+Ending admin access, signing out, losing global-admin status, account deactivation,
+credential removal, and session-identifier rotation invalidate the corresponding
+admin access. Normal account-security rules still permit removing a last passkey
+when another MFA method remains; that account then needs a new user-verifying
+passkey to enter the database viewer.
