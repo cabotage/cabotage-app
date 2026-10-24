@@ -1384,6 +1384,63 @@ class TestProcessCheckSuiteHook:
 
     @patch("cabotage.celery.tasks.github.github_session")
     @patch("cabotage.celery.tasks.github.github_app")
+    def test_targets_gate_and_deploy_independently(
+        self,
+        mock_gh_app,
+        mock_session,
+        db_session,
+        project,
+        environment,
+        installation_id,
+        commit_sha,
+    ):
+        selected = _make_app_env(
+            _make_app(project, installation_id, "app-selected"), environment
+        )
+        selected.deployment_checks = ["Tests"]
+        _make_app_env(_make_app(project, installation_id, "app-branch"), environment)
+        push_hook = _make_push_hook(installation_id, commit_sha=commit_sha)
+
+        mock_gh_app.app_id = OWN_APP_ID
+        mock_gh_app.bearer_token = "bt"
+
+        from cabotage.celery.tasks.github import process_check_suite_hook
+
+        def run(check_runs):
+            mock_session.reset_mock()
+            mock_get, mock_post = _mock_github_responses(
+                required_checks=[{"context": "CLA Signing", "app_id": 15368}],
+                check_runs=check_runs,
+            )
+            mock_session.get.side_effect = mock_get
+            mock_session.post.side_effect = mock_post
+            process_check_suite_hook(
+                _make_check_suite_hook(installation_id, commit_sha)
+            )
+            db.session.refresh(push_hook)
+            return [
+                c[1]["json"]["required_contexts"]
+                for c in mock_session.post.call_args_list
+                if c[0][0].endswith("/deployments")
+            ]
+
+        # The branch's required check has not run, so only the target that
+        # selected its own checks deploys.
+        assert run([{"name": "Tests", "conclusion": "success"}]) == [["Tests"]]
+        assert push_hook.deployed is not True
+
+        # Once the branch's required check passes, the remaining target
+        # deploys and the already-deployed one is not redeployed.
+        assert run(
+            [
+                {"name": "Tests", "conclusion": "success"},
+                {"name": "CLA Signing", "conclusion": "success"},
+            ]
+        ) == [["CLA Signing"]]
+        assert push_hook.deployed is True
+
+    @patch("cabotage.celery.tasks.github.github_session")
+    @patch("cabotage.celery.tasks.github.github_app")
     def test_ruleset_checks_block_premature_deploy(
         self,
         mock_gh_app,
