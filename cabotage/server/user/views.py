@@ -52,6 +52,7 @@ from cabotage.celery.tasks import (
     teardown_tailscale_operator,
 )
 from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.github import discover_check_names
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
@@ -4499,6 +4500,10 @@ def project_application_environment_settings(
     if form.validate_on_submit():
         app_env.auto_deploy_branch = form.auto_deploy_branch.data or None
         app_env.auto_deploy_wait_for_ci = form.auto_deploy_wait_for_ci.data
+        app_env.deployment_checks = (
+            sorted({c.strip() for c in form.deployment_checks.data or [] if c.strip()})
+            or None
+        )
         app_env.github_environment_name = form.github_environment_name.data or None
         app_env.deployment_timeout = form.deployment_timeout.data
         app_env.health_check_path = form.health_check_path.data or None
@@ -4535,6 +4540,7 @@ def project_application_environment_settings(
             ("ingress domains", _ingress_hostnames([app_env])),
         ],
     )
+    branch = app_env.effective_auto_deploy_branch
     return render_template(
         "user/project_application_environment_settings.html",
         application=application,
@@ -4543,7 +4549,45 @@ def project_application_environment_settings(
         form=form,
         unenroll_form=unenroll_form,
         unenroll_impact=unenroll_impact,
+        can_discover_checks=bool(
+            application.github_app_installation_id
+            and application.github_repository
+            and branch
+        ),
+        selected_checks=sorted(form.deployment_checks.data or [], key=str.lower),
     )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/settings/checks",
+)
+@login_required
+def project_application_environment_checks(org_slug, project_slug, env_slug, app_slug):
+    _org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    app_env = ApplicationEnvironment.query.filter_by(
+        application_id=application.id, environment_id=environment.id
+    ).first_or_404()
+
+    branch = app_env.effective_auto_deploy_branch
+    if not (
+        application.github_app_installation_id
+        and application.github_repository
+        and branch
+    ):
+        return jsonify({"error": "not configured"}), 404
+    checks = discover_check_names(
+        application.github_app_installation_id,
+        application.github_repository,
+        branch,
+    )
+    if checks is None:
+        return jsonify({"error": "discovery failed"}), 502
+    return jsonify({"checks": checks})
 
 
 @user_blueprint.route(
