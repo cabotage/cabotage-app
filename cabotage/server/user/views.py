@@ -4541,21 +4541,6 @@ def project_application_environment_settings(
         ],
     )
     branch = app_env.effective_auto_deploy_branch
-    can_discover = bool(
-        application.github_app_installation_id
-        and application.github_repository
-        and branch
-    )
-    discovered_checks = (
-        discover_check_names(
-            application.github_app_installation_id,
-            application.github_repository,
-            branch,
-        )
-        if can_discover
-        else None
-    )
-    selected_checks = form.deployment_checks.data or []
     return render_template(
         "user/project_application_environment_settings.html",
         application=application,
@@ -4564,13 +4549,45 @@ def project_application_environment_settings(
         form=form,
         unenroll_form=unenroll_form,
         unenroll_impact=unenroll_impact,
-        can_discover_checks=can_discover,
-        discovered_checks=discovered_checks,
-        selected_checks=selected_checks,
-        check_options=sorted(
-            set(discovered_checks or []) | set(selected_checks), key=str.lower
+        can_discover_checks=bool(
+            application.github_app_installation_id
+            and application.github_repository
+            and branch
         ),
+        selected_checks=sorted(form.deployment_checks.data or [], key=str.lower),
     )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/settings/checks",
+)
+@login_required
+def project_application_environment_checks(org_slug, project_slug, env_slug, app_slug):
+    _org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    app_env = ApplicationEnvironment.query.filter_by(
+        application_id=application.id, environment_id=environment.id
+    ).first_or_404()
+
+    branch = app_env.effective_auto_deploy_branch
+    if not (
+        application.github_app_installation_id
+        and application.github_repository
+        and branch
+    ):
+        return jsonify({"error": "not configured"}), 404
+    checks = discover_check_names(
+        application.github_app_installation_id,
+        application.github_repository,
+        branch,
+    )
+    if checks is None:
+        return jsonify({"error": "discovery failed"}), 502
+    return jsonify({"checks": checks})
 
 
 @user_blueprint.route(

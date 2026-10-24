@@ -73,31 +73,39 @@
               <p class="text-xs text-base-content/40 mt-0.5">Checks that must pass on the commit being deployed</p>
             </div>
           </div>
-          <fieldset class="settings-row-fields" aria-labelledby="deployment-checks-title">
-            {% if check_options %}
-              <div class="check-list">
-                {% for name in check_options %}
-                  <label class="check-list-item">
-                    <input type="checkbox"
-                           name="deployment_checks"
-                           value="{{ name }}"
-                           class="checkbox checkbox-primary checkbox-xs"
-                           {% if name in selected_checks %}checked{% endif %}>
-                    <span class="check-list-name">{{ name }}</span>
-                    {% if discovered_checks is not none and name not in discovered_checks %}
-                      <span class="badge badge-sm badge-warning"
-                            title="Not on recent commits. Deploys wait until it passes.">Not seen recently</span>
-                    {% endif %}
-                  </label>
-                {% endfor %}
-              </div>
-            {% elif not can_discover_checks %}
+          <fieldset class="settings-row-fields"
+                    aria-labelledby="deployment-checks-title"
+                    {% if can_discover_checks %}data-checks-url="{{ url_for('user.project_application_environment_checks', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug, app_slug=app_slug) }}"{% endif %}>
+            <div id="deployment-check-list" class="check-list">
+              {% for name in selected_checks %}
+                <label class="check-list-item">
+                  <input type="checkbox"
+                         name="deployment_checks"
+                         value="{{ name }}"
+                         class="checkbox checkbox-primary checkbox-xs"
+                         checked>
+                  <span class="check-list-name">{{ name }}</span>
+                </label>
+              {% endfor %}
+            </div>
+            <template id="deployment-check-item">
+              <label class="check-list-item">
+                <input type="checkbox"
+                       name="deployment_checks"
+                       class="checkbox checkbox-primary checkbox-xs">
+                <span class="check-list-name"></span>
+              </label>
+            </template>
+            <template id="deployment-check-stale">
+              <span class="badge badge-sm badge-warning"
+                    title="Not on recent commits. Deploys wait until it passes.">Not seen recently</span>
+            </template>
+            {% if can_discover_checks %}
+              <p id="deployment-checks-loading" class="text-sm text-base-content/60">Loading checks from GitHub…</p>
+              <p id="deployment-checks-empty" class="text-sm text-base-content/60 hidden">No checks found on recent commits to <span class="font-mono">{{ app_env.effective_auto_deploy_branch }}</span>.</p>
+              <p id="deployment-checks-error" class="text-xs text-warning mt-1 hidden">Couldn't load checks from GitHub. Saved selections are kept.</p>
+            {% elif not selected_checks %}
               <p class="text-sm text-base-content/60">Connect a GitHub repository and branch to choose checks.</p>
-            {% elif discovered_checks is not none %}
-              <p class="text-sm text-base-content/60">No checks found on recent commits to <span class="font-mono">{{ app_env.effective_auto_deploy_branch }}</span>.</p>
-            {% endif %}
-            {% if can_discover_checks and discovered_checks is none %}
-              <p class="text-xs text-warning mt-1">Couldn't load checks from GitHub. Saved selections are kept.</p>
             {% endif %}
             <p class="check-list-note">
               {% if can_discover_checks %}From the latest commits to <span class="font-mono">{{ app_env.effective_auto_deploy_branch }}</span>.{% endif %}
@@ -154,10 +162,60 @@
     (function () {
       var checkbox = document.getElementById('auto_deploy_wait_for_ci');
       var panel = document.getElementById('deployment-checks');
+      var fieldset = panel && panel.querySelector('[data-checks-url]');
+      var loaded = false;
+
+      function show(id) {
+        document.getElementById('deployment-checks-loading').classList.add('hidden');
+        if (id) document.getElementById(id).classList.remove('hidden');
+      }
+
+      function loadChecks() {
+        if (loaded || !fieldset) return;
+        loaded = true;
+        fetch(fieldset.dataset.checksUrl, { credentials: 'same-origin' })
+          .then(function (r) {
+            if (!r.ok) throw new Error(r.status);
+            return r.json();
+          })
+          .then(function (data) {
+            var list = document.getElementById('deployment-check-list');
+            var itemTemplate = document.getElementById('deployment-check-item');
+            var staleTemplate = document.getElementById('deployment-check-stale');
+            var discovered = new Set(data.checks);
+            var items = new Map();
+            list.querySelectorAll('input[name="deployment_checks"]').forEach(function (input) {
+              var label = input.closest('label');
+              if (!discovered.has(input.value)) {
+                label.appendChild(staleTemplate.content.cloneNode(true));
+              }
+              items.set(input.value, label);
+            });
+            data.checks.forEach(function (name) {
+              if (items.has(name)) return;
+              var item = itemTemplate.content.firstElementChild.cloneNode(true);
+              item.querySelector('input').value = name;
+              item.querySelector('.check-list-name').textContent = name;
+              items.set(name, item);
+            });
+            Array.from(items.keys())
+              .sort(function (a, b) {
+                a = a.toLowerCase();
+                b = b.toLowerCase();
+                return a < b ? -1 : a > b ? 1 : 0;
+              })
+              .forEach(function (name) { list.appendChild(items.get(name)); });
+            show(items.size ? null : 'deployment-checks-empty');
+          })
+          .catch(function () { show('deployment-checks-error'); });
+      }
+
       if (checkbox && panel) {
         checkbox.addEventListener('change', function () {
           panel.classList.toggle('hidden', !this.checked);
+          if (this.checked) loadChecks();
         });
+        if (checkbox.checked) loadChecks();
       }
     })();
   </script>
