@@ -816,18 +816,24 @@ def discover_check_names(
         resp.raise_for_status()
         for commit in resp.json():
             sha = commit["sha"]
-            runs = github_session.get(
-                f"{base}/commits/{sha}/check-runs",
-                headers=headers,
-                params={"per_page": 100},
-                timeout=10,
-            )
-            runs.raise_for_status()
-            names.update(
-                run["name"]
-                for run in runs.json().get("check_runs", [])
-                if str((run.get("app") or {}).get("id")) != own_app_id
-            )
+            page = 1
+            while True:
+                runs = github_session.get(
+                    f"{base}/commits/{sha}/check-runs",
+                    headers=headers,
+                    params={"per_page": 100, "page": page},
+                    timeout=10,
+                )
+                runs.raise_for_status()
+                check_runs = runs.json().get("check_runs", [])
+                names.update(
+                    run["name"]
+                    for run in check_runs
+                    if str((run.get("app") or {}).get("id")) != own_app_id
+                )
+                if len(check_runs) < 100:
+                    break
+                page += 1
     except requests.exceptions.RequestException, KeyError, TypeError, ValueError:
         logger.exception("Unable to discover checks for %s", repository_name)
         return None
