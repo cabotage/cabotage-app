@@ -1420,6 +1420,7 @@ class Hook(Model, Timestamp):
     payload: Mapped[Any] = mapped_column(postgresql.JSONB())
     processed: Mapped[bool] = mapped_column(Boolean, default=False)
     deployed: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    deployed_app_envs: Mapped[Any | None] = mapped_column(postgresql.JSONB())
     version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {"version_id_col": version_id}
