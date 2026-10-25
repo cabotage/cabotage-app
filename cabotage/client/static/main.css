@@ -2540,6 +2540,10 @@ a.pipeline-stage-body:hover {
   color: var(--color-primary-content);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
+.raw-editor-tab-active:hover {
+  /* Keep the hover rule above from darkening text on the primary background. */
+  color: var(--color-primary-content);
+}
 .raw-editor-textarea {
   width: 100%;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
