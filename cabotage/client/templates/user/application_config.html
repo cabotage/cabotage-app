@@ -241,7 +241,10 @@
     <div class="raw-editor-backdrop"></div>
     <div class="raw-editor-dialog">
       <div class="flex items-center justify-between mb-4">
-        <h3 class="text-base font-semibold text-base-content">Raw Editor</h3>
+        <div>
+          <h3 class="text-base font-semibold text-base-content">Raw Editor</h3>
+          <p class="text-sm text-base-content/50 mt-0.5">Add or edit app-level variables. Secret values show as <code>**secure**</code>; leave those lines as they are. Removing a line does not delete it.</p>
+        </div>
         <button type="button"
                 id="raw-editor-close"
                 class="btn btn-ghost btn-sm btn-circle">
@@ -267,6 +270,7 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
         <input type="hidden" name="environment_id" value="{{ environment.id if environment else '' }}" />
         <input type="hidden" name="format" id="raw-editor-format" value="env" />
+        <input type="hidden" name="baseline" id="raw-editor-baseline" value="" />
 
         <div data-editor-panel="env" class="raw-editor-panel">
           <p class="text-xs text-base-content/40 mb-2">
@@ -286,6 +290,7 @@
                   class="raw-editor-textarea"
                   rows="14"
                   placeholder="# Paste your environment variables here&#10;DATABASE_URL=postgres://...&#10;REDIS_URL=redis://..."
+                  autocomplete="off"
                   spellcheck="false"></textarea>
 
         <div class="flex items-center justify-between mt-4">
@@ -473,7 +478,7 @@
   </div>
 
   <script id="env-export-data" type="application/json">
-    [{% for c in user_configs %}{"name": {{ c.name|tojson }}, "value": {{ c.value|tojson }}, "secret": {{ c.secret|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}]
+    [{% for c in user_configs %}{"name": {{ c.name|tojson }}, "value": {{ ('**secure**' if c.secret else c.value)|tojson }}, "secret": {{ c.secret|tojson }}}{% if not loop.last %}, {% endif %}{% endfor %}]
   </script>
   {% if sibling_references or sibling_tcp_references %}
   <script id="sibling-ref-data" type="application/json">{{ sibling_references|tojson }}</script>

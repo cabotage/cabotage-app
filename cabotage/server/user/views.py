@@ -4017,6 +4017,23 @@ def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
     return entries
 
 
+def _parse_raw_config_baseline(raw: str) -> dict[str, str]:
+    """Parse the ``[{name, value, secret}]`` the editor opened with into ``{NAME: value}``."""
+    if not raw:
+        return {}
+    data = json.loads(raw)
+    if not isinstance(data, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("name"), str)
+        and isinstance(item.get("value"), str)
+        for item in data
+    ):
+        raise ValueError(
+            "Could not read the editor's starting values; reload and try again."
+        )
+    return {item["name"].upper(): item["value"] for item in data}
+
+
 @user_blueprint.route(
     "/projects/<org_slug>/<project_slug>/applications/<app_slug>/config/bulk",
     methods=["POST"],
@@ -4043,6 +4060,7 @@ def project_application_configuration_bulk(
         entries = _parse_raw_config(
             request.form.get("raw_text", ""), request.form.get("format", "env")
         )
+        baseline = _parse_raw_config_baseline(request.form.get("baseline", ""))
         existing_configurations = {
             c.name.upper(): c
             for c in Configuration.query.filter_by(
@@ -4054,6 +4072,10 @@ def project_application_configuration_bulk(
         for name, value in entries.items():
             if len(value) > 2048:
                 raise ValueError(f"{name}: Value must be 2048 characters or fewer.")
+            if value == baseline.get(name.upper()):
+                # Same as when the editor opened, so skip; checked before
+                # create so a variable deleted meanwhile isn't recreated.
+                continue
             configuration = existing_configurations.get(name.upper())
             fields = {
                 "application_id": str(application.id),
@@ -4071,7 +4093,11 @@ def project_application_configuration_bulk(
                     name=name,
                 )
                 verb = "create"
-            elif value == configuration.value:  # unchanged, or a copied **secure**
+            elif value == configuration.value or (
+                configuration.secret and value == "**secure**"
+            ):
+                # Unchanged in the DB, or the secret placeholder; the latter is
+                # needed without a baseline, e.g. seeded rows holding real values.
                 continue
             else:
                 form = EditConfigurationForm(

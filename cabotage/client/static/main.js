@@ -323,9 +323,49 @@ function initRawEditor() {
   var backdrop = modal.querySelector('.raw-editor-backdrop');
   var textarea = document.getElementById('raw-editor-textarea');
   var formatInput = document.getElementById('raw-editor-format');
+  var baselineInput = document.getElementById('raw-editor-baseline');
   var copyBtn = document.getElementById('raw-editor-copy');
   var tabs = modal.querySelectorAll('[data-editor-tab]');
   var panels = modal.querySelectorAll('[data-editor-panel]');
+
+  // Existing app-level variables; secrets carry the **secure** placeholder.
+  var configs = [];
+  var dataEl = document.getElementById('env-export-data');
+  if (dataEl) {
+    try {
+      configs = JSON.parse(dataEl.textContent);
+      // Tell the server what the editor was filled from so untouched lines
+      // are skipped even if someone else changed them meanwhile.
+      if (baselineInput) baselineInput.value = dataEl.textContent;
+    } catch (e) {
+      configs = [];
+    }
+  }
+
+  function buildText(fmt) {
+    if (!configs.length) return '';
+    if (fmt === 'json') {
+      var obj = {};
+      configs.forEach(function (c) {
+        obj[c.name] = c.secret ? '**secure**' : c.value;
+      });
+      return JSON.stringify(obj, null, 2);
+    }
+    return configs
+      .map(function (c) {
+        if (c.secret) return c.name + '=**secure**';
+        return c.name + '=' + c.value;
+      })
+      .join('\n');
+  }
+
+  // Fill once at load; the page reloads after every save, so this cannot
+  // go stale, and refilling on open would throw away edits after Cancel.
+  var generated = '';
+  if (textarea) {
+    generated = buildText(formatInput ? formatInput.value : 'env');
+    textarea.value = generated;
+  }
 
   function openModal() {
     modal.style.display = 'flex';
@@ -358,6 +398,11 @@ function initRawEditor() {
       if (formatInput) formatInput.value = tabId;
 
       if (textarea) {
+        // Only regenerate while the text is untouched; never clobber edits.
+        if (textarea.value === generated) {
+          generated = buildText(tabId);
+          textarea.value = generated;
+        }
         if (tabId === 'json') {
           textarea.placeholder = '{\n  "DATABASE_URL": "postgres://...",\n  "REDIS_URL": "redis://..."\n}';
         } else {
@@ -370,16 +415,8 @@ function initRawEditor() {
 
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {
-      var dataEl = document.getElementById('env-export-data');
-      if (!dataEl) return;
       try {
-        var configs = JSON.parse(dataEl.textContent);
-        var lines = configs.map(function (c) {
-          if (c.secret) return c.name + '=**secure**';
-          return c.name + '=' + c.value;
-        });
-        var text = lines.join('\n');
-        navigator.clipboard.writeText(text).then(function () {
+        navigator.clipboard.writeText(buildText('env')).then(function () {
           var orig = copyBtn.innerHTML;
           copyBtn.textContent = 'Copied!';
           setTimeout(function () {
