@@ -1,5 +1,6 @@
 """Tests for the application config Raw Editor bulk submission."""
 
+import json
 import re
 import time
 import uuid
@@ -105,6 +106,17 @@ def _configs(application):
     }
 
 
+def _seed_configs(application, rows):
+    """Add ``(name, value, secret)`` rows via the relationship so a re-render sees them."""
+    for name, value, secret in rows:
+        application.default_app_env.configurations.append(
+            Configuration(
+                application_id=application.id, name=name, value=value, secret=secret
+            )
+        )
+    db.session.flush()
+
+
 def test_env_paste_creates_variables(raw_editor):
     client, application, action, fields = raw_editor
     with patch.object(
@@ -155,6 +167,73 @@ def test_json_update_preserves_secure_placeholder(raw_editor):
     configs = _configs(application)
     assert configs["PLAIN"].value == "new"
     assert (configs["TOKEN"].value, configs["TOKEN"].secret) == ("**secure**", True)
+
+
+def test_prefilled_env_round_trip(raw_editor):
+    client, application, action, fields = raw_editor
+    # TOKEN holds a real value, as a seeded row would; PLAIN_SECURE is a plain
+    # variable whose value merely looks like the placeholder.
+    _seed_configs(
+        application,
+        [
+            ("PLAIN", "old", False),
+            ("PLAIN_SECURE", "**secure**", False),
+            ("TOKEN", "real-secret", True),
+        ],
+    )
+    page = client.get(action.rsplit("/bulk", 1)[0]).get_data(as_text=True)
+    export = re.search(
+        r'<script id="env-export-data"[^>]*>(.*?)</script>', page, re.DOTALL
+    )
+    assert export and json.loads(export[1]) == [
+        {"name": "PLAIN", "value": "old", "secret": False},
+        {"name": "PLAIN_SECURE", "value": "**secure**", "secret": False},
+        {"name": "TOKEN", "value": "**secure**", "secret": True},
+    ]
+    with patch.object(
+        views.config_writer, "write_configuration", return_value=KEY_SLUGS
+    ) as write:
+        response = client.post(
+            action,
+            data={
+                **fields,
+                "raw_text": "PLAIN=new\nPLAIN_SECURE=changed\nTOKEN=**secure**",
+            },
+        )
+
+    assert response.status_code == 302
+    assert write.call_count == 2
+    configs = _configs(application)
+    assert configs["PLAIN"].value == "new"
+    assert configs["PLAIN_SECURE"].value == "changed"
+    assert (configs["TOKEN"].value, configs["TOKEN"].secret) == ("real-secret", True)
+
+
+def test_baseline_skips_lines_changed_elsewhere(raw_editor):
+    client, application, action, fields = raw_editor
+    rows = [("FOO", "1", False), ("BAR", "1", False), ("GONE", "1", False)]
+    _seed_configs(application, rows)
+    baseline = json.dumps([{"name": n, "value": v, "secret": s} for n, v, s in rows])
+    # Another admin edits FOO and deletes GONE after the editor was filled.
+    configs = _configs(application)
+    configs["FOO"].value = "9"
+    db.session.delete(configs["GONE"])
+    db.session.flush()
+
+    with patch.object(
+        views.config_writer, "write_configuration", return_value=KEY_SLUGS
+    ) as write:
+        response = client.post(
+            action,
+            data={**fields, "baseline": baseline, "raw_text": "FOO=1\nBAR=2\nGONE=1"},
+        )
+
+    assert response.status_code == 302
+    write.assert_called_once()
+    configs = _configs(application)
+    assert set(configs) == {"FOO", "BAR"}
+    assert configs["FOO"].value == "9"
+    assert configs["BAR"].value == "2"
 
 
 @pytest.mark.parametrize(
