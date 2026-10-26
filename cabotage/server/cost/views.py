@@ -26,6 +26,7 @@ from flask import (
     url_for,
 )
 from flask_login import current_user, login_required
+from flask_principal import Permission
 from kombu.exceptions import OperationalError
 from werkzeug.wrappers import Response as RedirectResponse
 
@@ -37,6 +38,12 @@ from cabotage.server.acl import (
 )
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import Application, Environment, Project
+from cabotage.server.query_helpers import (
+    application_or_404,
+    environment_or_404,
+    organization_or_404,
+    project_or_404,
+)
 from cabotage.utils.cost.reports import CostScope, build_report
 
 cost_blueprint = Blueprint("cost", __name__)
@@ -96,31 +103,9 @@ def _build_report(scope: CostScope) -> dict[str, object]:
     return build_report(scope, range_key)
 
 
-def _lookup_org(org_slug: str) -> Organization:
-    organization: Organization = (
-        Organization.query.filter_by(slug=org_slug)
-        .filter(Organization.deleted_at.is_(None))
-        .first_or_404()
-    )
-    if not ViewOrganizationPermission(organization.id).can():
+def _require(permission: Permission) -> None:
+    if not permission.can():
         abort(403)
-    return organization
-
-
-def _lookup_project(org_slug: str, project_slug: str) -> tuple[Organization, Project]:
-    organization: Organization = (
-        Organization.query.filter_by(slug=org_slug)
-        .filter(Organization.deleted_at.is_(None))
-        .first_or_404()
-    )
-    project: Project = (
-        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
-        .filter(Project.deleted_at.is_(None))
-        .first_or_404()
-    )
-    if not ViewProjectPermission(project.id).can():
-        abort(403)
-    return organization, project
 
 
 def _project_environments(project: Project) -> list[Environment]:
@@ -159,32 +144,6 @@ def _requested_env(
         if e.slug == slug:
             return e
     abort(404)
-
-
-def _lookup_environment(
-    org_slug: str, project_slug: str, env_slug: str
-) -> tuple[Organization, Project, Environment]:
-    organization, project = _lookup_project(org_slug, project_slug)
-    environment: Environment = (
-        Environment.query.filter_by(project_id=project.id, slug=env_slug)
-        .filter(Environment.deleted_at.is_(None))
-        .first_or_404()
-    )
-    return organization, project, environment
-
-
-def _lookup_application(
-    org_slug: str, project_slug: str, app_slug: str
-) -> tuple[Organization, Project, Application]:
-    organization, project = _lookup_project(org_slug, project_slug)
-    application: Application = (
-        Application.query.filter_by(project_id=project.id, slug=app_slug)
-        .filter(Application.deleted_at.is_(None))
-        .first_or_404()
-    )
-    if not ViewApplicationPermission(application.id).can():
-        abort(403)
-    return organization, project, application
 
 
 def _str_or_none(value: object) -> str | None:
@@ -271,14 +230,16 @@ def _report_json(organization: Organization | None, scope: CostScope) -> Respons
 @cost_blueprint.route("/organizations/<org_slug>/cost")
 @login_required
 def organization_cost(org_slug: str) -> str:
-    organization = _lookup_org(org_slug)
+    organization = organization_or_404(org_slug)
+    _require(ViewOrganizationPermission(organization.id))
     return render_template("cost/organization.html", organization=organization)
 
 
 @cost_blueprint.route("/organizations/<org_slug>/cost/data")
 @login_required
 def organization_cost_data(org_slug: str) -> Response:
-    organization = _lookup_org(org_slug)
+    organization = organization_or_404(org_slug)
+    _require(ViewOrganizationPermission(organization.id))
     scope = CostScope(kind="organization", organization=organization)
     return _report_json(organization, scope)
 
@@ -289,7 +250,9 @@ def organization_cost_data(org_slug: str) -> Response:
 @cost_blueprint.route("/projects/<org_slug>/<project_slug>/cost")
 @login_required
 def project_cost(org_slug: str, project_slug: str) -> str:
-    organization, project = _lookup_project(org_slug, project_slug)
+    organization = organization_or_404(org_slug)
+    project = project_or_404(organization, project_slug)
+    _require(ViewProjectPermission(project.id))
     environments = _env_options_json(_project_environments(project))
     return render_template(
         "cost/project.html",
@@ -302,7 +265,9 @@ def project_cost(org_slug: str, project_slug: str) -> str:
 @cost_blueprint.route("/projects/<org_slug>/<project_slug>/cost/data")
 @login_required
 def project_cost_data(org_slug: str, project_slug: str) -> Response:
-    organization, project = _lookup_project(org_slug, project_slug)
+    organization = organization_or_404(org_slug)
+    project = project_or_404(organization, project_slug)
+    _require(ViewProjectPermission(project.id))
     environment = _requested_env(
         _project_environments(project), request.args.get("env")
     )
@@ -326,9 +291,10 @@ def project_cost_data(org_slug: str, project_slug: str) -> Response:
 )
 @login_required
 def environment_cost(org_slug: str, project_slug: str, env_slug: str) -> str:
-    organization, project, environment = _lookup_environment(
-        org_slug, project_slug, env_slug
-    )
+    organization = organization_or_404(org_slug)
+    project = project_or_404(organization, project_slug)
+    _require(ViewProjectPermission(project.id))
+    environment = environment_or_404(project, env_slug)
     return render_template(
         "cost/environment.html",
         organization=organization,
@@ -342,9 +308,10 @@ def environment_cost(org_slug: str, project_slug: str, env_slug: str) -> str:
 )
 @login_required
 def environment_cost_data(org_slug: str, project_slug: str, env_slug: str) -> Response:
-    organization, project, environment = _lookup_environment(
-        org_slug, project_slug, env_slug
-    )
+    organization = organization_or_404(org_slug)
+    project = project_or_404(organization, project_slug)
+    _require(ViewProjectPermission(project.id))
+    environment = environment_or_404(project, env_slug)
     scope = CostScope(
         kind="environment",
         organization=organization,
@@ -368,9 +335,10 @@ def environment_cost_data(org_slug: str, project_slug: str, env_slug: str) -> Re
 def application_cost(
     org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
 ) -> str:
-    organization, project, application = _lookup_application(
-        org_slug, project_slug, app_slug
-    )
+    organization = organization_or_404(org_slug)
+    project = project_or_404(organization, project_slug)
+    application = application_or_404(project, app_slug)
+    _require(ViewApplicationPermission(application.id))
     app_environments = _application_environments(application)
     environment = _requested_env(app_environments, env_slug)
     environments = _env_options_json(app_environments)
@@ -395,9 +363,10 @@ def application_cost(
 def application_cost_data(
     org_slug: str, project_slug: str, app_slug: str, env_slug: str | None = None
 ) -> Response:
-    organization, project, application = _lookup_application(
-        org_slug, project_slug, app_slug
-    )
+    organization = organization_or_404(org_slug)
+    project = project_or_404(organization, project_slug)
+    application = application_or_404(project, app_slug)
+    _require(ViewApplicationPermission(application.id))
     environment = _requested_env(
         _application_environments(application), request.args.get("env")
     )
