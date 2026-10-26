@@ -9,7 +9,12 @@ from kombu.exceptions import OperationalError
 from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.projects import Application, Environment, Project
+from cabotage.server.models.projects import (
+    Application,
+    ApplicationEnvironment,
+    Environment,
+    Project,
+)
 from cabotage.server.wsgi import app as _app
 
 
@@ -474,3 +479,122 @@ class TestCostPages:
         )
         assert resp.status_code == 200
         assert b"cost-dashboard" in resp.data
+
+
+def _enroll(application, environment):
+    db.session.add(
+        ApplicationEnvironment(
+            application_id=application.id,
+            environment_id=environment.id,
+            k8s_identifier=environment.k8s_identifier,
+        )
+    )
+    db.session.commit()
+
+
+class TestCostScopeSelection:
+    def test_env_path_without_env_query_reports_all_environments(
+        self, client, member_user, cost_context
+    ):
+        _login(client, member_user)
+        org, project = cost_context["org"], cost_context["project"]
+        application, environment = (
+            cost_context["application"],
+            cost_context["environment"],
+        )
+        _enroll(application, environment)
+        base = f"/projects/{org.slug}/{project.slug}/env/{environment.slug}/applications/{application.slug}/cost/data"
+        with patch(
+            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+        ) as build:
+            assert client.get(base).status_code == 200
+            assert client.get(f"{base}?env={environment.slug}").status_code == 200
+        assert build.call_args_list[0].args[0].environment is None
+        assert build.call_args_list[1].args[0].environment.id == environment.id
+
+    def test_unknown_env_returns_404(self, client, member_user, cost_context):
+        _login(client, member_user)
+        org, project = cost_context["org"], cost_context["project"]
+        application = cost_context["application"]
+        with patch(
+            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+        ):
+            app_resp = client.get(
+                f"/projects/{org.slug}/{project.slug}/applications/{application.slug}/cost/data?env=nope"
+            )
+            project_resp = client.get(
+                f"/projects/{org.slug}/{project.slug}/cost/data?env=nope"
+            )
+        assert app_resp.status_code == 404
+        assert project_resp.status_code == 404
+
+    def test_unenrolled_env_page_returns_404(self, client, member_user, cost_context):
+        _login(client, member_user)
+        org, project = cost_context["org"], cost_context["project"]
+        application, environment = (
+            cost_context["application"],
+            cost_context["environment"],
+        )
+        resp = client.get(
+            f"/projects/{org.slug}/{project.slug}/env/{environment.slug}/applications/{application.slug}/cost"
+        )
+        assert resp.status_code == 404
+
+    def test_out_of_range_custom_window_falls_back_to_preset(
+        self, client, member_user, cost_context
+    ):
+        _login(client, member_user)
+        org = cost_context["org"]
+        with patch(
+            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+        ) as build:
+            resp = client.get(
+                f"/organizations/{org.slug}/cost/data"
+                "?start=9999-12-31T23:00:00&end=9999-12-31T23:59:59"
+            )
+        assert resp.status_code == 200
+        assert "start" not in build.call_args.kwargs
+
+
+class TestCostRowLinks:
+    def test_deleted_rows_and_their_movers_have_no_url(
+        self, client, member_user, cost_context
+    ):
+        _login(client, member_user)
+        org = cost_context["org"]
+        report = _fake_report()
+        report["breakdowns"]["projects"][0]["deleted"] = True
+        report["movers"] = [{"key": "p1", "slugs": {"project": "cost-project"}}]
+        with patch("cabotage.server.cost.views.build_report", return_value=report):
+            data = client.get(f"/organizations/{org.slug}/cost/data").get_json()
+        assert data["breakdowns"]["projects"][0]["url"] is None
+        assert data["movers"][0]["url"] is None
+
+    def test_platform_rows_link_only_to_viewable_orgs(
+        self, client, admin_user, cost_context
+    ):
+        _login(client, admin_user)
+        org = cost_context["org"]
+        report = _fake_report()
+        report["breakdowns"] = {
+            "organizations": [
+                {
+                    "key": str(org.id),
+                    "slugs": {"organization": org.slug},
+                    "deleted": False,
+                }
+            ]
+        }
+        with patch("cabotage.server.cost.views.build_report", return_value=report):
+            data = client.get("/infra/cost/data").get_json()
+        assert data["breakdowns"]["organizations"][0]["url"] is None
+
+        db.session.add(
+            OrganizationMember(organization_id=org.id, user_id=admin_user.id)
+        )
+        db.session.commit()
+        with patch("cabotage.server.cost.views.build_report", return_value=report):
+            data = client.get("/infra/cost/data").get_json()
+        assert data["breakdowns"]["organizations"][0]["url"] == (
+            f"/organizations/{org.slug}/cost"
+        )
