@@ -213,6 +213,8 @@ def _row_url(
         org = org_cache[org_slug]
     if org is None:
         return None
+    if organization is None and not ViewOrganizationPermission(org.id).can():
+        return None
     project_slug = _str_or_none(slugs.get("project"))
     environment_slug = _str_or_none(slugs.get("environment"))
     application_slug = _str_or_none(slugs.get("application"))
