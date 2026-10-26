@@ -2310,9 +2310,12 @@
     renderMeters(report.meters || []);
     renderRates(report);
   }
+  var loadSeq = 0;
   function loadMain() {
+    var seq = ++loadSeq;
     document.getElementById('cost-error').hidden = true;
     return fetchReport(buildQuery()).then(function(report) {
+      if (seq !== loadSeq) return;
       state.report = report;
       syncUrl();
       updateRangeLabel();
@@ -2327,6 +2330,7 @@
       if (!palette) resolvePalette();
       renderAll();
     }).catch(function(err) {
+      if (seq !== loadSeq) return;
       console.error('cost dashboard render failed', err && err.message, err && err.stack);
       document.getElementById('cost-error').hidden = false;
       document.getElementById('cost-body').hidden = true;
