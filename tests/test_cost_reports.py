@@ -1,6 +1,7 @@
 """Tests for cost report assembly (cabotage.utils.cost.reports)."""
 
 import datetime
+import itertools
 import random
 import uuid
 
@@ -646,6 +647,25 @@ class TestBuildReportBasics:
             assert len(breakdown["other"]) == n
             for values in breakdown["values"].values():
                 assert len(values) == n
+
+    def test_calendar_is_daily_for_the_last_90_days_of_long_history(
+        self, app, org, project, environment, application
+    ):
+        old_hour = _floor_hour(NOW) - datetime.timedelta(days=200)
+        recent_hour = _floor_hour(NOW) - datetime.timedelta(hours=2)
+        _add_hour_cost(old_hour, 1.0, org=org, project=project)
+        _add_hour_cost(recent_hour, 2.0, org=org, project=project)
+        db.session.commit()
+
+        report = build_report(
+            CostScope(kind="organization", organization=org), "24h", now=NOW
+        )
+        extent_xs = report["extent_series"]["timestamps"]
+        calendar_xs = report["calendar"]["timestamps"]
+        assert extent_xs[1] - extent_xs[0] == 7 * 86400
+        assert {b - a for a, b in itertools.pairwise(calendar_xs)} == {86400}
+        assert len(calendar_xs) == 91
+        assert sum(sum(v) for v in report["calendar"]["categories"].values()) == 2.0
 
     def test_heatmap_puts_cost_in_its_weekday_hour(
         self, app, org, project, environment, application

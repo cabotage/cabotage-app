@@ -1562,7 +1562,7 @@
     renderDonut(state.report);
     renderLegend(state.report);
     renderMainChart(state.report);
-    var extent = state.report.extent_series || state.report.calendar;
+    var extent = state.report.extent_series;
     if (extent) renderExplorer(extent);
   }
   document.getElementById('donut-list').addEventListener('click', function(e) {
@@ -2293,14 +2293,15 @@
   }
   function renderAll() {
     var report = state.report;
-    var extent = report.extent_series || report.calendar;
+    var extent = report.extent_series;
     renderFreshness(report.freshness);
     renderHero(report);
     setupChartModeToggle(report);
     renderLegend(report);
     renderMainChart(report);
     renderPace(report);
-    if (extent) { renderExplorer(extent); renderCalendar(extent); }
+    if (extent) renderExplorer(extent);
+    renderCalendar(report.calendar);
     renderHourHeatmap(report.heatmap);
     renderDonut(report);
     var moverRows = renderMovers(report);
@@ -2346,7 +2347,7 @@
       if (!state.report) return;
       renderMainChart(state.report);
       renderPace(state.report);
-      var extent = state.report.extent_series || state.report.calendar;
+      var extent = state.report.extent_series;
       if (extent) renderExplorer(extent);
     }, 150);
   });
