@@ -9,7 +9,7 @@ know route shapes). No url_prefix; every route 404s unless
 
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import cast
 
 from celery import Task
@@ -50,6 +50,7 @@ def _require_cost_enabled() -> None:
 
 _RANGE_KEYS = {"24h", "7d", "30d", "mtd", "90d"}
 _DEFAULT_RANGE = "mtd"
+_CUSTOM_RANGE_FLOOR = datetime(2000, 1, 1, tzinfo=UTC)
 
 _PRIMARY_BREAKDOWN = {
     "organization": "projects",
@@ -73,11 +74,17 @@ def _custom_window() -> tuple[datetime, datetime] | tuple[None, None]:
     if not start_raw or not end_raw:
         return None, None
     try:
-        start = datetime.fromisoformat(start_raw)
-        end = datetime.fromisoformat(end_raw)
-    except ValueError:
+        start = _aware_utc(datetime.fromisoformat(start_raw))
+        end = _aware_utc(datetime.fromisoformat(end_raw))
+    except ValueError, OverflowError:
+        return None, None
+    if not _CUSTOM_RANGE_FLOOR <= start < end or start > datetime.now(UTC):
         return None, None
     return start, end
+
+
+def _aware_utc(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
 
 
 def _build_report(scope: CostScope) -> dict[str, object]:
