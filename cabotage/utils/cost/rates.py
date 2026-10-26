@@ -1,12 +1,14 @@
 """AWS us-east-2 on-demand list-price rate table for cost estimation.
 
 Prices checked 2026-10-11. Any key may be overridden via the ``COST_RATES``
-app config (a dict; nested dicts are merged key-by-key, not replaced
-wholesale). The effective rates are recorded on every collection run so the
-UI can render a "how costs are calculated" panel.
+app config (a dict, or a JSON object string when set via the environment;
+nested dicts are merged key-by-key, not replaced wholesale). The effective
+rates are recorded on every collection run so the UI can render a "how costs
+are calculated" panel.
 """
 
 import copy
+import json
 from collections.abc import Mapping
 from typing import TypedDict, cast
 
@@ -75,9 +77,19 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
 
         config = current_app.config
     overrides_raw = config.get("COST_RATES")
-    overrides: dict[str, object] = (
-        overrides_raw if isinstance(overrides_raw, dict) else {}
-    )
+    # Set via CABOTAGE_COST_RATES, MetaFlaskEnv leaves a JSON object as a str.
+    if isinstance(overrides_raw, str):
+        try:
+            overrides_raw = json.loads(overrides_raw)
+        except ValueError as exc:
+            raise ValueError(f"COST_RATES is not valid JSON: {exc}") from exc
+    if overrides_raw is None:
+        return cast(CostRates, rates)
+    if not isinstance(overrides_raw, dict):
+        raise TypeError(
+            f"COST_RATES must be a JSON object, got {type(overrides_raw).__name__}"
+        )
+    overrides: dict[str, object] = overrides_raw
     for key, value in overrides.items():
         existing = rates.get(key)
         if isinstance(value, dict) and isinstance(existing, dict):
