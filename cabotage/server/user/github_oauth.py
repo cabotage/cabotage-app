@@ -5,6 +5,7 @@ import requests
 from authlib.integrations.flask_client import OAuth
 from flask import (
     Blueprint,
+    abort,
     current_app,
     flash,
     redirect,
@@ -44,11 +45,13 @@ def login():
     return oauth.github.authorize_redirect(redirect_uri)
 
 
-@github_oauth_bp.route("/callback")
+@github_oauth_bp.route("/callback", methods=["GET", "POST"])
 def callback():
     state = request.args.get("state")
     if state and _is_github_installation_connect_state(state):
         return _connect_installation_callback(state)
+    if request.method != "GET":
+        abort(405)
 
     token = oauth.github.authorize_access_token()
     if token is None:
