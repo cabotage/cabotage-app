@@ -183,6 +183,49 @@ class TestRunDeployPromotes:
 
         deploy_release.assert_not_called()
 
+    def test_failed_promotion_does_not_fail_the_deploy(
+        self, db_session, app_env, run_deploy_task
+    ):
+        running = _trigger(db_session, app_env)
+
+        def finish(deployment):
+            deployment.complete = True
+            db.session.commit()
+
+        with (
+            patch("cabotage.celery.tasks.deploy.deploy_release", side_effect=finish),
+            patch(
+                "cabotage.celery.tasks.deploy.start_next_deployment",
+                side_effect=sa.exc.OperationalError(
+                    "SELECT 1", {}, Exception("db down")
+                ),
+            ),
+        ):
+            run_deploy(deployment_id=running.id)
+
+        db_session.refresh(running)
+        assert running.complete
+
+    def test_failed_promotion_does_not_mask_deploy_exception(
+        self, db_session, app_env, run_deploy_task
+    ):
+        running = _trigger(db_session, app_env)
+
+        with (
+            patch(
+                "cabotage.celery.tasks.deploy.deploy_release",
+                side_effect=RuntimeError("k8s exploded"),
+            ),
+            patch(
+                "cabotage.celery.tasks.deploy.start_next_deployment",
+                side_effect=sa.exc.OperationalError(
+                    "SELECT 1", {}, Exception("db down")
+                ),
+            ),
+            pytest.raises(RuntimeError, match="k8s exploded"),
+        ):
+            run_deploy(deployment_id=running.id)
+
 
 class TestReaper:
     def _age(self, db_session, deployment):

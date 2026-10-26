@@ -3514,4 +3514,13 @@ def run_deploy(deployment_id: uuid.UUID | str | None = None) -> None:
         db.session.rollback()
         raise
     finally:
-        start_next_deployment(application_environment_id)
+        # Never let promotion failures mask this deploy's outcome; the reaper
+        # restarts idle queues.
+        try:
+            start_next_deployment(application_environment_id)
+        except Exception:
+            db.session.rollback()
+            log.exception(
+                "Failed to start next deployment for environment %s",
+                application_environment_id,
+            )
