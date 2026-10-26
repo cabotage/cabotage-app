@@ -3988,7 +3988,11 @@ def _add_raw_config_entry(
 
 
 def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
-    """Parse Raw Editor input into ``{name: value}``, keeping values verbatim."""
+    """Parse Raw Editor input into ``{name: value}``, keeping values verbatim.
+
+    The editor's change preview (``submittedValues`` in main.js) mirrors the
+    line rules here; keep them in step.
+    """
     entries: dict[str, str] = {}
     seen_names: set[str] = set()
     if fmt == "json":
@@ -4115,6 +4119,22 @@ def project_application_configuration_bulk(
                 )
                 raise ValueError(f"{name}: {error}")
             pending.append((configuration, value, verb))
+        # Opt-in: delete variables the editor opened with that are no longer in
+        # the text. Keyed on the baseline, so nothing added meanwhile is touched.
+        deletions: list[Configuration] = []
+        if request.form.get("delete_missing") == "y":
+            submitted = {name.upper() for name in entries}
+            for upper_name in baseline:
+                configuration = existing_configurations.get(upper_name)
+                if (
+                    upper_name in submitted
+                    or configuration is None
+                    or configuration.name == "CABOTAGE_SENTINEL"
+                ):
+                    continue
+                deletions.append(configuration)
+            if deletions and len(deletions) >= len(existing_configurations):
+                raise ValueError("Cannot delete every variable.")
     except ValueError as exc:
         flash(str(exc), "error")
     else:
@@ -4126,6 +4146,21 @@ def project_application_configuration_bulk(
                     org, project, application, app_env, configuration, verb
                 )
                 saved_names.append(configuration.name)
+            for configuration in deletions:
+                db.session.delete(configuration)
+                db.session.flush()
+                db.session.add(
+                    Activity(
+                        verb="delete",
+                        object=configuration,
+                        data={
+                            "user_id": str(current_user.id),
+                            "timestamp": datetime.datetime.now(
+                                datetime.UTC
+                            ).isoformat(),
+                        },
+                    )
+                )
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -4139,7 +4174,12 @@ def project_application_configuration_bulk(
             else:
                 flash("Failed to save variables.", "error")
         else:
-            flash(f"Saved {len(pending)} variable(s).", "success")
+            message = f"Saved {len(pending)} variable(s)."
+            if deletions:
+                message = (
+                    f"Saved {len(pending)} and deleted {len(deletions)} variable(s)."
+                )
+            flash(message, "success")
     return redirect(redirect_url)
 
 

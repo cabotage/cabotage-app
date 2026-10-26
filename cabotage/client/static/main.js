@@ -325,6 +325,12 @@ function initRawEditor() {
   var formatInput = document.getElementById('raw-editor-format');
   var baselineInput = document.getElementById('raw-editor-baseline');
   var copyBtn = document.getElementById('raw-editor-copy');
+  var deleteCheck = document.getElementById('raw-editor-delete');
+  var preview = document.getElementById('raw-editor-preview');
+  var previewAdd = document.getElementById('raw-editor-preview-add');
+  var previewUpdate = document.getElementById('raw-editor-preview-update');
+  var previewDelete = document.getElementById('raw-editor-preview-delete');
+  var submitLabel = document.getElementById('raw-editor-submit-label');
   var tabs = modal.querySelectorAll('[data-editor-tab]');
   var panels = modal.querySelectorAll('[data-editor-panel]');
 
@@ -366,6 +372,88 @@ function initRawEditor() {
     generated = buildText(formatInput ? formatInput.value : 'env');
     textarea.value = generated;
   }
+
+  // Client-side copy of the line rules in _parse_raw_config (views.py): skip
+  // blank and # lines, split at the first "=", trim the name, keep the value
+  // verbatim. Advisory only; the server re-parses and decides what is written.
+  // Returns {UPPER_NAME: {name, value}}, or null if the JSON cannot be parsed.
+  function submittedValues() {
+    var values = {};
+    if ((formatInput ? formatInput.value : 'env') === 'json') {
+      try {
+        var obj = JSON.parse(textarea.value);
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+        Object.keys(obj).forEach(function (k) {
+          values[k.toUpperCase()] = { name: k, value: obj[k] };
+        });
+      } catch (e) {
+        return null;
+      }
+      return values;
+    }
+    textarea.value.split('\n').forEach(function (line) {
+      var trimmed = line.trim();
+      if (!trimmed || trimmed.charAt(0) === '#') return;
+      var eq = line.indexOf('=');
+      if (eq === -1) return;
+      var name = line.slice(0, eq).trim();
+      values[name.toUpperCase()] = { name: name, value: line.slice(eq + 1) };
+    });
+    return values;
+  }
+
+  function setPreviewLine(el, text) {
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = text ? '' : 'none';
+  }
+
+  function updatePreview() {
+    if (!preview || !textarea) return;
+    var stored = {};
+    configs.forEach(function (c) {
+      stored[c.name.toUpperCase()] = c;
+    });
+    var values = submittedValues();
+    var adds = [];
+    var updates = [];
+    var removed = [];
+    if (values !== null) {
+      Object.keys(values).forEach(function (key) {
+        var c = stored[key];
+        if (!c) adds.push(values[key].name);
+        else if (values[key].value !== c.value) updates.push(c.name);
+      });
+      configs.forEach(function (c) {
+        if (!values[c.name.toUpperCase()]) removed.push(c.name);
+      });
+    }
+    var ticked = deleteCheck && deleteCheck.checked;
+    var deleting = ticked && removed.length > 0;
+    var deleteText = '';
+    if (ticked) {
+      if (values === null) deleteText = 'Fix the JSON to see what will be deleted.';
+      else deleteText = deleting ? 'Will delete: ' + removed.join(', ') : 'Nothing to delete.';
+    } else if (removed.length) {
+      deleteText = 'Removed but kept (tick to delete): ' + removed.join(', ');
+    }
+    setPreviewLine(previewAdd, adds.length ? 'Will add: ' + adds.join(', ') : '');
+    setPreviewLine(previewUpdate, updates.length ? 'Will update: ' + updates.join(', ') : '');
+    setPreviewLine(previewDelete, deleteText);
+    if (previewDelete) {
+      // Red only when something will actually be deleted; muted otherwise.
+      previewDelete.classList.toggle('text-error', deleting);
+      previewDelete.classList.toggle('text-base-content/50', !deleting);
+    }
+    preview.style.display = adds.length || updates.length || deleteText ? '' : 'none';
+    if (submitLabel) {
+      submitLabel.textContent = deleting
+        ? 'Update and delete ' + removed.length
+        : 'Update Variables';
+    }
+  }
+  if (deleteCheck) deleteCheck.addEventListener('change', updatePreview);
+  if (textarea) textarea.addEventListener('input', updatePreview);
 
   function openModal() {
     modal.style.display = 'flex';
@@ -409,6 +497,7 @@ function initRawEditor() {
           textarea.placeholder =
             '# Paste your environment variables here\nDATABASE_URL=postgres://...\nREDIS_URL=redis://...';
         }
+        updatePreview();
       }
     });
   });
