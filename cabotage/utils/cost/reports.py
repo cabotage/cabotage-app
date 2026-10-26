@@ -1155,7 +1155,11 @@ def _build_rows(
     rows: list[BreakdownRow] = []
     row_costs: list[float] = []
     raw_keys_tmp: list[BreakdownKey] = []
-    for key, cost in totals_by_key.items():
+    keys = list(totals_by_key) + [
+        key for key in previous_by_key if key not in totals_by_key
+    ]
+    for key in keys:
+        cost = totals_by_key.get(key, 0.0)
         resolved = name_resolver(key)
         if resolved is None:
             continue
