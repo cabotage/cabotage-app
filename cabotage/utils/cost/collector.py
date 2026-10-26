@@ -45,6 +45,8 @@ GIB = 1024.0**3
 STEP_SECONDS = 300
 STEP_HOURS = STEP_SECONDS / 3600.0
 STEPS_PER_HOUR = 12
+# CostLineItem.component is String(64); resource slugs are unbounded.
+_COMPONENT_MAX_LEN = 64
 
 _BUILD_POD_RE = re.compile(r"^(?:image|release|omnibus)build-([0-9a-f]{8})-")
 
@@ -727,7 +729,11 @@ def _classify_backing_pod(
             matched_resource = resource
             break
 
-    component = matched_resource.slug if matched_resource is not None else "other"
+    component = (
+        matched_resource.slug[:_COMPONENT_MAX_LEN]
+        if matched_resource is not None
+        else "other"
+    )
 
     return {
         "category": "backing_service",
@@ -783,7 +789,7 @@ def _collect_storage(
                 resource_id=pg_resource.id,
                 category="storage",
                 meter="storage",
-                component=pg_resource.slug,
+                component=pg_resource.slug[:_COMPONENT_MAX_LEN],
                 quantity=quantity,
                 unit="GiB-mo",
                 usage_quantity=None,
@@ -815,7 +821,7 @@ def _collect_storage(
                 resource_id=redis_resource.id,
                 category="storage",
                 meter="storage",
-                component=redis_resource.slug,
+                component=redis_resource.slug[:_COMPONENT_MAX_LEN],
                 quantity=quantity,
                 unit="GiB-mo",
                 usage_quantity=None,
