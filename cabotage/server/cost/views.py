@@ -142,15 +142,16 @@ def _env_options_json(environments: Sequence[Environment]) -> list[dict[str, str
     return [{"slug": e.slug, "name": e.name} for e in environments]
 
 
-def _match_env(
+def _requested_env(
     environments: Sequence[Environment], slug: str | None
 ) -> Environment | None:
+    """None for no slug; 404 for a slug outside `environments`."""
     if not slug:
         return None
     for e in environments:
         if e.slug == slug:
             return e
-    return None
+    abort(404)
 
 
 def _lookup_environment(
@@ -299,7 +300,9 @@ def project_cost(org_slug: str, project_slug: str) -> str:
 @login_required
 def project_cost_data(org_slug: str, project_slug: str) -> Response:
     organization, project = _lookup_project(org_slug, project_slug)
-    environment = _match_env(_project_environments(project), request.args.get("env"))
+    environment = _requested_env(
+        _project_environments(project), request.args.get("env")
+    )
     if environment is not None:
         scope = CostScope(
             kind="environment",
@@ -365,14 +368,9 @@ def application_cost(
     organization, project, application = _lookup_application(
         org_slug, project_slug, app_slug
     )
-    environment: Environment | None = None
-    if env_slug:
-        environment = (
-            Environment.query.filter_by(project_id=project.id, slug=env_slug)
-            .filter(Environment.deleted_at.is_(None))
-            .first_or_404()
-        )
-    environments = _env_options_json(_application_environments(application))
+    app_environments = _application_environments(application)
+    environment = _requested_env(app_environments, env_slug)
+    environments = _env_options_json(app_environments)
     return render_template(
         "cost/application.html",
         organization=organization,
@@ -397,8 +395,9 @@ def application_cost_data(
     organization, project, application = _lookup_application(
         org_slug, project_slug, app_slug
     )
-    environments = _application_environments(application)
-    environment = _match_env(environments, request.args.get("env") or env_slug)
+    environment = _requested_env(
+        _application_environments(application), request.args.get("env")
+    )
     scope = CostScope(
         kind="application",
         organization=organization,
