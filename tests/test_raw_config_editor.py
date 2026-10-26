@@ -237,6 +237,37 @@ def test_baseline_skips_lines_changed_elsewhere(raw_editor):
 
 
 @pytest.mark.parametrize(
+    ("extra", "remaining"),
+    [
+        ({"delete_missing": "y"}, {"KEEP", "ADDED"}),
+        ({}, {"FOO", "KEEP", "ADDED"}),  # box unchecked
+        ({"delete_missing": "y", "baseline": ""}, {"FOO", "KEEP", "ADDED"}),
+        ({"delete_missing": "y", "raw_text": "KEEP=1\nnope"}, {"FOO", "KEEP", "ADDED"}),
+    ],
+)
+def test_delete_missing_removes_only_omitted_baseline_rows(
+    raw_editor, extra, remaining
+):
+    client, application, action, fields = raw_editor
+    rows = [("FOO", "1", False), ("KEEP", "1", False)]
+    _seed_configs(application, rows)
+    baseline = json.dumps([{"name": n, "value": v, "secret": s} for n, v, s in rows])
+    # Added by someone else after the editor opened, so never in the baseline.
+    _seed_configs(application, [("ADDED", "1", False)])
+
+    with patch.object(
+        views.config_writer, "write_configuration", return_value=KEY_SLUGS
+    ) as write:
+        response = client.post(
+            action, data={**fields, "baseline": baseline, "raw_text": "KEEP=1", **extra}
+        )
+
+    assert response.status_code == 302
+    write.assert_not_called()
+    assert set(_configs(application)) == remaining
+
+
+@pytest.mark.parametrize(
     "raw", ["GOOD=1\nnot a pair", "GOOD=1\n1BAD=x", "GOOD=1\nCABOTAGE_SENTINEL=x"]
 )
 def test_invalid_batch_writes_nothing(raw_editor, raw):
