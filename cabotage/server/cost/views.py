@@ -196,6 +196,8 @@ def _row_url(
     belong to a different org — resolved per-row from ``row["slugs"]["organization"]``,
     memoized in `org_cache` since the same handful of orgs repeat across top-7 rows).
     """
+    if row.get("deleted"):
+        return None
     slugs_raw = row.get("slugs")
     slugs: dict[str, object] = slugs_raw if isinstance(slugs_raw, dict) else {}
     org_slug = _str_or_none(slugs.get("organization"))
@@ -241,24 +243,16 @@ def _row_url(
 def _report_json(organization: Organization | None, scope: CostScope) -> Response:
     report = _build_report(scope)
     org_cache: dict[str, Organization | None] = {}
-    breakdowns = report.get("breakdowns")
-    if isinstance(breakdowns, dict):
-        for key, rows in breakdowns.items():
-            if not isinstance(key, str) or not isinstance(rows, list):
-                continue
-            for row in rows:
-                if isinstance(row, dict):
-                    row["url"] = _row_url(organization, key, row, org_cache)
-    primary_key = _PRIMARY_BREAKDOWN.get(scope.kind)
-    movers = report.get("movers")
-    if isinstance(movers, list):
-        for row in movers:
-            if isinstance(row, dict):
-                row["url"] = (
-                    _row_url(organization, primary_key, row, org_cache)
-                    if primary_key
-                    else None
-                )
+    breakdowns = cast(
+        dict[str, list[dict[str, object]]], report.get("breakdowns") or {}
+    )
+    for key, rows in breakdowns.items():
+        for row in rows:
+            row["url"] = _row_url(organization, key, row, org_cache)
+    primary_rows = breakdowns.get(_PRIMARY_BREAKDOWN.get(scope.kind, ""), [])
+    url_by_key = {row.get("key"): row.get("url") for row in primary_rows}
+    for row in cast(list[dict[str, object]], report.get("movers") or []):
+        row["url"] = url_by_key.get(row.get("key"))
     return jsonify(report)
 
 
