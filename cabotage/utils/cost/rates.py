@@ -51,6 +51,9 @@ DEFAULT_RATES: CostRates = {
         "t4g": 0.1344,
     },
     "node_size_factor": {
+        "nano": 0.03125,
+        "micro": 0.0625,
+        "small": 0.125,
         "medium": 0.25,
         "large": 0.5,
         "xlarge": 1.0,
