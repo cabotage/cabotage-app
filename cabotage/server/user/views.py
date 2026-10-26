@@ -6779,8 +6779,8 @@ def _mimir_connection(tenant_id=None):
     """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured.
 
     If *tenant_id* is given it overrides the default tenant header. Delegates
-    to the strict client in cabotage.utils.mimir, swallowing MimirError since
-    the many callers below treat "not configured" as "no data available".
+    to the strict client in cabotage.utils.mimir; the many callers below treat
+    "not configured" as "no data available".
     """
     # TODO: Include anonymous until migration to multi-tenant is completed
     effective_tenant = (
@@ -6792,7 +6792,7 @@ def _mimir_connection(tenant_id=None):
         mimir_url, verify, headers, _timeout = mimir.mimir_connection(
             tenant_id=effective_tenant
         )
-    except mimir.MimirError:
+    except mimir.MimirNotConfiguredError:
         return None, None, {}
     return mimir_url, verify, headers
 

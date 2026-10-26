@@ -26,6 +26,10 @@ class MimirError(Exception):
     """Raised when a Mimir query cannot be completed."""
 
 
+class MimirNotConfiguredError(MimirError):
+    """Raised when ``MIMIR_URL`` is unset, as opposed to a failed query."""
+
+
 class MimirSeries(TypedDict, total=False):
     """One series from a Mimir/Prometheus ``query``/``query_range`` result."""
 
@@ -50,11 +54,11 @@ def mimir_connection(
 
     If *tenant_id* is given it is used verbatim as the ``X-Scope-OrgID``
     header value; otherwise the configured ``MIMIR_TENANT_ID`` is used.
-    Raises :class:`MimirError` if Mimir is not configured.
+    Raises :class:`MimirNotConfiguredError` if Mimir is not configured.
     """
     mimir_url: str | None = current_app.config.get("MIMIR_URL")
     if not mimir_url:
-        raise MimirError("MIMIR_URL is not configured")
+        raise MimirNotConfiguredError("MIMIR_URL is not configured")
 
     verify_config: bool | str | None = current_app.config.get("MIMIR_VERIFY")
     verify: bool | str
