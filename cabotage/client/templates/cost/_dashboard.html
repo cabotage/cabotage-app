@@ -454,6 +454,7 @@
 
     <section class="cost-card cost-platform-card" aria-label="Capacity vs requested vs used" id="platform-capacity-section" hidden>
       <span class="cost-section-title">Capacity vs. requested vs. used</span>
+      <div class="cost-legend" id="platform-capacity-legend"></div>
       <div class="cost-plot" data-chart="platform-capacity" style="height:180px"></div>
     </section>
 
@@ -1988,10 +1989,9 @@
       { label: 'Idle', _swatch: idleBandColor },
       { label: 'Reserved, unused', _swatch: reservedBandColor }
     ]);
-    var legend = '<div class="cost-legend">' + legendDefs.map(function(d) {
+    document.getElementById('platform-capacity-legend').innerHTML = legendDefs.map(function(d) {
       return '<span class="cost-legend-item"><span class="cost-swatch" style="background:' + d._swatch + '"></span>' + esc(d.label) + '</span>';
-    }).join('') + '</div>';
-    section.querySelector('.cost-plot').insertAdjacentHTML('beforebegin', legend);
+    }).join('');
   }
   function renderPlatformTopOrgs(report, topOrgsSeries) {
     var el = document.querySelector('[data-chart="platform-top-orgs"]');
