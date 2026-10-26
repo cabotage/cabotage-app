@@ -641,10 +641,7 @@ def _resolve_custom_range(
 def _bucket_starts(
     start: datetime.datetime, end: datetime.datetime, interval: Interval
 ) -> list[datetime.datetime]:
-    # Buckets must start at the first boundary >= start (ceiling, not floor):
-    # the series query below filters CostLineItem.period_start >= start, so a
-    # floored boundary before `start` would never match any row and would
-    # show up as a spurious always-zero leading bucket.
+    # Hours ceil to `start`; days/weeks floor so a partial first bucket keeps its rows.
     if interval == "hour":
         cursor = start.replace(minute=0, second=0, microsecond=0)
         if cursor < start:
@@ -654,13 +651,9 @@ def _bucket_starts(
         cursor = (start - datetime.timedelta(days=start.weekday())).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        if cursor < start:
-            cursor += datetime.timedelta(weeks=1)
         step = datetime.timedelta(weeks=1)
     else:
         cursor = start.replace(hour=0, minute=0, second=0, microsecond=0)
-        if cursor < start:
-            cursor += datetime.timedelta(days=1)
         step = datetime.timedelta(days=1)
     buckets: list[datetime.datetime] = []
     while cursor < end:
