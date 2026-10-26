@@ -63,7 +63,9 @@ _MEM_REQUEST_QUERY = (
     'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="memory"})'
 )
 _NODE_PRESENCE_QUERY = "count by (instance) (container_memory_working_set_bytes)"
-_POD_LABELS_QUERY = "kube_pod_labels"
+# Range lookback at period_end so pods that terminated mid-hour (builds,
+# replaced replicas) still have labels to attribute their usage samples.
+_POD_LABELS_QUERY = "last_over_time(kube_pod_labels[1h])"
 _TRAEFIK_QUERY = (
     "sum by (service) (increase(traefik_service_responses_bytes_total[1h]))"
 )
