@@ -331,6 +331,7 @@ function initRawEditor() {
   var previewUpdate = document.getElementById('raw-editor-preview-update');
   var previewDelete = document.getElementById('raw-editor-preview-delete');
   var submitLabel = document.getElementById('raw-editor-submit-label');
+  var tabError = document.getElementById('raw-editor-tab-error');
   var tabs = modal.querySelectorAll('[data-editor-tab]');
   var panels = modal.querySelectorAll('[data-editor-panel]');
 
@@ -348,21 +349,79 @@ function initRawEditor() {
     }
   }
 
-  function buildText(fmt) {
-    if (!configs.length) return '';
+  // Client-side copy of the rules in _parse_raw_config (views.py): skip blank
+  // and # lines, split at the first "=", trim the name, keep the value
+  // verbatim, no duplicate names; JSON must be an object of strings. Advisory
+  // only; the server re-parses and decides what is written.
+  // Returns {entries: [{name, value}]} or {error: message}.
+  function parseEditor(fmt, text) {
+    var entries = [];
+    var seen = {};
+    if (fmt === 'json') {
+      var obj;
+      try {
+        obj = JSON.parse(text);
+      } catch (e) {
+        return { error: 'Invalid JSON.' };
+      }
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        return { error: 'JSON must be an object of "KEY": "VALUE" strings.' };
+      }
+      var keys = Object.keys(obj);
+      for (var i = 0; i < keys.length; i++) {
+        if (typeof obj[keys[i]] !== 'string') {
+          return { error: 'JSON must be an object of "KEY": "VALUE" strings.' };
+        }
+        entries.push({ name: keys[i], value: obj[keys[i]] });
+      }
+    } else {
+      var lines = text.split('\n');
+      for (var n = 0; n < lines.length; n++) {
+        var trimmed = lines[n].trim();
+        if (!trimmed || trimmed.charAt(0) === '#') continue;
+        var eq = lines[n].indexOf('=');
+        if (eq === -1) return { error: 'Line ' + (n + 1) + ': expected KEY=VALUE.' };
+        var name = lines[n].slice(0, eq).trim();
+        if (seen[name.toUpperCase()]) return { error: 'Line ' + (n + 1) + ': duplicate variable name.' };
+        seen[name.toUpperCase()] = true;
+        entries.push({ name: name, value: lines[n].slice(eq + 1) });
+      }
+    }
+    return { entries: entries };
+  }
+
+  // Inverse of parseEditor. ENV cannot carry a line break inside a value;
+  // callers check hasLineBreak() before offering the ENV tab.
+  function formatEditor(fmt, entries) {
+    if (!entries.length) return '';
     if (fmt === 'json') {
       var obj = {};
-      configs.forEach(function (c) {
-        obj[c.name] = c.secret ? '**secure**' : c.value;
+      entries.forEach(function (e) {
+        obj[e.name] = e.value;
       });
       return JSON.stringify(obj, null, 2);
     }
-    return configs
-      .map(function (c) {
-        if (c.secret) return c.name + '=**secure**';
-        return c.name + '=' + c.value;
+    return entries
+      .map(function (e) {
+        return e.name + '=' + e.value;
       })
       .join('\n');
+  }
+
+  function hasLineBreak(entries) {
+    return entries.some(function (e) {
+      return /[\r\n]/.test(e.value);
+    });
+  }
+
+  function storedEntries() {
+    return configs.map(function (c) {
+      return { name: c.name, value: c.secret ? '**secure**' : c.value };
+    });
+  }
+
+  function buildText(fmt) {
+    return formatEditor(fmt, storedEntries());
   }
 
   // Fill once at load; the page reloads after every save, so this cannot
@@ -373,31 +432,13 @@ function initRawEditor() {
     textarea.value = generated;
   }
 
-  // Client-side copy of the line rules in _parse_raw_config (views.py): skip
-  // blank and # lines, split at the first "=", trim the name, keep the value
-  // verbatim. Advisory only; the server re-parses and decides what is written.
-  // Returns {UPPER_NAME: {name, value}}, or null if the JSON cannot be parsed.
+  // {UPPER_NAME: {name, value}} for the current text, or null if it does not parse.
   function submittedValues() {
+    var parsed = parseEditor(formatInput ? formatInput.value : 'env', textarea.value);
+    if (parsed.error) return null;
     var values = {};
-    if ((formatInput ? formatInput.value : 'env') === 'json') {
-      try {
-        var obj = JSON.parse(textarea.value);
-        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-        Object.keys(obj).forEach(function (k) {
-          values[k.toUpperCase()] = { name: k, value: obj[k] };
-        });
-      } catch (e) {
-        return null;
-      }
-      return values;
-    }
-    textarea.value.split('\n').forEach(function (line) {
-      var trimmed = line.trim();
-      if (!trimmed || trimmed.charAt(0) === '#') return;
-      var eq = line.indexOf('=');
-      if (eq === -1) return;
-      var name = line.slice(0, eq).trim();
-      values[name.toUpperCase()] = { name: name, value: line.slice(eq + 1) };
+    parsed.entries.forEach(function (e) {
+      values[e.name.toUpperCase()] = e;
     });
     return values;
   }
@@ -432,7 +473,7 @@ function initRawEditor() {
     var deleting = ticked && removed.length > 0;
     var deleteText = '';
     if (ticked) {
-      if (values === null) deleteText = 'Fix the JSON to see what will be deleted.';
+      if (values === null) deleteText = 'Fix the text above to see what will be deleted.';
       else deleteText = deleting ? 'Will delete: ' + removed.join(', ') : 'Nothing to delete.';
     } else if (removed.length) {
       deleteText = 'Removed but kept (tick to delete): ' + removed.join(', ');
@@ -453,7 +494,12 @@ function initRawEditor() {
     }
   }
   if (deleteCheck) deleteCheck.addEventListener('change', updatePreview);
-  if (textarea) textarea.addEventListener('input', updatePreview);
+  if (textarea) {
+    textarea.addEventListener('input', function () {
+      setPreviewLine(tabError, '');
+      updatePreview();
+    });
+  }
 
   function openModal() {
     modal.style.display = 'flex';
@@ -477,6 +523,20 @@ function initRawEditor() {
   tabs.forEach(function (tab) {
     tab.addEventListener('click', function () {
       var tabId = tab.getAttribute('data-editor-tab');
+      var fromId = formatInput ? formatInput.value : 'env';
+      if (tabId === fromId || !textarea) return;
+      // Untouched text is regenerated; edited text is converted if it parses,
+      // otherwise stay put and say why, so ENV is never submitted as JSON.
+      var entries = storedEntries();
+      if (textarea.value !== generated) {
+        var parsed = parseEditor(fromId, textarea.value);
+        if (parsed.error) return setPreviewLine(tabError, parsed.error);
+        entries = parsed.entries;
+      }
+      if (tabId === 'env' && hasLineBreak(entries)) {
+        return setPreviewLine(tabError, 'A value contains a line break, which ENV cannot show. Keep editing as JSON.');
+      }
+      setPreviewLine(tabError, '');
       tabs.forEach(function (t) {
         t.classList.toggle('raw-editor-tab-active', t.getAttribute('data-editor-tab') === tabId);
       });
@@ -486,11 +546,9 @@ function initRawEditor() {
       if (formatInput) formatInput.value = tabId;
 
       if (textarea) {
-        // Only regenerate while the text is untouched; never clobber edits.
-        if (textarea.value === generated) {
-          generated = buildText(tabId);
-          textarea.value = generated;
-        }
+        var text = formatEditor(tabId, entries);
+        if (textarea.value === generated) generated = text;
+        textarea.value = text;
         if (tabId === 'json') {
           textarea.placeholder = '{\n  "DATABASE_URL": "postgres://...",\n  "REDIS_URL": "redis://..."\n}';
         } else {
@@ -501,6 +559,12 @@ function initRawEditor() {
       }
     });
   });
+
+  // Start on JSON when a stored value has a line break, which ENV cannot show.
+  if (textarea && hasLineBreak(storedEntries())) {
+    var jsonTab = modal.querySelector('[data-editor-tab="json"]');
+    if (jsonTab) jsonTab.click();
+  }
 
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {

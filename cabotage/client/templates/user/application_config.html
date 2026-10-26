@@ -264,6 +264,7 @@
                 data-editor-tab="env">ENV</button>
         <button type="button" class="raw-editor-tab" data-editor-tab="json">JSON</button>
       </div>
+      <p id="raw-editor-tab-error" class="text-xs text-error mb-2" style="display:none;"></p>
 
       <form action="{{ url_for('user.project_application_configuration_bulk', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
             method="post">
