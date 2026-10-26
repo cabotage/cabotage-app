@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0f0f17" />
     <meta name="referrer" content="same-origin" />
+    <meta name="csrf-token" content="{{ csrf_token() }}" />
     <script>
     // Apply theme + accent before render to prevent flash
     (function() {
@@ -234,9 +235,29 @@
     {% endblock css %}
   </head>
   <body class="bg-base-100 text-base-content font-sans antialiased">
+    {#- Resolve elevated access once; the same expiry drives the visible band. -#}
+    {% set admin_access = admin_access_state() if current_user.is_authenticated and current_user.admin and admin_access_state is defined else none %}
+    {% set admin_elevated = admin_access and admin_access.active %}
 
     <div class="app-shell">
       <header class="app-topbar" data-topbar>
+        {% if admin_elevated %}
+          <div class="admin-access-band" data-admin-access-band
+               data-expires-at="{{ admin_access.expires_at }}" data-server-time="{{ admin_access.server_time }}">
+            <div class="admin-access-status">
+              {{ icon('shield', 'w-3.5 h-3.5') }}
+              <span data-admin-access-label role="status">Admin access</span>
+              <span class="admin-access-countdown" data-admin-access-countdown>Passkey verified</span>
+            </div>
+            <div class="admin-access-actions">
+              <button type="button" class="admin-access-button" data-admin-access-renew hidden>Verify again</button>
+              <form method="post" action="{{ url_for('admin_passkey.end') }}" data-admin-access-end>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="admin-access-button">End access</button>
+              </form>
+            </div>
+          </div>
+        {% endif %}
         <div class="topbar-row flex items-center justify-between px-4 lg:px-6 h-14"
              data-topbar-row>
           <div class="flex items-center gap-4" data-topbar-left>
@@ -684,6 +705,10 @@
       <script src="{{ url_for('static', filename='main.min.js') }}"></script>
     {% else %}
       <script src="{{ url_for('static', filename='main.js') }}"></script>
+    {% endif %}
+    {% if admin_elevated and admin_verification is not defined %}
+      {#- Elevated tenant pages: lets fetch-based actions request their passkey proof. -#}
+      <script src="{{ url_for('static', filename='admin-passkey.js') }}" defer></script>
     {% endif %}
     {% block js %}
     {% endblock js %}
