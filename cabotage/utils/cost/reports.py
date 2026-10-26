@@ -488,7 +488,7 @@ def build_report(
     movers = _movers(breakdowns[primary_name])
 
     heatmap = _heatmap(scope, range_start, range_end)
-    freshness = _freshness(range_start, range_end, now)
+    freshness = _freshness(range_start, range_end, now, first_hour)
 
     extent_series = _extent_series(scope, first_hour, last_hour)
     rates_display = _rates_display(rates, range_start)
@@ -1855,7 +1855,10 @@ def _rates_display(rates: CostRates, start: datetime.datetime) -> RatesDisplay:
 
 
 def _freshness(
-    start: datetime.datetime, end: datetime.datetime, now: datetime.datetime
+    start: datetime.datetime,
+    end: datetime.datetime,
+    now: datetime.datetime,
+    first_hour: datetime.datetime | None,
 ) -> FreshnessStats:
     collection_enabled = bool(current_app.config.get("SHOW_COST_ESTIMATES"))
 
@@ -1882,6 +1885,10 @@ def _freshness(
         collection_cutoff = current_hour
     range_end_hour = min(end, collection_cutoff)
     range_start_hour = start.replace(minute=0, second=0, microsecond=0)
+    if range_start_hour < start:
+        range_start_hour += datetime.timedelta(hours=1)
+    if first_hour is not None and first_hour > range_start_hour:
+        range_start_hour = first_hour
     expected_hours: list[datetime.datetime] = []
     cursor = range_start_hour
     while cursor < range_end_hour:
