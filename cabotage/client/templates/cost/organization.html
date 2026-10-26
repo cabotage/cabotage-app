@@ -1,0 +1,23 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import resource_path, org_tab_nav %}
+
+{% block title %}Cost - {{ organization.name }} - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': organization.slug},
+    {'label': 'cost'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ org_tab_nav(organization, 'cost') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% set data_url = url_for('cost.organization_cost_data', org_slug=organization.slug) %}
+  {% set scope_kind = 'organization' %}
+  {% set dashboard_title = 'Cost' %}
+  {% set dashboard_subtitle = organization.name %}
+  {% include "cost/_dashboard.html" %}
+{% endblock content %}

@@ -1,0 +1,25 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import resource_path, project_tab_nav %}
+
+{% block title %}Cost - {{ project.name }} - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': organization.slug, 'url': url_for('user.organization', org_slug=organization.slug)},
+    {'label': project.slug},
+    {'label': 'cost'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ project_tab_nav(project, 'cost') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% set data_url = url_for('cost.project_cost_data', org_slug=organization.slug, project_slug=project.slug) %}
+  {% set scope_kind = 'project' %}
+  {% set dashboard_title = 'Cost' %}
+  {% set dashboard_subtitle = project.name %}
+  {% set env_options = environments %}
+  {% include "cost/_dashboard.html" %}
+{% endblock content %}
