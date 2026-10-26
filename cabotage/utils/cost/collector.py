@@ -227,7 +227,10 @@ def _floor_hour(dt: datetime.datetime) -> datetime.datetime:
 def _collect(
     period_start: datetime.datetime, period_end: datetime.datetime, rates: CostRates
 ) -> tuple[list[CostLineItem], CostRunStats]:
-    tenant_id: str | None = current_app.config.get("MIMIR_TENANT_ID")
+    # TODO: Include anonymous until migration to multi-tenant is completed
+    # (mirrors _mimir_connection in cabotage.server.user.views).
+    base_tenant = current_app.config.get("MIMIR_TENANT_ID")
+    tenant_id = f"{base_tenant}|anonymous" if base_tenant else "anonymous"
     range_start = int(period_start.timestamp())
     range_end = int((period_start + datetime.timedelta(minutes=55)).timestamp())
     instant_time = int(period_end.timestamp())
