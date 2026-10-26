@@ -71,13 +71,15 @@ def mimir_connection(
         verify = True
 
     headers: dict[str, str] = {}
-    effective_tenant: str | None = (
+    # MetaFlaskEnv parses all-digit env values to int; requests rejects
+    # non-str header values, so coerce.
+    effective_tenant = (
         tenant_id
         if tenant_id is not None
         else current_app.config.get("MIMIR_TENANT_ID")
     )
     if effective_tenant:
-        headers["X-Scope-OrgID"] = effective_tenant
+        headers["X-Scope-OrgID"] = str(effective_tenant)
 
     timeout: float = current_app.config.get("MIMIR_TIMEOUT", 10)
     return mimir_url, verify, headers, timeout
