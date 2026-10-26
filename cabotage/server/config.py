@@ -95,6 +95,7 @@ class Config(metaclass=MetaFlaskEnv):
 
     EXT_SERVER_NAME = "cabotage-app:8000"
     EXT_PREFERRED_URL_SCHEME = "http"
+    INSTANCE_APPLICATION_ENVIRONMENT_ID = ""
 
     FLASK_ADMIN_SWATCH = "cerulean"
     SECRET_KEY = "my_precious"  # nosec

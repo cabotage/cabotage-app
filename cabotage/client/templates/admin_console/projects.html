@@ -1,0 +1,52 @@
+{% extends "admin_console/_layout.html" %}
+{% from "_macros.html" import page_header %}
+{% from "admin_console/_macros.html" import crumbs, search_form, state_segments, pager, no_results, deleted_badge, when %}
+
+{% block page_title %}Projects{% endblock page_title %}
+{% block console_crumbs %}{{ crumbs([{'label': 'projects'}]) }}{% endblock console_crumbs %}
+
+{% block console %}
+  {% call page_header('Projects') %}{% endcall %}
+
+  <div class="adm-toolbar">
+    {{ search_form('admin_console.projects', term, 'Project, organization or ID', {'state': state}) }}
+    {{ state_segments('admin_console.projects', state, term) }}
+  </div>
+
+  <div class="adm-panel">
+    {% if page.items %}
+      <table class="adm-table">
+        <thead>
+          <tr>
+            <th>Project</th>
+            <th>Organization</th>
+            <th class="num">Apps</th>
+            <th class="num adm-hide-sm">Environments</th>
+            <th class="end">Last deploy</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for project, stats in page.items %}
+            <tr class="{% if project.deleted_at %}adm-deleted{% endif %}">
+              <td>
+                <a class="adm-link adm-primary" href="{{ url_for('admin_console.project', project_id=project.id) }}">{{ project.name }}</a>
+                {% if project.deleted_at %}{{ deleted_badge(project.deleted_at) }}{% endif %}
+                <div class="adm-sub adm-mono">{{ project.slug | admin_slug }}</div>
+              </td>
+              <td>
+                <a class="adm-link" href="{{ url_for('admin_console.organization', organization_id=project.organization_id) }}">{{ project.organization.slug | admin_slug }}</a>
+                {% if project.organization.deleted_at and not project.deleted_at %}<span class="adm-sub">(deleted)</span>{% endif %}
+              </td>
+              <td class="num">{{ stats.applications }}</td>
+              <td class="num adm-hide-sm">{% if project.environments_enabled %}{{ stats.environments }}{% else %}<span class="adm-sub">off</span>{% endif %}</td>
+              <td class="end adm-sub">{{ when(stats.last_deploy) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      {{ no_results(term, 'admin_console.projects', 'projects', {'state': state}) }}
+    {% endif %}
+  </div>
+  {{ pager(page, 'admin_console.projects', {'q': term, 'state': state}, 'projects') }}
+{% endblock console %}
