@@ -756,6 +756,8 @@ def _collect_storage(
 ) -> tuple[list[CostLineItem], set[uuid.UUID]]:
     items: list[CostLineItem] = []
     scopes: set[uuid.UUID] = set()
+    # gp3 bills per GiB-month, so each hour is recorded as GiB-mo (1/730 of a
+    # month); summed over a month the quantity reads as provisioned GiB.
     rate = rates["storage_gib_month"]
 
     # Resource.created/deleted_at are stored as naive UTC datetimes (no
