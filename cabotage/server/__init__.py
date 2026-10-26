@@ -175,6 +175,12 @@ def celery_init_app(app):
             "args": None,
         },
     }
+    if app.config.get("SHOW_COST_ESTIMATES"):
+        celery_app.conf.beat_schedule["cost-collector"] = {
+            "task": "cabotage.celery.tasks.cost.collect_costs",
+            "schedule": crontab(minute="7"),
+            "args": None,
+        }
     app.extensions["celery"] = celery_app
     return celery_app
 
