@@ -301,6 +301,10 @@ def _collect(
     )
     if not all_pod_keys:
         raise RuntimeError("no pod metrics for hour")
+    # Labels come from kube-state-metrics, usage from cAdvisor; a KSM gap
+    # would otherwise record a "succeeded" hour with every pod unallocated.
+    if not pod_labels:
+        raise RuntimeError("no pod labels for hour")
     for pod_key in all_pod_keys:
         namespace, pod_name = pod_key
         if not namespace or not pod_name:

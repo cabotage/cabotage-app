@@ -197,6 +197,43 @@ def _mimir_stub(responses, pod_labels, traefik=None, node_presence=None, raise_o
     return query_range, query_instant
 
 
+def _app_pod_responses(namespace, pod):
+    return {
+        "rate(container_cpu_usage_seconds_total": [
+            _series(namespace, pod, _full_hour(0.5))
+        ],
+        "container_memory_working_set_bytes{": [
+            _series(namespace, pod, _full_hour(0.5 * GIB))
+        ],
+        'resource="cpu"': [_series(namespace, pod, _full_hour(1.0))],
+        'resource="memory"': [_series(namespace, pod, _full_hour(1.0 * GIB))],
+    }
+
+
+def _app_pod_labels(org, project, application, pod):
+    return [
+        {
+            "metric": {
+                "namespace": org.k8s_identifier,
+                "pod": pod,
+                "label_cabotage_io_organization": org.k8s_identifier,
+                "label_cabotage_io_project": project.k8s_identifier,
+                "label_cabotage_io_application": application.k8s_identifier,
+                "label_process": "web",
+            }
+        }
+    ]
+
+
+def _collect_with(responses, pod_labels):
+    query_range, query_instant = _mimir_stub(responses, pod_labels)
+    with (
+        patch("cabotage.utils.mimir.query_range", side_effect=query_range),
+        patch("cabotage.utils.mimir.query_instant", side_effect=query_instant),
+    ):
+        return collect_hour(PERIOD_START)
+
+
 class TestCostCollector:
     def test_max_request_usage_and_partial_hour_pod(
         self, app, org, project, environment, application, app_env
@@ -677,3 +714,15 @@ class TestCostCollector:
             CostLineItem.query.filter_by(run_id=good_run_id).count() == good_item_count
         )
         assert CostCollectionRun.query.filter_by(period_start=PERIOD_START).count() == 1
+
+    def test_missing_pod_labels_with_usage_produces_failed_run(
+        self, app, org, project, environment, application, app_env
+    ):
+        # cAdvisor usage present but kube-state-metrics labels missing must
+        # not be recorded as a succeeded hour with every pod unallocated.
+        responses = _app_pod_responses(org.k8s_identifier, "api-web-abc12-xyz34")
+        run = _collect_with(responses, [])
+
+        assert run.status == "failed"
+        assert run.error == "no pod labels for hour"
+        assert CostLineItem.query.filter_by(run_id=run.id).count() == 0
