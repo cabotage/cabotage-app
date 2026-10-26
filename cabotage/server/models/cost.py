@@ -141,6 +141,9 @@ class CostLineItem(Model):
             "period_start",
         ),
         Index("ix_cost_line_items_period_start", "period_start"),
+        # FK columns not led by another index; ON DELETE actions scan without them.
+        Index("ix_cost_line_items_run_id", "run_id"),
+        Index("ix_cost_line_items_resource_id", "resource_id"),
     )
 
 
