@@ -18,7 +18,7 @@ from cabotage.server.models.projects import (
     Image,
     Project,
 )
-from cabotage.server.models.resources import PostgresResource, Resource
+from cabotage.server.models.resources import PostgresResource, RedisResource, Resource
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
 from cabotage.utils.cost.collector import collect_hour
@@ -97,11 +97,12 @@ def org(admin_user):
             for resource in Resource.query.filter_by(
                 environment_id=environment.id
             ).all():
-                if resource.type == "postgres":
-                    db.session.execute(
-                        db.text("DELETE FROM resources_postgres WHERE id = :rid"),
-                        {"rid": resource.id},
-                    )
+                child = {"postgres": PostgresResource, "redis": RedisResource}.get(
+                    resource.type
+                )
+                if child is not None:
+                    table = child.__table__
+                    db.session.execute(table.delete().where(table.c.id == resource.id))
             Resource.query.filter_by(environment_id=environment.id).delete()
             for application in Application.query.filter_by(project_id=project.id).all():
                 Image.query.filter_by(application_id=application.id).delete()
@@ -726,3 +727,36 @@ class TestCostCollector:
         assert run.status == "failed"
         assert run.error == "no pod labels for hour"
         assert CostLineItem.query.filter_by(run_id=run.id).count() == 0
+
+    def test_redis_storage_counts_replicas_only_when_ha(
+        self, app, org, project, environment, application, app_env
+    ):
+        common = {
+            "environment_id": environment.id,
+            "service_version": "8",
+            "size_class": "cache.medium",
+            "storage_size": 10,
+            "leader_replicas": 3,
+            "follower_replicas": 3,
+        }
+        standalone = RedisResource(name="cache", ha_enabled=False, **common)
+        cluster = RedisResource(name="cluster", ha_enabled=True, **common)
+        for resource in (standalone, cluster):
+            # Storage only counts resources that existed during the hour.
+            resource.created = PERIOD_START.replace(tzinfo=None, hour=0)
+        db.session.add_all([standalone, cluster])
+        db.session.flush()
+
+        pod = "api-web-abc12-xyz34"
+        run = _collect_with(
+            _app_pod_responses(org.k8s_identifier, pod),
+            _app_pod_labels(org, project, application, pod),
+        )
+
+        assert run.status == "succeeded"
+        storage = {
+            i.resource_id: i.quantity
+            for i in CostLineItem.query.filter_by(run_id=run.id, category="storage")
+        }
+        assert storage[standalone.id] == pytest.approx(10 / 730.0)
+        assert storage[cluster.id] == pytest.approx(60 / 730.0)
