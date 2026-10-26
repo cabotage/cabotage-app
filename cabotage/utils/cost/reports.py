@@ -6,6 +6,7 @@ the JSON shape the cost dashboard renders. Pages read these snapshots only;
 this module never queries Mimir or Kubernetes.
 """
 
+import bisect
 import datetime
 import uuid
 from collections import defaultdict
@@ -438,12 +439,8 @@ def build_report(
 
     buckets = _bucket_starts(range_start, range_end, interval)
     series = _series(scope, range_start, range_end, interval, buckets)
-    series["previous"] = _series_total(
-        scope,
-        previous_start,
-        previous_end,
-        interval,
-        _bucket_starts(previous_start, previous_end, interval),
+    series["previous"] = _series_previous(
+        scope, previous_start, previous_end, buckets, duration
     )
     series["efficiency"] = _series_efficiency(
         scope, range_start, range_end, interval, buckets, rates
@@ -758,23 +755,31 @@ def _series(
     return {"timestamps": timestamps, "categories": categories}
 
 
-def _series_total(
+def _series_previous(
     scope: CostScope,
-    start: datetime.datetime,
-    end: datetime.datetime,
-    interval: Interval,
+    previous_start: datetime.datetime,
+    previous_end: datetime.datetime,
     buckets: list[datetime.datetime],
+    shift: datetime.timedelta,
 ) -> list[float]:
-    trunc = func.date_trunc(interval, CostLineItem.period_start)
+    """Previous-period totals, shifted onto the current range's buckets."""
+    values = [0.0] * len(buckets)
+    if not buckets:
+        return values
     query = _scope_filter(
         db.session.query(
-            trunc.label("bucket"), func.sum(CostLineItem.cost_usd).label("cost")
+            CostLineItem.period_start.label("period_start"),
+            func.sum(CostLineItem.cost_usd).label("cost"),
         ),
         scope,
-    ).filter(CostLineItem.period_start >= start, CostLineItem.period_start < end)
-    rows = query.group_by("bucket").all()
-    by_bucket = {_as_utc(row.bucket): float(row.cost) for row in rows}
-    return [by_bucket.get(bucket, 0.0) for bucket in buckets]
+    ).filter(
+        CostLineItem.period_start >= previous_start,
+        CostLineItem.period_start < previous_end,
+    )
+    for row in query.group_by(CostLineItem.period_start).all():
+        index = bisect.bisect_right(buckets, _as_utc(row.period_start) + shift) - 1
+        values[max(index, 0)] += float(row.cost)
+    return values
 
 
 def _series_efficiency(
