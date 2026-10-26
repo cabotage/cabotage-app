@@ -760,3 +760,31 @@ class TestCostCollector:
         }
         assert storage[standalone.id] == pytest.approx(10 / 730.0)
         assert storage[cluster.id] == pytest.approx(60 / 730.0)
+
+    def test_long_resource_slug_does_not_fail_the_run(
+        self, app, org, project, environment, application, app_env
+    ):
+        long_slug = "a" * 80
+        resource = PostgresResource(
+            environment_id=environment.id,
+            name="long",
+            slug=long_slug,
+            service_version="18",
+            size_class="db.medium",
+            storage_size=10,
+        )
+        resource.created = PERIOD_START.replace(tzinfo=None, hour=0)
+        db.session.add(resource)
+        db.session.flush()
+
+        pod = "api-web-abc12-xyz34"
+        run = _collect_with(
+            _app_pod_responses(org.k8s_identifier, pod),
+            _app_pod_labels(org, project, application, pod),
+        )
+
+        assert run.status == "succeeded"
+        item = CostLineItem.query.filter_by(
+            run_id=run.id, resource_id=resource.id, category="storage"
+        ).one()
+        assert item.component == long_slug[:64]
