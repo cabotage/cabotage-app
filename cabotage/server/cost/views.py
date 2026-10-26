@@ -407,6 +407,7 @@ def platform_cost_data() -> Response:
 @cost_blueprint.route("/infra/cost/collect", methods=["POST"])
 @login_required
 def platform_cost_collect() -> RedirectResponse:
+    """The admin "Collect now" button on /infra/cost: queue `collect_costs`."""
     _require_cost_admin()
     try:
         _ = cast(Task, collect_costs).delay()
