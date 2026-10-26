@@ -10,7 +10,7 @@ from flask_security import hash_password
 from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.cost import CostCollectionRun, CostLineItem
+from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -221,6 +221,14 @@ def _add_item(
     )
     db.session.add(item)
     return item
+
+
+def _add_hour_cost(hour, cost, **item_kwargs):
+    _add_item(_add_run(hour), hour, cost=cost, **item_kwargs)
+
+
+def _floor_hour(dt):
+    return dt.replace(minute=0, second=0, microsecond=0)
 
 
 class TestBuildReportBasics:
@@ -819,3 +827,136 @@ class TestBuildReportBasics:
             capacity["capacity_cost"], capacity["requested_cost"], strict=True
         ):
             assert cap >= req - 1e-9
+
+    @pytest.mark.parametrize("range_key", ["30d", "90d", "mtd"])
+    def test_daily_series_sum_to_totals_and_align_previous(
+        self, app, org, project, environment, application, range_key
+    ):
+        if range_key == "mtd":
+            start = NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            start = NOW - datetime.timedelta(days=int(range_key[:-1]))
+        first_hour = _floor_hour(start) + datetime.timedelta(hours=1)
+        scope_items = {
+            "org": org,
+            "project": project,
+            "environment": environment,
+            "application": application,
+        }
+        _add_hour_cost(first_hour, 5.0, **scope_items)
+        _add_hour_cost(
+            _floor_hour(NOW) - datetime.timedelta(hours=1), 3.0, **scope_items
+        )
+        _add_hour_cost(
+            _floor_hour(start) - datetime.timedelta(hours=1), 4.0, **scope_items
+        )
+        db.session.commit()
+
+        report = build_report(
+            CostScope(kind="organization", organization=org), range_key, now=NOW
+        )
+        series = report["series"]
+        series_total = sum(sum(values) for values in series["categories"].values())
+        assert series_total == pytest.approx(report["totals"]["cost"], rel=1e-6)
+        assert report["totals"]["cost"] == pytest.approx(8.0, rel=1e-6)
+        assert len(series["previous"]) == len(series["timestamps"])
+        assert sum(series["previous"]) == pytest.approx(
+            report["totals"]["previous_cost"], rel=1e-6
+        )
+
+    def test_daily_series_ignore_session_timezone(
+        self, app, org, project, environment, application
+    ):
+        hour = _floor_hour(NOW) - datetime.timedelta(days=5)
+        _add_hour_cost(hour, 5.0, org=org, project=project, application=application)
+        db.session.commit()
+
+        db.session.execute(db.text("SET TIME ZONE 'America/New_York'"))
+        try:
+            report = build_report(
+                CostScope(kind="organization", organization=org), "30d", now=NOW
+            )
+        finally:
+            db.session.execute(db.text("SET TIME ZONE 'UTC'"))
+
+        series = report["series"]
+        assert sum(sum(v) for v in series["categories"].values()) == pytest.approx(5.0)
+
+    def test_movers_include_drop_to_zero(
+        self, app, org, project, environment, application
+    ):
+        dropped = Project(name="Dropped Project", organization_id=org.id)
+        db.session.add(dropped)
+        db.session.flush()
+        current_hour = _floor_hour(NOW) - datetime.timedelta(hours=1)
+        previous_hour = current_hour - datetime.timedelta(hours=24)
+        _add_hour_cost(current_hour, 11.0, org=org, project=project)
+        run = _add_run(previous_hour)
+        _add_item(run, previous_hour, org=org, project=project, cost=10.0)
+        _add_item(run, previous_hour, org=org, project=dropped, cost=500.0)
+        db.session.commit()
+
+        report = build_report(
+            CostScope(kind="organization", organization=org), "24h", now=NOW
+        )
+        top = report["movers"][0]
+        assert top["key"] == str(dropped.id)
+        assert top["cost"] == 0.0
+        assert top["change"] == pytest.approx(-500.0, rel=1e-6)
+
+    def test_freshness_ignores_partial_start_hour(self, app, org):
+        range_start_floor = _floor_hour(NOW - datetime.timedelta(hours=24))
+        _add_run(range_start_floor - datetime.timedelta(hours=2))
+        hour = range_start_floor + datetime.timedelta(hours=1)
+        while hour < _floor_hour(NOW):
+            _add_run(hour)
+            hour += datetime.timedelta(hours=1)
+        db.session.commit()
+
+        report = build_report(
+            CostScope(kind="organization", organization=org), "24h", now=NOW
+        )
+        assert report["freshness"]["missing_hours"] == 0
+
+    def test_freshness_ignores_hours_before_first_collection(self, app, org):
+        for offset in range(1, 6):
+            _add_run(_floor_hour(NOW) - datetime.timedelta(hours=offset))
+        db.session.commit()
+
+        report = build_report(
+            CostScope(kind="organization", organization=org), "90d", now=NOW
+        )
+        assert report["freshness"]["missing_hours"] == 0
+
+    def test_platform_nodes_and_rates_only_count_recent_nodes(self, app):
+        suffix = uuid.uuid4().hex[:8]
+        stale = CostNode(
+            name=f"stale-{suffix}",
+            instance_type="r8g.xlarge",
+            capacity_type="on-demand",
+            cpu_capacity=4,
+            memory_gib=32,
+            last_seen=NOW - datetime.timedelta(days=60),
+        )
+        live = CostNode(
+            name=f"live-{suffix}",
+            instance_type="m7i.large",
+            capacity_type="on-demand",
+            cpu_capacity=2,
+            memory_gib=8,
+            last_seen=NOW - datetime.timedelta(hours=1),
+        )
+        db.session.add_all([stale, live])
+        db.session.commit()
+        try:
+            report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+        finally:
+            CostNode.query.filter(CostNode.name.in_([stale.name, live.name])).delete()
+            db.session.commit()
+
+        node_types = {n["instance_type"] for n in report["platform"]["nodes"]}
+        assert "m7i.large" in node_types
+        assert "r8g.xlarge" not in node_types
+        rate_nodes = {n["instance_type"]: n["hourly"] for n in report["rates"]["nodes"]}
+        assert "r8g.xlarge" not in rate_nodes
+        assert rate_nodes["m7i.large"] > 0
