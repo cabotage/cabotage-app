@@ -797,7 +797,12 @@ def _collect_storage(
     for redis_resource in redis_resources:
         if not _existed_during_hour(redis_resource):
             continue
-        instances = redis_resource.leader_replicas + redis_resource.follower_replicas
+        # Standalone Redis is one instance; the replica counts only apply to HA.
+        instances = (
+            redis_resource.leader_replicas + redis_resource.follower_replicas
+            if redis_resource.ha_enabled
+            else 1
+        )
         quantity = (redis_resource.storage_size * instances) / 730.0
         cost = quantity * rate
         env = redis_resource.environment
