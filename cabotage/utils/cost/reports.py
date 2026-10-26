@@ -1726,7 +1726,7 @@ def _platform_nodes(
             func.avg(CostNode.cpu_capacity).label("cpu_capacity"),
             func.avg(CostNode.memory_gib).label("memory_gib"),
         )
-        .filter(CostNode.instance_type.isnot(None))
+        .filter(CostNode.instance_type.isnot(None), CostNode.last_seen >= start)
         .group_by(CostNode.instance_type, CostNode.capacity_type)
         .all()
     )
