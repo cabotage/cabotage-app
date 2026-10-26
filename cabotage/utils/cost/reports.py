@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, cast
 
 from flask import current_app
-from sqlalchemy import Float, Integer, case, func
+from sqlalchemy import ColumnElement, Float, Integer, case, func
 from sqlalchemy import cast as sa_cast
 from sqlalchemy.orm import InstrumentedAttribute, Query
 
@@ -585,6 +585,13 @@ def _as_utc(dt: datetime.datetime) -> datetime.datetime:
     return dt.astimezone(datetime.UTC)
 
 
+def _utc_trunc(
+    interval: Interval, column: InstrumentedAttribute[datetime.datetime]
+) -> ColumnElement[datetime.datetime]:
+    """``date_trunc`` in UTC, independent of the session TimeZone."""
+    return func.date_trunc(interval, func.timezone("UTC", column))
+
+
 def _parse_range_param(value: datetime.datetime | str) -> datetime.datetime:
     if isinstance(value, datetime.datetime):
         return _as_utc(value)
@@ -725,7 +732,7 @@ def _series(
     interval: Interval,
     buckets: list[datetime.datetime],
 ) -> SeriesPayload:
-    trunc = func.date_trunc(interval, CostLineItem.period_start)
+    trunc = _utc_trunc(interval, CostLineItem.period_start)
     query = _scope_filter(
         db.session.query(
             trunc.label("bucket"),
@@ -778,7 +785,7 @@ def _series_efficiency(
     buckets: list[datetime.datetime],
     rates: CostRates,
 ) -> EfficiencySeries:
-    trunc = func.date_trunc(interval, CostLineItem.period_start)
+    trunc = _utc_trunc(interval, CostLineItem.period_start)
     query = _scope_filter(
         db.session.query(
             trunc.label("bucket"),
@@ -818,7 +825,7 @@ def _series_breakdowns(
     buckets: list[datetime.datetime],
     raw_keys_by_name: dict[str, list[BreakdownKey]],
 ) -> dict[str, SeriesBreakdownEntry]:
-    trunc = func.date_trunc(interval, CostLineItem.period_start)
+    trunc = _utc_trunc(interval, CostLineItem.period_start)
     result: dict[str, SeriesBreakdownEntry] = {}
     for name, raw_keys_all in raw_keys_by_name.items():
         top_keys = raw_keys_all[:TOP_N_BREAKDOWN_SERIES]
@@ -952,7 +959,7 @@ def _breakdown_detail(
             for meter in METER_ORDER
         ]
 
-    trunc = func.date_trunc(interval, CostLineItem.period_start)
+    trunc = _utc_trunc(interval, CostLineItem.period_start)
     series_query = _scope_filter(
         db.session.query(
             trunc.label("bucket"),
@@ -1547,8 +1554,12 @@ def _heatmap(
     )
     rows = (
         db.session.query(
-            func.extract("dow", hour_totals.c.period_start).label("dow"),
-            func.extract("hour", hour_totals.c.period_start).label("hour"),
+            func.extract("dow", func.timezone("UTC", hour_totals.c.period_start)).label(
+                "dow"
+            ),
+            func.extract(
+                "hour", func.timezone("UTC", hour_totals.c.period_start)
+            ).label("hour"),
             func.avg(hour_totals.c.cost).label("avg_cost"),
         )
         .group_by("dow", "hour")
@@ -1660,7 +1671,7 @@ def _platform_capacity_series(
     demo.finalize_platform_stats), so capacity_cost is >= requested_cost by
     construction for seeded data.
     """
-    trunc = func.date_trunc(interval, CostCollectionRun.period_start)
+    trunc = _utc_trunc(interval, CostCollectionRun.period_start)
     rows = (
         db.session.query(
             trunc.label("bucket"),
