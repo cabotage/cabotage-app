@@ -85,13 +85,41 @@ def mimir_connection(
     return mimir_url, verify, headers, timeout
 
 
-def _extract_result(data: _MimirResponse, query: str, label: str) -> list[MimirSeries]:
-    if data.get("status") != "success":
+def _get(
+    endpoint: str, params: dict[str, str | int], tenant_id: str | None
+) -> list[MimirSeries]:
+    mimir_url, verify, headers, timeout = mimir_connection(tenant_id=tenant_id)
+    try:
+        resp = mimir_session.get(
+            f"{mimir_url}/prometheus/api/v1/{endpoint}",
+            params=params,
+            headers=headers,
+            verify=verify,
+            timeout=timeout,
+        )
+    # requests.RequestException subclasses OSError; a bare OSError is raised
+    # when MIMIR_VERIFY names a CA bundle path that does not exist.
+    except OSError as exc:
+        raise MimirError(f"Mimir {endpoint} request failed: {exc}") from exc
+    try:
+        data: _MimirResponse = resp.json()
+    except ValueError as exc:
+        raise MimirError(f"Mimir {endpoint} returned invalid JSON: {exc}") from exc
+
+    query = params["query"]
+    if not isinstance(data, dict) or data.get("status") != "success":
+        status = data.get("status") if isinstance(data, dict) else None
         raise MimirError(
-            f"Mimir {label} returned status={data.get('status')!r} for query={query!r}"
+            f"Mimir {endpoint} returned status={status!r} for query={query!r}"
         )
     payload = data.get("data")
-    return payload["result"] if payload is not None else []
+    result = payload.get("result") if isinstance(payload, dict) else None
+    if not isinstance(result, list):
+        raise MimirError(
+            f"Mimir {endpoint} returned malformed payload (missing data.result) "
+            f"for query={query!r}"
+        )
+    return result
 
 
 def query_range(
@@ -104,28 +132,16 @@ def query_range(
     """Query Mimir's Prometheus-compatible ``query_range`` endpoint.
 
     Returns the parsed ``data.result`` list. Raises :class:`MimirError` on
-    any configuration, network, HTTP, or non-success-status failure.
+    any configuration, network, HTTP, malformed-payload, or
+    non-success-status failure.
     """
-    mimir_url, verify, headers, timeout = mimir_connection(tenant_id=tenant_id)
-    try:
-        resp = mimir_session.get(
-            f"{mimir_url}/prometheus/api/v1/query_range",
-            params={
-                "query": query,
-                "start": start,
-                "end": end,
-                "step": step,
-            },
-            headers=headers,
-            verify=verify,
-            timeout=timeout,
-        )
-        data: _MimirResponse = resp.json()
-    except requests.RequestException as exc:
-        raise MimirError(f"Mimir query_range request failed: {exc}") from exc
-    except ValueError as exc:
-        raise MimirError(f"Mimir query_range returned invalid JSON: {exc}") from exc
-    return _extract_result(data, query, "query_range")
+    params: dict[str, str | int] = {
+        "query": query,
+        "start": start,
+        "end": end,
+        "step": step,
+    }
+    return _get("query_range", params, tenant_id)
 
 
 def query_instant(
@@ -139,23 +155,10 @@ def query_instant(
     point instead of "now".
 
     Returns the parsed ``data.result`` list. Raises :class:`MimirError` on
-    any configuration, network, HTTP, or non-success-status failure.
+    any configuration, network, HTTP, malformed-payload, or
+    non-success-status failure.
     """
-    mimir_url, verify, headers, timeout = mimir_connection(tenant_id=tenant_id)
     params: dict[str, str | int] = {"query": query}
     if time is not None:
         params["time"] = time
-    try:
-        resp = mimir_session.get(
-            f"{mimir_url}/prometheus/api/v1/query",
-            params=params,
-            headers=headers,
-            verify=verify,
-            timeout=timeout,
-        )
-        data: _MimirResponse = resp.json()
-    except requests.RequestException as exc:
-        raise MimirError(f"Mimir query request failed: {exc}") from exc
-    except ValueError as exc:
-        raise MimirError(f"Mimir query returned invalid JSON: {exc}") from exc
-    return _extract_result(data, query, "query")
+    return _get("query", params, tenant_id)
