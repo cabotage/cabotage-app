@@ -491,7 +491,7 @@ def build_report(
     freshness = _freshness(range_start, range_end, now)
 
     extent_series = _extent_series(scope, first_hour, last_hour)
-    rates_display = _rates_display(rates)
+    rates_display = _rates_display(rates, range_start)
 
     platform: PlatformBlock | None = None
     if scope.kind == "platform":
@@ -1792,7 +1792,7 @@ def _platform_unallocated(
 # ---------------------------------------------------------------------------
 
 
-def _rates_display(rates: CostRates) -> RatesDisplay:
+def _rates_display(rates: CostRates, start: datetime.datetime) -> RatesDisplay:
     line_items: list[RateLineItem] = [
         {
             "key": key,
@@ -1814,22 +1814,37 @@ def _rates_display(rates: CostRates) -> RatesDisplay:
             }
         )
 
-    families_in_use = {
-        node.instance_type
-        for node in CostNode.query.filter(CostNode.instance_type.isnot(None)).all()
-    }
-    if not families_in_use:
-        families_in_use = {
-            f"{family}.xlarge" for family in rates["node_family_xlarge_hourly"]
-        }
+    node_types = (
+        db.session.query(
+            CostNode.instance_type,
+            func.avg(CostNode.cpu_capacity).label("cpu_capacity"),
+            func.avg(CostNode.memory_gib).label("memory_gib"),
+        )
+        .filter(CostNode.instance_type.isnot(None), CostNode.last_seen >= start)
+        .group_by(CostNode.instance_type)
+        .all()
+    )
     nodes: list[RatesNode] = [
         {
-            "instance_type": instance_type,
-            "hourly": node_hourly_price(instance_type, rates),
+            "instance_type": row.instance_type,
+            "hourly": node_hourly_price(
+                row.instance_type,
+                rates,
+                cpu_capacity=row.cpu_capacity,
+                memory_gib=row.memory_gib,
+            ),
         }
-        for instance_type in sorted(families_in_use)
-        if instance_type is not None
+        for row in node_types
     ]
+    if not nodes:
+        nodes = [
+            {
+                "instance_type": f"{family}.xlarge",
+                "hourly": node_hourly_price(f"{family}.xlarge", rates),
+            }
+            for family in rates["node_family_xlarge_hourly"]
+        ]
+    nodes.sort(key=lambda node: node["instance_type"])
 
     return {"line_items": line_items, "nodes": nodes}
 
