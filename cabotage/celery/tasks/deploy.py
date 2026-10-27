@@ -3498,8 +3498,17 @@ def run_deploy(deployment_id: uuid.UUID | str | None = None) -> None:
     application_environment_id = deployment.application_environment_id
     error_detail = ""
     try:
-        # Locked while this task runs. Postgres drops the lock if the worker dies.
+        # Locked while this task runs. Postgres drops the lock when this backend
+        # exits. Short keepalives let it notice a vanished worker node in about
+        # a minute instead of the OS default (~2 hours).
         with db.engine.connect() as conn:
+            _ = conn.execute(
+                sa.select(
+                    sa.func.set_config("tcp_keepalives_idle", "30", True),
+                    sa.func.set_config("tcp_keepalives_interval", "10", True),
+                    sa.func.set_config("tcp_keepalives_count", "3", True),
+                )
+            )
             lock_key = _advisory_lock_key("deploy-exec", application_environment_id)
             _ = conn.execute(sa.select(sa.func.pg_advisory_xact_lock(lock_key)))
             db.session.refresh(deployment)
