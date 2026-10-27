@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path %}
+{% from "_macros.html" import icon, resource_path, infra_tab_nav %}
 
 {% block title %}Infrastructure Observe - Cabotage{% endblock title %}
 
@@ -9,6 +9,10 @@
     {'label': 'Observe'}
   ]) }}
 {% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ infra_tab_nav('observe') }}
+{% endblock tab_bar %}
 
 {% block content %}
   <div class="settings-page">

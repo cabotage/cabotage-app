@@ -158,7 +158,7 @@ from cabotage.server.user.forms import (
     TailscaleIntegrationForm,
 )
 from cabotage.server.websocket import close_on_abort
-from cabotage.utils import oidc
+from cabotage.utils import mimir, oidc
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     read_log_stream,
@@ -6822,26 +6822,22 @@ def _project_tenant_ids(organization, project):
 def _mimir_connection(tenant_id=None):
     """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured.
 
-    If *tenant_id* is given it overrides the default tenant header.
+    If *tenant_id* is given it overrides the default tenant header. Delegates
+    to the strict client in cabotage.utils.mimir; the many callers below treat
+    "not configured" as "no data available".
     """
-    mimir_url = current_app.config.get("MIMIR_URL")
-    if not mimir_url:
-        return None, None, {}
-    verify = current_app.config.get("MIMIR_VERIFY")
-    if verify is not None:
-        if isinstance(verify, str) and verify.lower() == "false":
-            verify = False
-    else:
-        verify = True
-    headers = {}
     # TODO: Include anonymous until migration to multi-tenant is completed
     effective_tenant = (
         tenant_id
         if tenant_id is not None
         else str(current_app.config.get("MIMIR_TENANT_ID")) + "|anonymous"
     )
-    if effective_tenant:
-        headers["X-Scope-OrgID"] = effective_tenant
+    try:
+        mimir_url, verify, headers, _timeout = mimir.mimir_connection(
+            tenant_id=effective_tenant
+        )
+    except mimir.MimirNotConfiguredError:
+        return None, None, {}
     return mimir_url, verify, headers
 
 

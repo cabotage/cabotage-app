@@ -19783,13 +19783,6 @@
       "severity": "error"
     },
     {
-      "column": 53,
-      "path": "cabotage/scripts/seed_localdev.py",
-      "name": "implicit-any-empty-container",
-      "concise_description": "Cannot infer type of empty container; it will be treated as containing `Any`",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/scripts/seed_localdev.py",
       "name": "unannotated-return",

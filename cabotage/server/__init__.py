@@ -175,6 +175,18 @@ def celery_init_app(app):
             "args": None,
         },
     }
+    if app.config.get("SHOW_COST_ESTIMATES"):
+        celery_app.conf.beat_schedule["cost-collector"] = {
+            "task": "cabotage.celery.tasks.cost.collect_costs",
+            "schedule": crontab(minute="7"),
+            "args": None,
+        }
+        if app.config.get("COST_AWS_PRICING_ENABLED"):
+            celery_app.conf.beat_schedule["cost-aws-prices"] = {
+                "task": "cabotage.celery.tasks.cost.refresh_aws_prices",
+                "schedule": crontab(minute="37", hour="4"),
+                "args": None,
+            }
     app.extensions["celery"] = celery_app
     return celery_app
 
@@ -402,6 +414,9 @@ def create_app():
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
+    from cabotage.server.applets.cost.views import cost_blueprint
+
+    app.register_blueprint(cost_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")
