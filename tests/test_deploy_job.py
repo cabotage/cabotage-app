@@ -21,6 +21,7 @@ class Cluster:
     apps: MagicMock
     batch: MagicMock
     deploy_release: MagicMock
+    refresh_heartbeat: MagicMock
 
 
 @pytest.fixture
@@ -68,7 +69,7 @@ def cluster(tmp_path: Path) -> Iterator[Cluster]:
         patch.object(deploy_module, "kubernetes_ext") as kubernetes_ext,
         patch.object(deploy_module, "Deployment") as model,
         patch.object(deploy_module, "get_redis_client"),
-        patch.object(deploy_module, "refresh_heartbeat"),
+        patch.object(deploy_module, "refresh_heartbeat") as refresh_heartbeat,
         patch.object(deploy_module, "deploy_release") as deploy_release,
         patch("kubernetes.client.CoreV1Api", return_value=core),
         patch("kubernetes.client.AppsV1Api", return_value=apps),
@@ -76,7 +77,12 @@ def cluster(tmp_path: Path) -> Iterator[Cluster]:
     ):
         kubernetes_ext.in_cluster = True
         model.query.filter_by.return_value.first.return_value = deployment
-        yield Cluster(apps=apps, batch=batch, deploy_release=deploy_release)
+        yield Cluster(
+            apps=apps,
+            batch=batch,
+            deploy_release=deploy_release,
+            refresh_heartbeat=refresh_heartbeat,
+        )
 
 
 def test_in_cluster_deploy_runs_in_a_job_from_the_worker_template(
@@ -129,3 +135,11 @@ def test_outside_the_cluster_deploys_inline(cluster: Cluster) -> None:
 
     cluster.deploy_release.assert_called_once()
     cluster.batch.create_namespaced_job.assert_not_called()
+
+
+def test_job_is_submitted_when_the_heartbeat_fails(cluster: Cluster) -> None:
+    cluster.refresh_heartbeat.side_effect = ConnectionError("redis down")
+
+    deploy_module.run_deploy(deployment_id=DEPLOYMENT_ID)
+
+    cluster.batch.create_namespaced_job.assert_called_once()

@@ -3468,10 +3468,15 @@ _DEPLOY_JOB_ARGS = ("-once", "python", "-m", "cabotage.scripts.deploy")
 def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
     """Run the deployment in a Job cloned from this worker, so a rollout that
     replaces the worker (Cabotage deploying itself) can't kill it midway."""
-    redis_client = get_redis_client(cast(str, current_app.config["CELERY_BROKER_URL"]))
-    refresh_heartbeat(
-        redis_client, "deploy", str(deployment_id), ttl=_DEPLOY_JOB_START_TTL
-    )
+    try:
+        redis_client = get_redis_client(
+            cast(str, current_app.config["CELERY_BROKER_URL"])
+        )
+        refresh_heartbeat(
+            redis_client, "deploy", str(deployment_id), ttl=_DEPLOY_JOB_START_TTL
+        )
+    except Exception:
+        log.warning("Failed to send deploy heartbeat to redis", exc_info=True)
 
     api_client = kubernetes_ext.kubernetes_client
     namespace = _SERVICE_ACCOUNT_NAMESPACE.read_text().strip()
