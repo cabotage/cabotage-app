@@ -9,7 +9,7 @@ know route shapes). No url_prefix; every route 404s unless
 
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from celery import Task
@@ -58,6 +58,7 @@ def _require_cost_enabled() -> None:
 _RANGE_KEYS = {"24h", "7d", "30d", "mtd", "90d"}
 _DEFAULT_RANGE = "mtd"
 _CUSTOM_RANGE_FLOOR = datetime(2000, 1, 1, tzinfo=UTC)
+_CUSTOM_RANGE_MAX_SPAN = timedelta(days=366)
 
 _PRIMARY_BREAKDOWN = {
     "organization": "projects",
@@ -86,6 +87,8 @@ def _custom_window() -> tuple[datetime, datetime] | tuple[None, None]:
     except ValueError, OverflowError:
         return None, None
     if not _CUSTOM_RANGE_FLOOR <= start < end or start > datetime.now(UTC):
+        return None, None
+    if end - start > _CUSTOM_RANGE_MAX_SPAN:
         return None, None
     return start, end
 

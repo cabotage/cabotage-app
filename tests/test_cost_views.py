@@ -530,6 +530,21 @@ class TestCostScopeSelection:
         assert resp.status_code == 200
         assert "start" not in build.call_args.kwargs
 
+    def test_custom_window_longer_than_max_span_falls_back_to_preset(
+        self, client, member_user, cost_context
+    ):
+        _login(client, member_user)
+        org = cost_context["org"]
+        with patch(
+            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+        ) as build:
+            resp = client.get(
+                f"/organizations/{org.slug}/cost/data"
+                "?start=2020-01-01T00:00:00&end=2021-06-01T00:00:00"
+            )
+        assert resp.status_code == 200
+        assert "start" not in build.call_args.kwargs
+
 
 class TestCostRowLinks:
     def test_deleted_rows_and_their_movers_have_no_url(
