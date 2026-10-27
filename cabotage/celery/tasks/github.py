@@ -798,7 +798,11 @@ def _all_required_checks_passed(
 
 
 def discover_check_names(
-    installation_id: int, repository_name: str, branch: str, commits: int = 3
+    installation_id: int,
+    repository_name: str,
+    branch: str,
+    commits: int = 3,
+    max_pages: int = 5,
 ) -> list[str] | None:
     token = github_app.fetch_installation_access_token(installation_id)
     if token is None:
@@ -820,8 +824,7 @@ def discover_check_names(
         resp.raise_for_status()
         for commit in resp.json():
             sha = commit["sha"]
-            page = 1
-            while True:
+            for page in range(1, max_pages + 1):
                 runs = github_session.get(
                     f"{base}/commits/{sha}/check-runs",
                     headers=headers,
@@ -837,7 +840,6 @@ def discover_check_names(
                 )
                 if len(check_runs) < 100:
                     break
-                page += 1
     except requests.exceptions.RequestException, KeyError, TypeError, ValueError:
         logger.exception("Unable to discover checks for %s", repository_name)
         return None
