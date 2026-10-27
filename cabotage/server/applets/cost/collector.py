@@ -895,10 +895,15 @@ def _build_traefik_service_map() -> dict[str, tuple[ApplicationEnvironment, str]
         .all()
     )
     for app_env in app_envs:
-        if app_env.application is None or app_env.application.deleted_at is not None:
+        application = app_env.application
+        if application is None or application.deleted_at is not None:
+            continue
+        # projects.organization_id is nullable; with no org there is no
+        # namespace, so the app can't own any traefik service.
+        if application.project.organization is None:
             continue
         namespace = _observe_namespace(app_env)
-        prefix = _observe_prefix(app_env.application)
+        prefix = _observe_prefix(application)
         for ingress in app_env.ingresses:
             if not ingress.enabled:
                 continue

@@ -157,6 +157,31 @@ def app_env(application, environment):
     return ae
 
 
+@pytest.fixture
+def orgless_app_env(app):
+    """An app enrolled in a project with no organization, which the schema
+    allows (projects.organization_id is nullable)."""
+    project = Project(name="Orgless Project", slug=f"orgless-{uuid.uuid4().hex[:8]}")
+    db.session.add(project)
+    db.session.flush()
+    environment = Environment(name="default", project_id=project.id)
+    application = Application(name="Orgless", slug="orgless", project_id=project.id)
+    db.session.add_all([environment, application])
+    db.session.flush()
+    ae = ApplicationEnvironment(
+        application_id=application.id, environment_id=environment.id
+    )
+    db.session.add(ae)
+    db.session.commit()
+    yield ae
+    db.session.rollback()
+    ApplicationEnvironment.query.filter_by(id=ae.id).delete()
+    Application.query.filter_by(id=application.id).delete()
+    Environment.query.filter_by(id=environment.id).delete()
+    Project.query.filter_by(id=project.id).delete()
+    db.session.commit()
+
+
 def _series(namespace, pod, points):
     """Build one Mimir range-query series: points = [(offset_seconds, value)]."""
     base = int(PERIOD_START.timestamp())
@@ -784,6 +809,17 @@ class TestCostCollector:
             run_id=run.id, resource_id=resource.id, category="storage"
         ).one()
         assert item.component == long_slug[:64]
+
+    def test_orgless_project_does_not_fail_the_run(
+        self, app, org, project, environment, application, app_env, orgless_app_env
+    ):
+        pod = "api-web-abc12-xyz34"
+        run = _collect_with(
+            _app_pod_responses(org.k8s_identifier, pod),
+            _app_pod_labels(org, project, application, pod),
+        )
+
+        assert run.status == "succeeded", run.error
 
 
 class TestCollectCostsBackoff:
