@@ -17,6 +17,7 @@ from typing import TypedDict
 
 import kubernetes.client
 from flask import current_app
+from sqlalchemy.orm import joinedload, selectinload
 
 from cabotage.server import db
 from cabotage.server import kubernetes as kubernetes_ext
@@ -32,6 +33,7 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Environment,
     Image,
+    Ingress,
     Project,
     Release,
 )
@@ -282,6 +284,14 @@ def _collect(
         metric = series.get("metric", {})
         pod_labels[(metric.get("namespace"), metric.get("pod"))] = metric
 
+    build_job_ids: set[str] = set()
+    for (_, pod_name), labels in pod_labels.items():
+        if pod_name and labels.get("label_process") == "build":
+            match = _BUILD_POD_RE.match(pod_name)
+            if match:
+                build_job_ids.add(match.group(1))
+    build_environment_by_job = _resolve_build_app_envs(build_job_ids)
+
     caches = _build_scope_caches()
 
     pods_seen = 0
@@ -316,7 +326,9 @@ def _collect(
         if labels is None:
             pods_unallocated += 1
             continue
-        classification = _classify_pod(namespace, pod_name, labels, caches)
+        classification = _classify_pod(
+            namespace, pod_name, labels, caches, build_environment_by_job
+        )
         if classification is None:
             pods_unallocated += 1
             continue
@@ -559,7 +571,9 @@ def _build_scope_caches() -> _ScopeCaches:
         caches.app_envs_by_app[app_env.application_id].append(app_env)
     for app_env_list in caches.app_envs_by_app.values():
         app_env_list.sort(key=lambda ae: ae.created)
-    resources: list[Resource] = Resource.query.all()
+    resources: list[Resource] = Resource.query.options(
+        joinedload(Resource.environment).joinedload(Environment.project)
+    ).all()
     for resource in resources:
         namespace = resource.environment.k8s_namespace
         prefix = safe_k8s_name(
@@ -574,10 +588,11 @@ def _classify_pod(
     pod_name: str,
     labels: dict[str, str],
     caches: _ScopeCaches,
+    build_environment_by_job: dict[str, uuid.UUID],
 ) -> PodClassification | None:
     process = labels.get("label_process")
     if process == "build":
-        return _classify_build_pod(pod_name, labels, caches)
+        return _classify_build_pod(pod_name, labels, caches, build_environment_by_job)
 
     app_k8s = labels.get("label_cabotage_io_application")
     if app_k8s:
@@ -605,10 +620,58 @@ def _default_app_env(
     return candidates[0]
 
 
+def _resolve_build_app_envs(job_ids: set[str]) -> dict[str, uuid.UUID]:
+    """Map each build pod's job id to its environment_id, via the Image or
+    Release row that ran the build."""
+    if not job_ids:
+        return {}
+
+    app_env_id_by_job: dict[str, uuid.UUID] = {}
+    images: list[Image] = Image.query.filter(Image.build_job_id.in_(job_ids)).all()
+    for image in images:
+        if (
+            image.build_job_id
+            and image.build_job_id not in app_env_id_by_job
+            and image.application_environment_id
+        ):
+            app_env_id_by_job[image.build_job_id] = image.application_environment_id
+
+    missing = job_ids - app_env_id_by_job.keys()
+    if missing:
+        releases: list[Release] = Release.query.filter(
+            Release.build_job_id.in_(missing)
+        ).all()
+        for release in releases:
+            if (
+                release.build_job_id
+                and release.build_job_id not in app_env_id_by_job
+                and release.application_environment_id
+            ):
+                app_env_id_by_job[release.build_job_id] = (
+                    release.application_environment_id
+                )
+
+    app_env_ids = set(app_env_id_by_job.values())
+    if not app_env_ids:
+        return {}
+    found: list[ApplicationEnvironment] = ApplicationEnvironment.query.filter(
+        ApplicationEnvironment.id.in_(app_env_ids)
+    ).all()
+    environment_id_by_app_env_id = {
+        app_env.id: app_env.environment_id for app_env in found
+    }
+    return {
+        job_id: environment_id_by_app_env_id[app_env_id]
+        for job_id, app_env_id in app_env_id_by_job.items()
+        if app_env_id in environment_id_by_app_env_id
+    }
+
+
 def _classify_build_pod(
     pod_name: str,
     labels: dict[str, str],
     caches: _ScopeCaches,
+    build_environment_by_job: dict[str, uuid.UUID],
 ) -> PodClassification | None:
     org_k8s = labels.get("label_cabotage_io_organization")
     if not org_k8s:
@@ -628,23 +691,13 @@ def _classify_build_pod(
 
     environment_id = None
     if application is not None:
-        app_env: ApplicationEnvironment | None = None
         match = _BUILD_POD_RE.match(pod_name)
         if match:
-            job_id = match.group(1)
-            source: Image | Release | None = Image.query.filter_by(
-                build_job_id=job_id
-            ).first()
-            if source is None:
-                source = Release.query.filter_by(build_job_id=job_id).first()
-            if source is not None and source.application_environment_id:
-                app_env = ApplicationEnvironment.query.get(
-                    source.application_environment_id
-                )
-        if app_env is None:
+            environment_id = build_environment_by_job.get(match.group(1))
+        if environment_id is None:
             app_env = _default_app_env(application, caches)
-        if app_env is not None:
-            environment_id = app_env.environment_id
+            if app_env is not None:
+                environment_id = app_env.environment_id
 
     return {
         "category": "build",
@@ -847,9 +900,17 @@ def _observe_prefix(application: Application) -> str:
 def _build_traefik_service_map() -> dict[str, tuple[ApplicationEnvironment, str]]:
     """Map traefik service name -> (ApplicationEnvironment, process name)."""
     service_map: dict[str, tuple[ApplicationEnvironment, str]] = {}
-    app_envs: list[ApplicationEnvironment] = ApplicationEnvironment.query.filter(
-        ApplicationEnvironment.deleted_at.is_(None)
-    ).all()
+    app_envs: list[ApplicationEnvironment] = (
+        ApplicationEnvironment.query.filter(ApplicationEnvironment.deleted_at.is_(None))
+        .options(
+            joinedload(ApplicationEnvironment.environment),
+            joinedload(ApplicationEnvironment.application)
+            .joinedload(Application.project)
+            .joinedload(Project.organization),
+            selectinload(ApplicationEnvironment.ingresses).selectinload(Ingress.paths),
+        )
+        .all()
+    )
     for app_env in app_envs:
         if app_env.application is None or app_env.application.deleted_at is not None:
             continue
@@ -878,7 +939,7 @@ def _collect_egress(
     service_map = _build_traefik_service_map()
     rate = rates["egress_gb"]
 
-    totals: defaultdict[tuple[uuid.UUID, str], float] = defaultdict(float)
+    totals: defaultdict[tuple[ApplicationEnvironment, str], float] = defaultdict(float)
     for series in traefik_result or []:
         service = series.get("metric", {}).get("service")
         if not service:
@@ -886,26 +947,14 @@ def _collect_egress(
         mapped = service_map.get(service)
         if mapped is None:
             continue
-        app_env, process = mapped
         series_value = series.get("value")
         try:
             value = float(series_value[1]) if series_value else 0.0
         except TypeError, ValueError, IndexError:
             value = 0.0
-        key = (app_env.id, process)
-        totals[key] += value
+        totals[mapped] += value
 
-    app_env_cache: dict[uuid.UUID, ApplicationEnvironment | None] = {}
-    for (app_env_id, process), total_bytes in totals.items():
-        app_env = app_env_cache.get(app_env_id)
-        if app_env is None:
-            fetched: ApplicationEnvironment | None = ApplicationEnvironment.query.get(
-                app_env_id
-            )
-            app_env = fetched
-            app_env_cache[app_env_id] = app_env
-        if app_env is None:
-            continue
+    for (app_env, process), total_bytes in totals.items():
         gb = total_bytes / 1e9
         cost = gb * rate
         application = app_env.application
@@ -985,6 +1034,9 @@ def _refresh_nodes() -> None:
         return
 
     now = datetime.datetime.now(datetime.UTC)
+    existing_by_name: dict[str, CostNode] = {
+        node.name: node for node in CostNode.query.all()
+    }
     for node in nodes.items:
         if node.metadata is None or node.metadata.name is None:
             continue
@@ -996,9 +1048,10 @@ def _refresh_nodes() -> None:
         cpu_capacity = _parse_cpu_quantity(capacity.get("cpu"))
         memory_gib = _parse_memory_quantity_gib(capacity.get("memory"))
 
-        record: CostNode | None = CostNode.query.get(name)
+        record = existing_by_name.get(name)
         if record is None:
             record = CostNode(name=name)
+            existing_by_name[name] = record
         record.instance_type = instance_type
         record.capacity_type = capacity_type
         record.cpu_capacity = cpu_capacity
