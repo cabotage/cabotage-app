@@ -132,7 +132,7 @@
          class="tab-item {% if active == 'members' %}tab-active{% endif %}">{{ icon('users', 'w-4 h-4') }} <span class="tab-label">Members</span></a>
       <div class="dropdown dropdown-hover">
         <div tabindex="0" role="button"
-             class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
+             class="tab-item {% if active in ('observe', 'pipeline', 'audit') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
           <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
         </div>
@@ -143,6 +143,8 @@
           {% else %}
           {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
+          <li><a href="{{ url_for('user.organization_pipeline', org_slug=org_slug) }}"
+                 class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.organization_audit_log', org_slug=org_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
@@ -155,6 +157,19 @@
       <a href="{{ url_for('user.organization_settings', org_slug=org_slug) }}"
          title="Settings"
          class="tab-item {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro infra_tab_nav(active='') %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs>
+      <a href="{{ url_for('user.infra_observe') }}"
+         title="Observe"
+         class="tab-item {% if active == 'observe' %}tab-active{% endif %}">{{ icon('search', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+      <a href="{{ url_for('user.infra_pipeline') }}"
+         title="Pipeline"
+         class="tab-item {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} <span class="tab-label">Pipeline</span></a>
     </div>
   </div>
 {% endmacro %}
@@ -207,7 +222,7 @@
          class="tab-item {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
       <div class="dropdown dropdown-hover">
         <div tabindex="0" role="button"
-             class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
+             class="tab-item {% if active in ('observe', 'pipeline', 'audit') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
           <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
         </div>
@@ -218,6 +233,8 @@
           {% else %}
           {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
+          <li><a href="{{ url_for('user.project_pipeline', org_slug=org_slug, project_slug=project_slug) }}"
+                 class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.project_audit_log', org_slug=org_slug, project_slug=project_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
@@ -1410,7 +1427,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro loki_log_viewer(query_url, process_names=[], loki_configured=true, no_poll=false, active_process='') %}
+{% macro loki_log_viewer(query_url, process_names=[], loki_configured=true, no_poll=false, active_process='', window_start=none, window_end=none, clear_url=none) %}
   {% if not loki_configured %}
     <div class="alert alert-warning">
       {{ icon('alert-triangle', 'w-4 h-4') }}
@@ -1420,7 +1437,16 @@
     <div class="loki-log-component"
          data-query-url="{{ query_url }}"
          data-processes="{{ process_names|tojson|e }}"
-         {% if no_poll %}data-no-poll="true"{% endif %}>
+         {% if no_poll %}data-no-poll="true"{% endif %}
+         {% if window_start and window_end %}data-start-ts="{{ window_start }}" data-end-ts="{{ window_end }}"{% endif %}>
+      {# Active window chip — present only when the viewer was opened scoped to a fixed time window #}
+      {% if window_start and window_end %}
+        <div class="js-window-chip flex items-center gap-2 mb-3 text-xs text-base-content/60">
+          {{ icon('clock', 'w-3.5 h-3.5') }}
+          <span>Showing <span class="js-window-label font-mono"></span></span>
+          <a href="{{ clear_url or query_url }}" class="btn btn-xs btn-ghost gap-1" title="Clear window, return to live tail">{{ icon('x', 'w-3 h-3') }} Clear</a>
+        </div>
+      {% endif %}
       {# Controls bar #}
       <div class="flex items-center gap-3 mb-4 flex-wrap">
         <select class="js-process-filter select select-bordered select-sm bg-base-100 text-base-content border-base-content/10">

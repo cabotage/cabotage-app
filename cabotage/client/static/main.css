@@ -4829,3 +4829,295 @@ a.obs-pod-link:hover {
 .log-row-stderr .log-msg { color: oklch(var(--er) / 0.85); }
 @keyframes log-new-fade { from { background: oklch(var(--p) / 0.08); } to { background: transparent; } }
 .log-row-new { animation: log-new-fade 2s ease-out; }
+
+/* ====================================================================== */
+/* Structured Live Log (build/release/deploy)                             */
+/* ====================================================================== */
+
+.build-log-viewer.struct-log-active,
+.deploy-log-viewer.struct-log-active {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.struct-log {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+/* The log box stays dark (#0a0a0f) in every theme. Outside the terminal theme,
+   the neutral tokens used inside it take light-on-dark values that pass AA
+   there, and the light theme's status colors (tuned for white) are swapped
+   for the dark theme's. */
+[data-theme="light"] .struct-log,
+[data-theme="dark"] .struct-log {
+  --text-bright: rgba(226, 226, 233, 0.9);
+  --text-muted: rgba(226, 226, 233, 0.65);
+  --text-faint: rgba(226, 226, 233, 0.55);
+  --text-faintest: rgba(226, 226, 233, 0.25);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --hover-overlay: rgba(255, 255, 255, 0.05);
+  --surface-neutral: rgba(255, 255, 255, 0.1);
+}
+[data-theme="terminal"] .struct-log {
+  --text-faint: var(--text-muted);
+}
+[data-theme="light"] .struct-log {
+  --color-success: oklch(0.65 0.2 145);
+  --color-error: oklch(0.6 0.22 25);
+  --color-warning: oklch(0.7 0.18 75);
+  --color-info: oklch(0.6 0.19 250);
+}
+
+.struct-log-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.struct-log-stepcount {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.struct-log-spacer {
+  flex: 1;
+}
+
+.struct-log-btn {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.struct-log-btn:hover {
+  color: var(--text-bright);
+  background: var(--hover-overlay);
+}
+.struct-log-btn[aria-pressed="true"] {
+  color: var(--text-bright);
+  background: var(--surface-neutral);
+}
+.struct-log-jump-error {
+  color: var(--color-error);
+}
+.struct-log-jump-error:hover {
+  background: color-mix(in srgb, var(--color-error) 12%, transparent);
+}
+
+.struct-log-body,
+.struct-log-raw {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  position: relative;
+  padding: 0.625rem 0.875rem;
+}
+
+.struct-log-raw-text {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: rgba(226, 226, 233, 0.9);
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+  display: block;
+}
+
+.struct-log-waiting {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  padding: 0.5rem 0.125rem;
+}
+
+/* Jump-to-latest chip */
+.struct-log-latest-chip {
+  position: sticky;
+  bottom: 0.625rem;
+  left: 100%;
+  width: fit-content;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  padding: 0.3rem 0.625rem;
+  border-radius: 9999px;
+  background: var(--color-primary);
+  color: var(--color-primary-content, #fff);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px var(--shadow-card);
+}
+.struct-log-latest-chip:hover {
+  filter: brightness(1.08);
+}
+
+/* Output group (unparseable lines, leading/trailing) */
+.log-output-group {
+  margin-bottom: 0.5rem;
+}
+.log-output-label {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.625rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  margin-bottom: 0.25rem;
+}
+.log-output-lines {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.7;
+  color: rgba(226, 226, 233, 0.75);
+}
+.log-output-lines .log-step-line {
+  padding: 0 0 0 0.125rem;
+}
+
+/* Step rows */
+.log-step {
+  border-radius: 0.375rem;
+  margin-bottom: 0.125rem;
+}
+
+.log-step-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  padding: 0.3rem 0.375rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  text-align: left;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+  color: var(--text-bright);
+}
+.log-step-toggle:hover {
+  background: var(--hover-overlay);
+}
+.log-step-toggle:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+.log-step-chevron {
+  flex: none;
+  display: flex;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+  transform: rotate(90deg);
+}
+.log-step-chevron svg {
+  width: 100%;
+  height: 100%;
+}
+.log-step-collapsed .log-step-chevron {
+  transform: rotate(0deg);
+}
+
+.log-step-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--text-faintest);
+}
+.log-step-running .log-step-dot {
+  background: var(--color-warning);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-warning) 50%, transparent);
+  animation: struct-log-pulse 1.4s ease-in-out infinite;
+}
+.log-step-done .log-step-dot {
+  background: var(--color-success);
+}
+.log-step-cached .log-step-dot {
+  background: var(--color-info);
+}
+.log-step-failed .log-step-dot {
+  background: var(--color-error);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--color-error) 50%, transparent);
+}
+
+.log-step-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.log-step-failed .log-step-label {
+  color: var(--color-error);
+}
+
+.log-step-duration {
+  flex: none;
+  font-size: 0.6875rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.log-step-running .log-step-duration {
+  color: var(--color-warning);
+}
+
+.log-step-lines {
+  padding: 0.125rem 0 0.375rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+}
+.log-step-line {
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: rgba(226, 226, 233, 0.75);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log-line-error {
+  color: var(--color-error);
+}
+.log-line-error:focus-visible,
+.log-line-flash {
+  outline: 2px solid var(--color-error);
+  outline-offset: 1px;
+  border-radius: 0.125rem;
+}
+
+@keyframes struct-log-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .log-step-running .log-step-dot {
+    animation: none;
+  }
+  .log-step-chevron {
+    transition: none;
+  }
+}
