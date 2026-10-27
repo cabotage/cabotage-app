@@ -5,7 +5,7 @@ from .auth import (
     Team,
     User,
 )
-from .cost import CostCollectionRun, CostLineItem, CostNode
+from .cost import CostCollectionRun, CostLineItem, CostNode, CostPriceSnapshot
 from .projects import Project
 from .resources import PostgresResource, RedisResource, Resource
 
@@ -15,6 +15,7 @@ __all__ = (
     "CostCollectionRun",
     "CostLineItem",
     "CostNode",
+    "CostPriceSnapshot",
     "Organization",
     "PostgresResource",
     "Project",
