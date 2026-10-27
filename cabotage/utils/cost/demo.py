@@ -228,7 +228,13 @@ def seed_cost_history(
     # and a naive `rng.choice(applications)` had a real chance of nuking an
     # org's flagship app (e.g. a 2-app org's main app) purely by bad luck.
     # Require at least 3 applications and exclude the single largest.
-    if len(applications) > 2:
+    # Skip once the org has a soft-deleted app, so reseeds don't delete another.
+    already_decommissioned = any(
+        a.deleted_at is not None
+        for p in organization.active_projects
+        for a in p.project_applications
+    )
+    if len(applications) > 2 and not already_decommissioned:
 
         def _app_weight(a: Application) -> int:
             return sum(
@@ -239,9 +245,8 @@ def seed_cost_history(
         candidates = sorted(applications, key=_app_weight)[:-1]
         if candidates:
             decommissioned = rng.choice(candidates)
-            if decommissioned.deleted_at is None:
-                decommissioned.deleted_at = now - datetime.timedelta(days=2)
-                db.session.add(decommissioned)
+            decommissioned.deleted_at = now - datetime.timedelta(days=2)
+            db.session.add(decommissioned)
 
     events: Events = {
         "spike_date": spike_date,
