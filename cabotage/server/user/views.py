@@ -5681,7 +5681,8 @@ def _stream_deployment_logs(ws, deployment):
 
     if current_app.config["KUBERNETES_ENABLED"]:
         if job_id is None:
-            for _ in range(60):
+            # Allow time for the deploy Job's pod to be scheduled and start.
+            for _ in range(240):
                 time.sleep(0.5)
                 dep = Deployment.query.filter_by(id=deployment_id).first()
                 if dep is None:
