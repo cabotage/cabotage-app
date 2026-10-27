@@ -110,6 +110,32 @@ def _dispatch_deploy_failure(deployment, error_detail):
         log.warning("Failed to dispatch deploy failure notification", exc_info=True)
 
 
+def dispatch_deploy_started(deployment: Deployment) -> None:
+    """Send the auto-deploy "deploying" notification once a deploy starts."""
+    if not (
+        deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy")
+    ):
+        return
+    try:
+        app = deployment.application
+        release_id = deployment.release.get("id") if deployment.release else None
+        image_id = deployment.deploy_metadata.get("source_image_id", str(release_id))
+        dispatch_autodeploy_notification(
+            "deploying",
+            image_id,
+            app,
+            deployment.application_environment,
+            image_url=cabotage_url(app, f"images/{image_id}"),
+            release_url=cabotage_url(app, f"releases/{release_id}"),
+            deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
+            image_metadata=deployment.deploy_metadata,
+        )
+    except Exception:
+        log.warning(
+            "Failed to dispatch autodeploy deploying notification", exc_info=True
+        )
+
+
 @shared_task()
 def cleanup_app_env_k8s(
     app_env_id: str, namespace: str, resource_prefix: str, label_selector: str
@@ -2736,6 +2762,7 @@ def deploy_release(deployment: Deployment):
     deployment.job_id = job_id
     db.session.add(deployment)
     db.session.commit()
+    dispatch_deploy_started(deployment)
     deploy_log = []
 
     deployment_id_str = str(deployment.id)
