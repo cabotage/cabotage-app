@@ -1,0 +1,29 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import resource_path, infra_tab_nav %}
+
+{% block title %}
+  Infrastructure Pipeline - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': 'Infrastructure'},
+    {'label': 'Pipeline'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ infra_tab_nav('pipeline') }}
+{% endblock tab_bar %}
+
+{% block content %}
+{% set rollup_level = 'infra' %}
+{% set rollup_root_id = 'infra-pipeline' %}
+{% set rollup_url = url_for('user.infra_pipeline_rollup') %}
+{% set rollup_empty_text %}
+  No runs in the last <span data-range-label></span>. Each image build, release, and deploy for any
+  application environment across every organization shows up here once it finishes.
+{% endset %}
+{% set show_summary = true %}
+{% include "user/_pipeline_rollup.html" %}
+{% endblock content %}

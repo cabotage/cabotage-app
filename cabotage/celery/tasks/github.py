@@ -1,6 +1,7 @@
 import datetime
 import logging
 
+import requests
 from celery import shared_task
 from flask import current_app
 from sqlalchemy import and_, or_
@@ -729,6 +730,10 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
     return required
 
 
+# GitHub treats skipped and neutral check runs as passing required checks.
+_PASSING_CHECK_CONCLUSIONS = frozenset({"success", "neutral", "skipped"})
+
+
 def _all_required_checks_passed(
     access_token, repository_name, commit_sha, required_contexts
 ):
@@ -760,7 +765,7 @@ def _all_required_checks_passed(
         resp.raise_for_status()
         data = resp.json()
         for run in data.get("check_runs", []):
-            if run.get("conclusion") == "success":
+            if run.get("conclusion") in _PASSING_CHECK_CONCLUSIONS:
                 passed.add(run["name"])
         if len(data.get("check_runs", [])) < 100:
             break
@@ -790,6 +795,55 @@ def _all_required_checks_passed(
         )
         return False
     return True
+
+
+def discover_check_names(
+    installation_id: int,
+    repository_name: str,
+    branch: str,
+    commits: int = 3,
+    max_pages: int = 5,
+) -> list[str] | None:
+    token = github_app.fetch_installation_access_token(installation_id)
+    if token is None:
+        return None
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"token {token}",
+    }
+    base = f"https://api.github.com/repos/{repository_name}"
+    own_app_id = str(github_app.app_id)
+    names = set()
+    try:
+        resp = github_session.get(
+            f"{base}/commits",
+            headers=headers,
+            params={"sha": branch, "per_page": commits},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        for commit in resp.json():
+            sha = commit["sha"]
+            for page in range(1, max_pages + 1):
+                runs = github_session.get(
+                    f"{base}/commits/{sha}/check-runs",
+                    headers=headers,
+                    params={"per_page": 100, "page": page},
+                    timeout=10,
+                )
+                runs.raise_for_status()
+                check_runs = runs.json().get("check_runs", [])
+                names.update(
+                    run["name"]
+                    for run in check_runs
+                    if str((run.get("app") or {}).get("id")) != own_app_id
+                )
+                if len(check_runs) < 100:
+                    break
+    except requests.exceptions.RequestException, KeyError, TypeError, ValueError:
+        logger.exception("Unable to discover checks for %s", repository_name)
+        return None
+    return sorted(names, key=str.lower)
 
 
 def create_deployment(
@@ -962,7 +1016,8 @@ def process_check_suite_hook(hook):
     if suite_app_id and str(suite_app_id) == str(github_app.app_id):
         return False
 
-    if hook.payload["check_suite"]["conclusion"] == "success":
+    suite_passed = hook.payload["check_suite"]["conclusion"] == "success"
+    if hook.payload["check_suite"]["conclusion"]:
         pushes = (
             Hook.query.filter(Hook.commit_sha == hook.commit_sha)
             .filter(Hook.headers["X-Github-Event"].astext == "push")
@@ -1016,10 +1071,15 @@ def process_check_suite_hook(hook):
 
         access_token = access_token_response.json()
 
+        # Lock the push row so concurrent check_suite webhooks for this SHA
+        # gate and record deployed targets one at a time; each sees what the
+        # previous one deployed instead of failing on a stale version_id.
         push_event = (
             Hook.query.filter(Hook.commit_sha == commit_sha)
             .filter(Hook.headers.op("->>")("X-Github-Event") == "push")
             .order_by(Hook.created.desc())
+            .with_for_update()
+            .populate_existing()
             .first()
         )
         if push_event is None:
@@ -1035,22 +1095,6 @@ def process_check_suite_hook(hook):
             )
             return False
 
-        # Check that all required status checks have passed before
-        # attempting to create deployments. If not, bail out so a later
-        # check_suite webhook (when more suites complete) can retry.
-        required_contexts = _required_contexts_for_branch(
-            access_token, repository_name, head_branch
-        )
-        if not _all_required_checks_passed(
-            access_token, repository_name, commit_sha, required_contexts
-        ):
-            return False
-
-        # Mark deployed *before* creating deployments to prevent races
-        # between concurrent check_suite webhooks for the same SHA.
-        push_event.deployed = True
-        db.session.commit()
-
         # Extract changed files from the push event payload to filter
         # apps by watch paths.
         changed_files = set()
@@ -1059,9 +1103,13 @@ def process_check_suite_hook(hook):
             changed_files.update(commit.get("modified", []))
             changed_files.update(commit.get("removed", []))
 
+        deployed_app_envs = set(push_event.deployed_app_envs or [])
+        pending = []
         for app_env in env_matches:
             # Skip apps that already deployed on push (no CI wait).
             if not app_env.auto_deploy_wait_for_ci:
+                continue
+            if str(app_env.id) in deployed_app_envs:
                 continue
             watch_paths = app_env.application.branch_deploy_watch_paths
             if (
@@ -1075,6 +1123,40 @@ def process_check_suite_hook(hook):
                     f"no changes in watch paths"
                 )
                 continue
+            pending.append(app_env)
+        if not pending:
+            return False
+
+        # Gate each target on its own checks. Targets that are not ready yet
+        # stay pending so a later check_suite webhook can deploy them.
+        branch_contexts = _required_contexts_for_branch(
+            access_token, repository_name, head_branch
+        )
+        gate_results = {}
+        ready = []
+        for app_env in pending:
+            contexts = app_env.deployment_checks or branch_contexts
+            if not contexts and not suite_passed:
+                continue
+            key = tuple(sorted(contexts))
+            if key not in gate_results:
+                gate_results[key] = _all_required_checks_passed(
+                    access_token, repository_name, commit_sha, contexts
+                )
+            if gate_results[key]:
+                ready.append((app_env, contexts))
+        if not ready:
+            return False
+
+        # Record deployed targets *before* creating deployments; committing
+        # also releases the lock on the push row.
+        push_event.deployed_app_envs = sorted(
+            deployed_app_envs | {str(app_env.id) for app_env, _ in ready}
+        )
+        push_event.deployed = len(ready) == len(pending)
+        db.session.commit()
+
+        for app_env, contexts in ready:
             print(
                 f"deploying {repository_name}@{commit_sha} to "
                 f"{app_env.application.id} env {app_env.environment.slug}"
@@ -1086,7 +1168,7 @@ def process_check_suite_hook(hook):
                 ref=commit_sha,
                 app_env=app_env,
                 branch=head_branch,
-                required_contexts=required_contexts,
+                required_contexts=contexts,
             )
 
 

@@ -7,6 +7,7 @@ from wtforms import (
     HiddenField,
     IntegerField,
     SelectField,
+    SelectMultipleField,
     StringField,
     TextAreaField,
 )
@@ -786,6 +787,11 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
     auto_deploy_wait_for_ci = BooleanField(
         "Wait for CI",
         description="Wait for CI checks to pass before deploying. Uncheck to deploy immediately on push.",
+    )
+    deployment_checks = SelectMultipleField(
+        "Deployment Checks",
+        choices=[],
+        validate_choice=False,
     )
     github_environment_name = StringField(
         "GitHub Environment Name",

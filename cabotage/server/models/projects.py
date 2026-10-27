@@ -322,6 +322,7 @@ class ApplicationEnvironment(Model, Timestamp):
         default=True,
         server_default="true",
     )
+    deployment_checks: Mapped[list[str] | None] = mapped_column(postgresql.JSONB())
     github_environment_name: Mapped[str | None] = mapped_column(Text())
     k8s_identifier: Mapped[str | None] = mapped_column(String(64))
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
@@ -1424,6 +1425,7 @@ class Hook(Model, Timestamp):
     payload: Mapped[Any] = mapped_column(postgresql.JSONB())
     processed: Mapped[bool] = mapped_column(Boolean, default=False)
     deployed: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    deployed_app_envs: Mapped[list[str] | None] = mapped_column(postgresql.JSONB())
     version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {"version_id_col": version_id}

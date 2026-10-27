@@ -1,0 +1,35 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import resource_path, project_tab_nav %}
+
+{% set org_slug = project.organization.slug %}
+{% set project_slug = project.slug %}
+
+{% block title %}
+  Pipeline - {{ project_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': org_slug, 'url': url_for('user.organization', org_slug=org_slug)},
+    {'label': project_slug, 'url': url_for('user.project', org_slug=org_slug, project_slug=project_slug)},
+    {'label': 'Pipeline'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ project_tab_nav(project, 'pipeline') }}
+{% endblock tab_bar %}
+
+{% block content %}
+{% set rollup_level = 'project' %}
+{% set rollup_root_id = 'project-pipeline' %}
+{% set rollup_url = url_for('user.project_pipeline_rollup', org_slug=org_slug, project_slug=project_slug) %}
+{% set rollup_empty_text %}
+  No runs in the last <span data-range-label></span>. Each image build, release, and deploy for any
+  application in <span class="text-base-content">{{ project.name }}</span> shows up here once it finishes.
+  <a class="link link-hover text-base-content ml-1"
+     href="{{ url_for('user.project', org_slug=org_slug, project_slug=project_slug) }}">Go to overview</a>
+{% endset %}
+{% set show_summary = false %}
+{% include "user/_pipeline_rollup.html" %}
+{% endblock content %}
