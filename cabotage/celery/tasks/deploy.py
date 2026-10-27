@@ -2957,6 +2957,8 @@ def deploy_release(deployment: Deployment):
                 release_command,
                 deployment.job_id,
             )
+            # Don't hold table locks while the job runs; migrations would block.
+            db.session.commit()
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
@@ -3101,6 +3103,7 @@ def deploy_release(deployment: Deployment):
                 postdeploy_command,
                 deployment.job_id,
             )
+            db.session.commit()
             job_complete, job_logs = run_job(
                 core_api_instance,
                 batch_api_instance,
