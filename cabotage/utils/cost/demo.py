@@ -31,7 +31,7 @@ from typing import TypedDict, cast
 import psycopg
 from psycopg import sql as pg_sql
 from psycopg.types.json import Json
-from sqlalchemy import func
+from sqlalchemy import func, select
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
@@ -147,13 +147,17 @@ def seed_cost_history(
     )
     first_hour = last_hour - datetime.timedelta(hours=days * 24 - 1)
 
-    # Clear this organization's own CostLineItem rows that fall outside the
+    # Clear this organization's own demo CostLineItem rows that fall outside the
     # window we're about to (re)write, e.g. leftovers from a previous call
     # with a larger `days`. Scoped to CostLineItem only (not
     # CostCollectionRun, which is cluster-wide and shared across orgs).
+    demo_run_ids = select(CostCollectionRun.id).where(
+        func.jsonb_extract_path_text(CostCollectionRun.stats, "seed") == "demo"
+    )
     CostLineItem.query.filter(
         CostLineItem.organization_id == organization.id,
         CostLineItem.period_start < first_hour,
+        CostLineItem.run_id.in_(demo_run_ids),
     ).delete(synchronize_session=False)
 
     # CostCollectionRun is ONE row per cluster-wide hour, shared by every
