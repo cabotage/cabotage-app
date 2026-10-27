@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from flask_security import hash_password
 
+from cabotage.celery.tasks.cost import FAILED_HOUR_RETRY_AFTER, collect_costs
 from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
@@ -782,3 +783,85 @@ class TestCostCollector:
             run_id=run.id, resource_id=resource.id, category="storage"
         ).one()
         assert item.component == long_slug[:64]
+
+
+class TestCollectCostsBackoff:
+    """collect_costs' failed-hour retry backoff (cabotage.celery.tasks.cost)."""
+
+    LAST_HOUR = datetime.datetime(2026, 6, 1, 12, 0, 0, tzinfo=datetime.UTC)
+
+    def _make_failed_run(self, period_start, last_attempt_at):
+        run = CostCollectionRun(
+            period_start=period_start,
+            status="failed",
+            started_at=period_start,
+            error="no pod metrics for hour",
+            stats={
+                "last_attempt_status": "failed",
+                "last_attempt_error": "no pod metrics for hour",
+                "last_attempt_at": last_attempt_at.isoformat(),
+            },
+        )
+        db.session.add(run)
+        db.session.commit()
+        return run
+
+    def _run_collect_costs(self):
+        with (
+            patch(
+                "cabotage.celery.tasks.cost._last_completed_hour",
+                return_value=self.LAST_HOUR,
+            ),
+            patch("cabotage.celery.tasks.cost.collect_hour") as mock_collect_hour,
+        ):
+            mock_collect_hour.side_effect = lambda hour: CostCollectionRun(
+                period_start=hour,
+                status="succeeded",
+                started_at=hour,
+                stats={"last_attempt_status": "succeeded", "last_attempt_error": None},
+            )
+            collect_costs()
+            collected_hours = {
+                call.args[0] for call in mock_collect_hour.call_args_list
+            }
+        return collected_hours
+
+    def test_recently_failed_hour_is_skipped(self, app):
+        hour = self.LAST_HOUR - datetime.timedelta(hours=3)
+        self._make_failed_run(hour, self.LAST_HOUR - (FAILED_HOUR_RETRY_AFTER / 2))
+        try:
+            collected_hours = self._run_collect_costs()
+        finally:
+            CostCollectionRun.query.filter_by(period_start=hour).delete()
+            db.session.commit()
+
+        assert hour not in collected_hours
+
+    def test_old_failed_hour_is_retried(self, app):
+        hour = self.LAST_HOUR - datetime.timedelta(hours=3)
+        self._make_failed_run(
+            hour, self.LAST_HOUR - FAILED_HOUR_RETRY_AFTER - datetime.timedelta(hours=1)
+        )
+        try:
+            collected_hours = self._run_collect_costs()
+        finally:
+            CostCollectionRun.query.filter_by(period_start=hour).delete()
+            db.session.commit()
+
+        assert hour in collected_hours
+
+    def test_never_attempted_and_most_recent_hour_always_collected(self, app):
+        never_attempted = self.LAST_HOUR - datetime.timedelta(hours=10)
+        CostCollectionRun.query.filter_by(period_start=never_attempted).delete()
+        db.session.commit()
+
+        try:
+            collected_hours = self._run_collect_costs()
+        finally:
+            CostCollectionRun.query.filter(
+                CostCollectionRun.period_start.in_([never_attempted, self.LAST_HOUR])
+            ).delete()
+            db.session.commit()
+
+        assert never_attempted in collected_hours
+        assert self.LAST_HOUR in collected_hours
