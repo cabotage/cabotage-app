@@ -419,7 +419,7 @@ def _fast_forward_image_release_versions(
 
     image_offset = image_target - latest_img.version
     release_offset = release_target - latest_rel.version
-    if image_offset:
+    if image_offset > 0:
         _ = db.session.execute(
             text(
                 "UPDATE project_app_images SET version = version + :offset "
@@ -427,7 +427,7 @@ def _fast_forward_image_release_versions(
             ),
             {"offset": image_offset, "app_env_id": str(app_env.id)},
         )
-    if release_offset:
+    if release_offset > 0:
         _ = db.session.execute(
             text(
                 "UPDATE project_app_releases SET version = version + :offset "
