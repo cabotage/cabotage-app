@@ -200,6 +200,23 @@
 .cost-platform-unallocated-stat { display: flex; flex-direction: column; gap: 0.25rem; }
 .cost-platform-unallocated-amount { font-size: 1.5rem; font-weight: 600; font-family: var(--cost-mono); }
 .cost-platform-unallocated-share { font-size: 0.8125rem; color: var(--text-muted); }
+.cost-node-name { font-family: var(--cost-mono); font-size: 0.75rem; color: var(--text-bright); white-space: nowrap; }
+.cost-node-type { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.cost-node-load { min-width: 11rem; }
+.cost-node-bar { position: relative; height: 0.5rem; border-radius: 999px; background: var(--surface-inset); overflow: hidden; }
+.cost-node-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: 999px; }
+.cost-node-bar .is-requested { background: color-mix(in oklab, var(--cost-compute) 35%, transparent); }
+.cost-node-bar .is-used { background: var(--cost-compute); }
+.cost-node-load-text { margin-top: 0.25rem; font-size: 0.6875rem; color: var(--text-muted); white-space: nowrap; }
+.cost-node-idle-share { font-size: 0.6875rem; color: var(--text-muted); }
+.cost-node-legend { display: flex; flex-wrap: wrap; gap: 0.375rem 1rem; font-size: 0.75rem; color: var(--text-muted); }
+.cost-node-legend span { display: inline-flex; align-items: center; gap: 0.375rem; }
+.cost-node-legend i { display: inline-block; width: 0.75rem; height: 0.5rem; border-radius: 999px; }
+.cost-node-warning { padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.8125rem;
+  background: color-mix(in oklch, var(--color-warning, oklch(0.8 0.15 85)) 12%, transparent);
+  color: var(--color-warning, oklch(0.8 0.15 85)); border: 1px solid color-mix(in oklch, var(--color-warning, oklch(0.8 0.15 85)) 30%, transparent); }
+.cost-meters-table tfoot td { padding: 0.5rem 0.75rem; border-top: 1px solid var(--border-color); color: var(--text-bright); font-weight: 600; }
+.cost-meters-table tfoot td.num { text-align: right; font-family: var(--cost-mono); font-variant-numeric: tabular-nums; }
 .cost-mover-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0; border-bottom: 1px solid var(--border-color-subtle); font-size: 0.8125rem; }
 .cost-mover-row:last-child { border-bottom: 0; }
 .cost-mover-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-bright); }
@@ -468,12 +485,21 @@
       </section>
     </div>
 
-    <section class="cost-card cost-platform-card" aria-label="Node fleet" id="platform-nodes-section" hidden>
-      <span class="cost-section-title">Node fleet</span>
+    <section class="cost-card cost-platform-card" aria-label="Nodes" id="platform-nodes-section" hidden>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <span class="cost-section-title">Nodes</span>
+        <div class="cost-node-legend">
+          <span><i style="background:var(--cost-compute)"></i>Used</span>
+          <span><i style="background:color-mix(in oklab, var(--cost-compute) 35%, transparent)"></i>Requested</span>
+          <span><i style="background:var(--surface-inset);border:1px solid var(--border-color)"></i>Idle</span>
+        </div>
+      </div>
+      <div class="cost-node-warning" id="platform-nodes-warning" role="status" hidden></div>
       <div class="cost-table-scroll">
         <table class="cost-meters-table">
-          <thead><tr><th>Instance type</th><th class="num">Nodes</th><th class="num">Node-hours</th><th class="num">Hourly rate</th><th class="num">Cost</th></tr></thead>
+          <thead><tr><th>Node</th><th>CPU</th><th>Memory</th><th class="num">Node-hours</th><th class="num">Cost</th><th class="num">Idle</th></tr></thead>
           <tbody id="platform-nodes-body"></tbody>
+          <tfoot id="platform-nodes-foot"></tfoot>
         </table>
       </div>
     </section>
@@ -1761,7 +1787,7 @@
     var hasTopOrgs = renderPlatformTopOrgs(report, platform.top_orgs_series);
     var hasUnallocated = renderPlatformUnallocated(platform.unallocated, platform.reconciliation);
     row2.hidden = !(hasTopOrgs || hasUnallocated);
-    renderPlatformNodes(platform.nodes, nodesSection);
+    renderPlatformNodes(platform.nodes, platform.node_inventory, nodesSection);
   }
   function renderPlatformWaterfall(reconciliation, section) {
     var el = document.getElementById('platform-waterfall');
@@ -1998,17 +2024,55 @@
       '</div>';
     return true;
   }
-  function renderPlatformNodes(nodes, section) {
+  function nodeLoadHtml(used, requested, capacity, unit) {
+    if (!capacity) {
+      return '<div class="cost-node-load-text num">' + fmtQty(used) + ' used · ' + fmtQty(requested) + ' req ' + esc(unit) + '</div>';
+    }
+    var pct = function(v) { return Math.max(0, Math.min(100, (v || 0) / capacity * 100)).toFixed(1) + '%'; };
+    var label = fmtQty(used) + ' used · ' + fmtQty(requested) + ' req / ' + fmtQty(capacity) + ' ' + unit;
+    return '<div class="cost-node-load" title="' + esc(label) + '">' +
+      '<div class="cost-node-bar" role="img" aria-label="' + esc(label) + '">' +
+        '<span class="is-requested" style="width:' + pct(requested) + '"></span>' +
+        '<span class="is-used" style="width:' + pct(used) + '"></span>' +
+      '</div>' +
+      '<div class="cost-node-load-text num">' + esc(label) + '</div></div>';
+  }
+  function renderPlatformNodes(nodes, inventory, section) {
     var body = document.getElementById('platform-nodes-body');
-    if (!nodes || !nodes.length) { section.hidden = true; body.innerHTML = ''; return; }
+    var foot = document.getElementById('platform-nodes-foot');
+    var warning = document.getElementById('platform-nodes-warning');
+    nodes = nodes || [];
+    var problems = [];
+    if (inventory && inventory.error) problems.push('Node inventory: ' + inventory.error + '.');
+    if (inventory && inventory.nodes_unpriced) {
+      problems.push(inventory.nodes_unpriced + (inventory.nodes_unpriced === 1 ? ' node' : ' nodes') +
+        ' unpriced in the latest hour, so idle capacity is undercounted.');
+    }
+    warning.hidden = !problems.length;
+    warning.textContent = problems.join(' ');
+    if (!nodes.length && !problems.length) { section.hidden = true; body.innerHTML = ''; foot.innerHTML = ''; return; }
     section.hidden = false;
     body.innerHTML = nodes.map(function(n) {
-      return '<tr><td>' + esc(n.instance_type || '—') + (n.capacity_type ? ' <span class="cost-label">' + esc(n.capacity_type) + '</span>' : '') + '</td>' +
-        '<td class="num">' + (n.count != null ? n.count : '—') + '</td>' +
-        '<td class="num">' + (n.node_hours != null ? fmtQty(n.node_hours) : '—') + '</td>' +
-        '<td class="num">' + (n.hourly != null ? fmtRate(n.hourly, 'node-hr') : '—') + '</td>' +
-        '<td class="num">' + fmtMoney(n.cost) + '</td></tr>';
+      var type = [n.instance_type, n.capacity_type].filter(Boolean).map(esc).join(' · ');
+      var idleShare = n.cost ? n.idle_cost / n.cost : null;
+      return '<tr><td><div class="cost-node-name">' + esc(n.name) + '</div>' +
+          '<div class="cost-node-type">' + (type || 'unknown type') + '</div></td>' +
+        '<td>' + nodeLoadHtml(n.cpu_used, n.cpu_requested, n.cpu_capacity, 'vCPU') + '</td>' +
+        '<td>' + nodeLoadHtml(n.memory_used, n.memory_requested, n.memory_gib, 'GiB') + '</td>' +
+        '<td class="num">' + fmtQty(n.node_hours) + '</td>' +
+        '<td class="num">' + (n.cost != null ? fmtMoney(n.cost) : 'unpriced') + '</td>' +
+        '<td class="num">' + fmtMoney(n.idle_cost) +
+          (idleShare != null && n.idle_cost != null ? '<div class="cost-node-idle-share">' + fmtPct(idleShare) + ' of node</div>' : '') + '</td></tr>';
     }).join('');
+    var priced = nodes.filter(function(n) { return n.cost != null; });
+    if (!priced.length) { foot.innerHTML = ''; return; }
+    var sum = function(key) { return priced.reduce(function(acc, n) { return acc + (n[key] || 0); }, 0); };
+    var totalCost = sum('cost'), totalIdle = sum('idle_cost');
+    foot.innerHTML = '<tr><td colspan="3">' + priced.length + ' priced ' + (priced.length === 1 ? 'node' : 'nodes') + '</td>' +
+      '<td class="num">' + fmtQty(sum('node_hours')) + '</td>' +
+      '<td class="num">' + fmtMoney(totalCost) + '</td>' +
+      '<td class="num">' + fmtMoney(totalIdle) +
+        (totalCost ? '<div class="cost-node-idle-share">' + fmtPct(totalIdle / totalCost) + ' of fleet</div>' : '') + '</td></tr>';
   }
 
   // ── Meters ──
