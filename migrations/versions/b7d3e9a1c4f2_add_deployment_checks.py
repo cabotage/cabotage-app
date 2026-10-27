@@ -1,7 +1,7 @@
 """add deployment_checks
 
 Revision ID: b7d3e9a1c4f2
-Revises: bc4b54873371
+Revises: bd8a8bc16e88
 Create Date: 2026-10-21 22:30:00.000000
 
 """
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "b7d3e9a1c4f2"
-down_revision = "bc4b54873371"
+down_revision = "bd8a8bc16e88"
 branch_labels = None
 depends_on = None
 
