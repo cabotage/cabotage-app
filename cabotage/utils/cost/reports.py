@@ -310,8 +310,10 @@ COLLECTION_GRACE_MINUTES = 10
 # A custom start/end range charts hourly up to this span, daily beyond it.
 CUSTOM_HOURLY_SPAN = datetime.timedelta(days=3)
 
-# Extent/calendar series are capped at roughly this many buckets.
+# Extent series are capped at roughly this many buckets.
 MAX_EXTENT_BUCKETS = 120
+
+CALENDAR_SPAN = datetime.timedelta(days=90)
 
 TOP_N_BREAKDOWN_SERIES = 7
 
@@ -470,6 +472,7 @@ def build_report(
     )
 
     extent_series = _extent_series(scope, first_hour, last_hour)
+    calendar = _calendar_series(scope, first_hour, last_hour)
     rates_display = _rates_display(rates, range_start, scope.kind == "platform")
 
     platform: PlatformBlock | None = None
@@ -537,7 +540,7 @@ def build_report(
         "rates": rates_display,
         "rates_source": RATES_SOURCE,
         "extent_series": extent_series,
-        "calendar": extent_series,
+        "calendar": calendar,
         "heatmap": heatmap,
         "movers": movers,
         "platform": platform,
@@ -1507,14 +1510,31 @@ def _extent_series(
     last_hour: datetime.datetime | None,
 ) -> SeriesPayload:
     if first_hour is None or last_hour is None:
-        return {
-            "timestamps": [],
-            "categories": {category: [] for category in CATEGORY_ORDER},
-        }
+        return _empty_series()
     span_days = (last_hour - first_hour).total_seconds() / 86400.0
     interval: Interval = "day" if span_days <= MAX_EXTENT_BUCKETS else "week"
     buckets = _bucket_starts(first_hour, last_hour, interval)
     return _series(scope, first_hour, last_hour, interval, buckets)
+
+
+def _calendar_series(
+    scope: CostScope,
+    first_hour: datetime.datetime | None,
+    last_hour: datetime.datetime | None,
+) -> SeriesPayload:
+    if first_hour is None or last_hour is None:
+        return _empty_series()
+    start = max(first_hour, last_hour - CALENDAR_SPAN)
+    return _series(
+        scope, start, last_hour, "day", _bucket_starts(start, last_hour, "day")
+    )
+
+
+def _empty_series() -> SeriesPayload:
+    return {
+        "timestamps": [],
+        "categories": {category: [] for category in CATEGORY_ORDER},
+    }
 
 
 # ---------------------------------------------------------------------------

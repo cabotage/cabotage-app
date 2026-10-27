@@ -26,6 +26,7 @@
 
 /* @source "**" globs don't recurse — https://github.com/tailwindlabs/tailwindcss/issues/17601 */
 @source "../templates/*.html";
+@source "../templates/cost/*.html";
 @source "../templates/errors/*.html";
 @source "../templates/main/*.html";
 @source "../templates/security/*.html";
