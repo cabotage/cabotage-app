@@ -21,6 +21,7 @@ class Cluster:
     apps: MagicMock
     batch: MagicMock
     deploy_release: MagicMock
+    deployment: SimpleNamespace
     refresh_heartbeat: MagicMock
 
 
@@ -28,7 +29,7 @@ class Cluster:
 def cluster(tmp_path: Path) -> Iterator[Cluster]:
     namespace_file = tmp_path / "namespace"
     _ = namespace_file.write_text("cabotage\n")
-    deployment = SimpleNamespace(id=DEPLOYMENT_ID)
+    deployment = SimpleNamespace(id=DEPLOYMENT_ID, complete=False, error=False)
     core = MagicMock()
     core.read_namespaced_pod.return_value = kubernetes.client.V1Pod(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -81,6 +82,7 @@ def cluster(tmp_path: Path) -> Iterator[Cluster]:
             apps=apps,
             batch=batch,
             deploy_release=deploy_release,
+            deployment=deployment,
             refresh_heartbeat=refresh_heartbeat,
         )
 
@@ -143,3 +145,12 @@ def test_job_is_submitted_when_the_heartbeat_fails(cluster: Cluster) -> None:
     deploy_module.run_deploy(deployment_id=DEPLOYMENT_ID)
 
     cluster.batch.create_namespaced_job.assert_called_once()
+
+
+@pytest.mark.parametrize("state", ["complete", "error"])
+def test_finished_deployments_are_not_applied(cluster: Cluster, state: str) -> None:
+    setattr(cluster.deployment, state, True)
+
+    deploy_module.execute_deployment(DEPLOYMENT_ID)
+
+    cluster.deploy_release.assert_not_called()

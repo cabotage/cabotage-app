@@ -3531,6 +3531,11 @@ def execute_deployment(deployment_id: uuid.UUID | str) -> None:
     deployment: Deployment | None = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
         raise KeyError(f"Deployment with ID {deployment_id} not found!")
+    if deployment.complete or deployment.error:
+        # The reaper fails deployments whose Job pod never started in time;
+        # don't apply one that has already been reported as failed.
+        log.warning("Deployment %s already finished, skipping", deployment_id)
+        return
     error_detail = ""
     try:
         _ = deploy_release(deployment)
