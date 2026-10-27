@@ -93,6 +93,7 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
             f"COST_RATES must be a JSON object, got {type(overrides_raw).__name__}"
         )
     overrides: dict[str, object] = overrides_raw
+    _validate_overrides(overrides)
     for key, value in overrides.items():
         existing = rates.get(key)
         if isinstance(value, dict) and isinstance(existing, dict):
@@ -100,6 +101,36 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
         else:
             rates[key] = value
     return cast(CostRates, rates)
+
+
+_RATE_KEYS = CostRates.__required_keys__ | CostRates.__optional_keys__
+_SCALAR_RATE_KEYS = {"vcpu_hour", "memory_gib_hour", "storage_gib_month", "egress_gb"}
+_PRICE_MAP_KEYS = {
+    "fixed_hourly",
+    "node_family_xlarge_hourly",
+    "node_size_factor",
+}
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _validate_overrides(overrides: Mapping[str, object]) -> None:
+    for key, value in overrides.items():
+        if key not in _RATE_KEYS:
+            raise ValueError(f"COST_RATES has unknown key {key!r}")
+        if key in _SCALAR_RATE_KEYS and not _is_number(value):
+            raise TypeError(f"COST_RATES[{key!r}] must be a number, got {value!r}")
+        if key in _PRICE_MAP_KEYS and not (
+            isinstance(value, dict)
+            and all(
+                _is_number(price) for price in cast(dict[str, object], value).values()
+            )
+        ):
+            raise TypeError(
+                f"COST_RATES[{key!r}] must be an object of numbers, got {value!r}"
+            )
 
 
 def node_hourly_price(
