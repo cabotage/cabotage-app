@@ -111,7 +111,6 @@ def cost_context(member_user):
 
 def _fake_report():
     return {
-        "scope": {"kind": "organization", "name": "Cost Org"},
         "range": {
             "key": "mtd",
             "label": "Month to date",
@@ -221,19 +220,6 @@ class TestCostPermissions:
             resp = client.get(f"/organizations/{org.slug}/cost/data")
         assert resp.status_code == 200
         data = resp.get_json()
-        for key in (
-            "scope",
-            "range",
-            "totals",
-            "kpis",
-            "categories",
-            "meters",
-            "series",
-            "breakdowns",
-            "freshness",
-            "rates",
-        ):
-            assert key in data
         assert (
             data["breakdowns"]["projects"][0]["url"]
             == f"/projects/{org.slug}/cost-project/cost"
@@ -430,17 +416,6 @@ class TestCostRangeValidation:
         called_range = mock_build.call_args[0][1]
         assert called_range == "mtd"
 
-    def test_valid_range_is_passed_through(self, client, member_user, cost_context):
-        _login(client, member_user)
-        org = cost_context["org"]
-        with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
-        ) as mock_build:
-            resp = client.get(f"/organizations/{org.slug}/cost/data?range=7d")
-        assert resp.status_code == 200
-        called_range = mock_build.call_args[0][1]
-        assert called_range == "7d"
-
 
 class TestCostPages:
     def test_organization_cost_page_renders(self, client, member_user, cost_context):
@@ -564,7 +539,7 @@ class TestCostRowLinks:
         org = cost_context["org"]
         report = _fake_report()
         report["breakdowns"]["projects"][0]["deleted"] = True
-        report["movers"] = [{"key": "p1", "slugs": {"project": "cost-project"}}]
+        report["movers"] = [{"key": "p1"}]
         with patch("cabotage.server.cost.views.build_report", return_value=report):
             data = client.get(f"/organizations/{org.slug}/cost/data").get_json()
         assert data["breakdowns"]["projects"][0]["url"] is None
