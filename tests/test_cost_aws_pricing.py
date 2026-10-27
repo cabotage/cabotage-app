@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import db
 from cabotage.server.models.cost import CostNode, CostPriceSnapshot
@@ -341,3 +342,31 @@ class TestRefreshPrices:
         app.config["COST_AWS_PRICING_ENABLED"] = True
         # 125 MiB/s above the gp3 baseline at $0.04.
         assert volume_monthly_cost(100, effective_rates()) == pytest.approx(13.0)
+
+    def test_storage_class_failure_keeps_node_prices(self, app):
+        db.session.add(
+            CostNode(
+                name="pricing-test-current",
+                instance_type="m8g.xlarge",
+                last_seen=datetime.datetime.now(datetime.UTC),
+            )
+        )
+        db.session.commit()
+        app.config["KUBERNETES_ENABLED"] = True
+        storage_api = MagicMock()
+        storage_api.list_storage_class.side_effect = ApiException(status=403)
+
+        with (
+            patch("cabotage.utils.cost.aws_pricing.kubernetes_ext"),
+            patch(
+                "cabotage.utils.cost.aws_pricing.kubernetes.client.StorageV1Api",
+                return_value=storage_api,
+            ),
+        ):
+            snapshot = refresh_prices(
+                FakePricing([_instance("m8g.xlarge", "0.1795200000")])
+            )
+
+        assert CostPriceSnapshot.latest() == snapshot
+        assert snapshot.rates["node_instance_hourly"] == {"m8g.xlarge": 0.17952}
+        assert "storage_volume" not in snapshot.rates

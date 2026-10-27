@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 import boto3
 import kubernetes.client
 from flask import current_app
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import db
 from cabotage.server import kubernetes as kubernetes_ext
@@ -228,9 +229,12 @@ def read_storage_volume(storage_class_name: str | None) -> StorageVolume | None:
     if not current_app.config.get("KUBERNETES_ENABLED"):
         return None
     storage_api = kubernetes.client.StorageV1Api(kubernetes_ext.kubernetes_client)
-    storage_class = _select_storage_class(
-        storage_api.list_storage_class().items, storage_class_name
-    )
+    try:
+        storage_classes = storage_api.list_storage_class().items
+    except ApiException:
+        log.warning("Could not list StorageClasses", exc_info=True)
+        return None
+    storage_class = _select_storage_class(storage_classes, storage_class_name)
     if storage_class is None:
         log.warning("StorageClass %s not found", storage_class_name or "(default)")
         return None
