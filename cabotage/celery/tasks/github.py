@@ -730,6 +730,10 @@ def _required_contexts_for_branch(access_token, repository_name, branch):
     return required
 
 
+# GitHub treats skipped and neutral check runs as passing required checks.
+_PASSING_CHECK_CONCLUSIONS = frozenset({"success", "neutral", "skipped"})
+
+
 def _all_required_checks_passed(
     access_token, repository_name, commit_sha, required_contexts
 ):
@@ -761,7 +765,7 @@ def _all_required_checks_passed(
         resp.raise_for_status()
         data = resp.json()
         for run in data.get("check_runs", []):
-            if run.get("conclusion") == "success":
+            if run.get("conclusion") in _PASSING_CHECK_CONCLUSIONS:
                 passed.add(run["name"])
         if len(data.get("check_runs", [])) < 100:
             break
