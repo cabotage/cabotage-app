@@ -1,7 +1,5 @@
 {#
-  Shared cost dashboard body. Included (not extended) from the four thin
-  scope pages (cost/organization.html, project.html, environment.html,
-  application.html), each of which sets `data_url` before including this.
+  Shared cost dashboard body. Each including template sets `data_url` before including this.
   Expects: data_url (str), dashboard_title (str), dashboard_subtitle (str)
 #}
 <link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
@@ -522,10 +520,9 @@
 
   var state = {
     rangeKey: 'mtd', customStart: null, customEnd: null,
-    report: null, explorerReport: null,
+    report: null,
     chartMode: 'category',
     hiddenCategories: {},
-    focusRow: null,
     envSlug: root.dataset.env || null
   };
   var palette = null;
@@ -581,7 +578,7 @@
       el.style.top = y + 'px';
     }
     function hide() { el.style.display = 'none'; }
-    return { show: show, showAt: showAt, hide: hide, el: el };
+    return { show: show, showAt: showAt, hide: hide };
   })();
 
   // ── Formatters ──
@@ -629,7 +626,6 @@
   }
   function titleCase(s) { return String(s || '').replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }); }
   function setText(sel, text) { var el = document.querySelector(sel); if (el) el.textContent = text; }
-  function fmtDay(iso, opts) { return new Date(iso).toLocaleDateString(undefined, Object.assign({ month: 'short', day: 'numeric', timeZone: 'UTC' }, opts)); }
   function fmtRangeLabel(range) {
     if (!range || !range.start || !range.end) return 'Loading…';
     var s = new Date(range.start);
@@ -842,10 +838,6 @@
     var axis = { stroke: palette.axis, font: font, grid: { stroke: palette.grid, width: 1 }, ticks: { show: false } };
     var tickStride = Math.max(1, Math.ceil(xs.length / Math.max(1, Math.floor(el.clientWidth / 58))));
     var xSplits = xs.filter(function(_, i) { return i % tickStride === 0; });
-    var lastNaturalIdx = (xSplits.length - 1) * tickStride;
-    if (xs.length - 1 - lastNaturalIdx >= tickStride) {
-      xSplits = xSplits.concat([xs[xs.length - 1]]);
-    }
     var isHour = opts.interval === 'hour';
     var chart = new uPlot({
       width: el.clientWidth, height: el.clientHeight,
@@ -883,7 +875,6 @@
   }
 
   // ── Main chart ──
-  var mainChart = null;
   function renderMainChart(report) {
     var el = root.querySelector('[data-chart="main"]');
     var xs = (report.series && report.series.timestamps) || [];
@@ -907,7 +898,7 @@
       var eff = report.series && report.series.efficiency;
       var callout = document.getElementById('efficiency-callout');
       if (eff) {
-        var reservedColor = palette.css(palette.text, 0.35), usedColor = palette.css(palette.colors.compute), billedColor = palette.css(palette.colors.overhead);
+        var reservedColor = palette.css(palette.text, 0.35), usedColor = palette.css(palette.colors.compute);
         series = [
           { key: 'request', label: 'Reserved', values: eff.request, _swatch: reservedColor, _fill: reservedColor },
           { key: 'usage', label: 'Used', values: eff.usage, _swatch: usedColor, _fill: usedColor }
@@ -929,7 +920,7 @@
       });
     }
     var mainBucketSpan = (report.range && report.range.interval === 'hour') ? 3600 : 86400;
-    mainChart = makeStackedChart(el, xs, series, {
+    makeStackedChart(el, xs, series, {
       interval: report.range && report.range.interval,
       previous: state.chartMode === 'category' ? prevFlat : null,
       partialIdx: partialBucketIdx(xs, mainBucketSpan, report.freshness && report.freshness.data_through)
@@ -1190,7 +1181,7 @@
     var tickStride = Math.max(1, Math.ceil(xs.length / Math.max(1, Math.floor(el.clientWidth / 56))));
     var xSplits = xs.filter(function(_, i) { return i % tickStride === 0; });
     var font = '9px ' + getComputedStyle(root).getPropertyValue('--cost-mono');
-    var chart = new uPlot({
+    new uPlot({
       width: el.clientWidth, height: el.clientHeight,
       series: [{}].concat(seriesDefs.map(function(s) {
         return Object.assign({}, s, { paths: function() { return null; }, points: { show: false } });
@@ -1238,8 +1229,6 @@
       }), { show: false }],
       scales: { x: { time: true }, y: { range: [0, maxStack ? maxStack * 1.1 : 1] } }
     }, [xs].concat(cols), el);
-    el._uplot = chart; // debug/test hook: exposes the instance for pixel-accurate verification
-    return chart;
   }
   function clearBrush() {
     state.customStart = null;
@@ -1252,7 +1241,30 @@
     loadMain();
   }
 
-  // ── Calendar heatmap (from report.extent_series) ──
+  // ── Calendar heatmap ──
+  // Quantile scale shared by the day-grid and hour-of-day heatmaps: six levels bucketed by the
+  // 20/40/60/80th percentiles over positive values, mapped to increasing alpha steps of the
+  // theme's primary color (computed fresh per call so theme/accent changes take effect).
+  function makeHeatmapScale(values) {
+    var nonZero = values.filter(function(v) { return v > 0; }).sort(function(a, b) { return a - b; });
+    function quantile(p) {
+      if (!nonZero.length) return 0;
+      return nonZero[Math.min(nonZero.length - 1, Math.floor(p * nonZero.length))];
+    }
+    var q20 = quantile(0.2), q40 = quantile(0.4), q60 = quantile(0.6), q80 = quantile(0.8);
+    function level(v) {
+      if (!v) return 0;
+      if (v <= q20) return 1;
+      if (v <= q40) return 2;
+      if (v <= q60) return 3;
+      if (v <= q80) return 4;
+      return 5;
+    }
+    var colors = ['var(--surface-inset)',
+      palette.css(palette.primary, 0.18), palette.css(palette.primary, 0.36),
+      palette.css(palette.primary, 0.54), palette.css(palette.primary, 0.74), palette.css(palette.primary, 0.95)];
+    return { level: level, colors: colors };
+  }
   function renderCalendar(extent) {
     var grid = document.getElementById('calendar-grid');
     var monthsEl = document.getElementById('calendar-months');
@@ -1268,35 +1280,17 @@
       });
       return best;
     });
-    // Quantile thresholds over nonzero days (robust to outliers, per spec).
-    var nonZero = totals.filter(function(v) { return v > 0; }).sort(function(a, b) { return a - b; });
-    function quantile(p) {
-      if (!nonZero.length) return 0;
-      var idx = Math.min(nonZero.length - 1, Math.floor(p * nonZero.length));
-      return nonZero[idx];
-    }
-    var q20 = quantile(0.2), q40 = quantile(0.4), q60 = quantile(0.6), q80 = quantile(0.8);
-    function level(cost) {
-      if (!cost) return 0;
-      if (cost <= q20) return 1;
-      if (cost <= q40) return 2;
-      if (cost <= q60) return 3;
-      if (cost <= q80) return 4;
-      return 5;
-    }
-    var levelColor = ['var(--surface-inset)',
-      palette.css(palette.primary, 0.18), palette.css(palette.primary, 0.36),
-      palette.css(palette.primary, 0.54), palette.css(palette.primary, 0.74), palette.css(palette.primary, 0.95)];
+    var scale = makeHeatmapScale(totals);
     var firstDow = (new Date(xs[0] * 1000).getUTCDay() + 6) % 7; // 0=Mon
     var cells = [];
     for (var p2 = 0; p2 < firstDow; p2++) cells.push(null);
-    xs.forEach(function(ts, i) { cells.push({ ts: ts, cost: totals[i], idx: i, topCat: topCategory[i] }); });
+    xs.forEach(function(ts, i) { cells.push({ ts: ts, cost: totals[i], idx: i }); });
     var bucketSpan = xs.length > 1 ? (xs[1] - xs[0]) : 86400;
 
     grid.innerHTML = cells.map(function(c) {
       if (!c) return '<div class="cal-cell" style="visibility:hidden"></div>';
-      var lvl = level(c.cost);
-      return '<div class="cal-cell" style="background:' + levelColor[lvl] + '" data-idx="' + c.idx + '" data-day="1"></div>';
+      var lvl = scale.level(c.cost);
+      return '<div class="cal-cell" style="background:' + scale.colors[lvl] + '" data-idx="' + c.idx + '" data-day="1"></div>';
     }).join('');
 
     var numCols = Math.ceil(cells.length / 7);
@@ -1342,7 +1336,7 @@
       sharedTip.show('<div class="cost-tip-time">' + esc(dateStr) + '</div>' + rows, clientX, clientY);
     }
     document.querySelectorAll('.cost-calendar-scale .cal-cell[data-scale]').forEach(function(el) {
-      el.style.background = levelColor[+el.dataset.scale];
+      el.style.background = scale.colors[+el.dataset.scale];
     });
   }
 
@@ -1355,37 +1349,19 @@
     var flat = [], sum = 0, count = 0;
     heatmap.values.forEach(function(row) {
       row.forEach(function(v) {
-        if (v > 0) flat.push(v);
+        flat.push(v || 0);
         sum += (v || 0); count++;
       });
     });
     var mean = count ? sum / count : 0;
-    // Quantile scale (same approach as the calendar) rather than linear/sqrt against the single
-    // max — a handful of outlier hours otherwise compress the rest of the grid into one shade.
-    flat.sort(function(a, b) { return a - b; });
-    function quantile(p) {
-      if (!flat.length) return 0;
-      return flat[Math.min(flat.length - 1, Math.floor(p * flat.length))];
-    }
-    var q20 = quantile(0.2), q40 = quantile(0.4), q60 = quantile(0.6), q80 = quantile(0.8);
-    function level(v) {
-      if (!v) return 0;
-      if (v <= q20) return 1;
-      if (v <= q40) return 2;
-      if (v <= q60) return 3;
-      if (v <= q80) return 4;
-      return 5;
-    }
-    var levelColor = ['var(--surface-inset)',
-      palette.css(palette.primary, 0.18), palette.css(palette.primary, 0.36),
-      palette.css(palette.primary, 0.54), palette.css(palette.primary, 0.74), palette.css(palette.primary, 0.95)];
+    var scale = makeHeatmapScale(flat);
     var html = '<div></div>';
     heatmap.hours.forEach(function(h) { html += '<div class="hh-collabel">' + (h % 3 === 0 ? h : '') + '</div>'; });
     heatmap.days.forEach(function(day, di) {
       html += '<div class="hh-rowlabel">' + esc(day) + '</div>';
       heatmap.hours.forEach(function(h, hi) {
         var v = (heatmap.values[di] || [])[hi] || 0;
-        html += '<div class="hh-cell" style="background:' + levelColor[level(v)] + '" data-day="' + esc(day) + '" data-hour="' + h + '" data-val="' + v + '"></div>';
+        html += '<div class="hh-cell" style="background:' + scale.colors[scale.level(v)] + '" data-day="' + esc(day) + '" data-hour="' + h + '" data-val="' + v + '"></div>';
       });
     });
     grid.innerHTML = html;
@@ -1575,20 +1551,6 @@
   function renderMovers(report) {
     var section = document.getElementById('movers-section');
     var rows = report.movers;
-    var derived = false;
-    if (!rows) {
-      derived = true;
-      rows = [];
-      Object.keys(report.breakdowns || {}).forEach(function(key) {
-        (report.breakdowns[key] || []).forEach(function(row) {
-          var change = row.previous_cost == null ? null : row.cost - row.previous_cost;
-          if (change == null || Math.abs(change) < 0.005) return;
-          rows.push({ key: key + ':' + row.key, name: row.name, context: row.context, cost: row.cost,
-            previous_cost: row.previous_cost, change: change,
-            change_pct: row.previous_cost ? change / row.previous_cost * 100 : null, url: row.url });
-        });
-      });
-    }
     if (!rows.length) { section.hidden = true; return; }
     section.hidden = false;
     var up = rows.filter(function(r) { return r.change > 0; }).sort(function(a, b) { return b.change - a.change; }).slice(0, 5);
@@ -1627,7 +1589,6 @@
   }
 
   // ── Breakdown accordions ──
-  var BREAKDOWN_SECTION_LABELS = BREAKDOWN_LABELS;
   var sortState = {};
   function sortRows(tableKey, field, rows) {
     var stateKey = tableKey + ':' + field;
@@ -1650,7 +1611,7 @@
     });
   }
   function buildAccordionSection(key, rows, report) {
-    var label = BREAKDOWN_SECTION_LABELS[key] || titleCase(key);
+    var label = BREAKDOWN_LABELS[key] || titleCase(key);
     var section = document.createElement('section');
     section.className = 'cost-card cost-bd-card mb-3';
     section.setAttribute('aria-label', label);
@@ -1700,10 +1661,7 @@
         var bodyHtml;
         if (row.meters && row.meters.length) {
           bodyHtml = '<table class="cost-bd-meters"><thead><tr><th>Meter</th><th class="num">Quantity</th><th class="num">Rate</th><th class="num">Cost</th></tr></thead><tbody>' +
-            row.meters.map(function(m) {
-              return '<tr><td>' + esc(m.label) + '</td><td class="num">' + fmtQty(m.quantity) + ' ' + esc(m.unit || '') +
-                '</td><td class="num">' + fmtRate(m.rate, m.unit) + '</td><td class="num">' + fmtMoney(m.cost) + '</td></tr>';
-            }).join('') + '</tbody></table>';
+            row.meters.map(meterRowHtml).join('') + '</tbody></table>';
         } else {
           var catsHtml = Object.keys(row.categories || {}).filter(function(k) { return row.categories[k]; }).map(function(k) {
             var def = CATEGORIES.filter(function(x) { return x.key === k; })[0];
@@ -1965,7 +1923,7 @@
       { key: 'requestedTail', stroke: reqColor, width: 1.5, dash: [4, 3], points: { show: false } },
       { key: 'usedTail', stroke: usedColor, width: 2, dash: [4, 3], points: { show: false } }
     ] : [];
-    var chart = new uPlot({
+    new uPlot({
       width: el.clientWidth, height: el.clientHeight,
       series: [{}, { key: 'capacity', label: 'Capacity', stroke: capColor, width: 2, points: { show: false } },
         { key: 'requested', label: 'Requested', stroke: reqColor, width: 1.5, dash: [4, 3], points: { show: false } },
@@ -1984,7 +1942,6 @@
         Object.assign({}, axis, { label: isHour ? '$ / hr' : '$ / day', labelFont: font, values: function(u, vals) { return vals.map(function(v) { return fmtMoney(v); }); } })],
       scales: { x: { time: true }, y: { range: function(u, min, max) { return [0, max * 1.08 || 1]; } } }
     }, [xs, capMain, reqMain, usedMain].concat(hasTail ? [tailOnly(capVals), tailOnly(reqVals), tailOnly(usedVals)] : []), el);
-    el._uplot = chart;
     var legendDefs = defs.concat([
       { label: 'Idle', _swatch: idleBandColor },
       { label: 'Reserved, unused', _swatch: reservedBandColor }
@@ -2055,24 +2012,20 @@
   }
 
   // ── Meters ──
+  function meterRowHtml(m) {
+    return '<tr><td>' + esc(m.label) + '</td><td class="num">' + fmtQty(m.quantity) + ' ' + esc(m.unit || '') +
+      '</td><td class="num">' + fmtRate(m.rate, m.unit) + '</td><td class="num">' + fmtMoney(m.cost) + '</td></tr>';
+  }
   function renderMeters(meters) {
     var body = document.getElementById('meters-body');
     if (!meters || !meters.length) {
       body.innerHTML = '<tr><td colspan="4" class="text-center" style="color:var(--text-faint)">No meters recorded for this range.</td></tr>';
       return;
     }
-    body.innerHTML = meters.map(function(m) {
-      return '<tr><td>' + esc(m.label) + '</td><td class="num">' + fmtQty(m.quantity) + ' ' + esc(m.unit || '') +
-        '</td><td class="num">' + fmtRate(m.rate, m.unit) + '</td><td class="num">' + fmtMoney(m.cost) + '</td></tr>';
-    }).join('');
+    body.innerHTML = meters.map(meterRowHtml).join('');
   }
 
-  // ── Rates panel: structured shape when present, else a clean formatter for the known flat-rate dict (never raw JSON) ──
-  var RATE_LABELS = {
-    vcpu_hour: ['vCPU', 'hour'], memory_gib_hour: ['Memory', 'GiB-hour'],
-    storage_gib_month: ['Storage', 'GiB-month'], egress_gb: ['Egress', 'GB']
-  };
-  var FIXED_LABELS = { eks_control_plane: 'EKS control plane', nat_gateway: 'NAT gateway', load_balancer: 'Load balancer' };
+  // ── Rates panel ──
   function renderRates(report) {
     var panel = document.getElementById('rates-panel');
     var rates = report.rates;
@@ -2096,28 +2049,6 @@
         html += '<p class="cost-rates-note">Region ' + esc(source.region || '—') + ', checked ' + esc(source.checked || '—') +
           '. ' + esc(source.basis || '') + '</p>';
       }
-    } else {
-      var items = [];
-      Object.keys(RATE_LABELS).forEach(function(k) {
-        if (rates[k] == null) return;
-        items.push({ label: RATE_LABELS[k][0], value: rates[k], unit: RATE_LABELS[k][1] });
-      });
-      html += '<div class="cost-rates-section"><table class="cost-rates-table"><thead><tr><th>Rate</th><th class="num">Price</th></tr></thead><tbody>' +
-        items.map(function(li) { return '<tr><td>' + esc(li.label) + '</td><td class="num">' + fmtRate(li.value, li.unit) + '</td></tr>'; }).join('') +
-        '</tbody></table></div>';
-      if (rates.fixed_hourly) {
-        html += '<div class="cost-rates-section"><table class="cost-rates-table"><thead><tr><th>Fixed overhead</th><th class="num">Hourly</th></tr></thead><tbody>' +
-          Object.keys(rates.fixed_hourly).map(function(k) {
-            return '<tr><td>' + esc(FIXED_LABELS[k] || titleCase(k)) + '</td><td class="num">' + fmtMoney(rates.fixed_hourly[k]) + '</td></tr>';
-          }).join('') + '</tbody></table></div>';
-      }
-      if (rates.node_family_xlarge_hourly) {
-        html += '<div class="cost-rates-section"><table class="cost-rates-table"><thead><tr><th>Node family (.xlarge)</th><th class="num">Hourly</th></tr></thead><tbody>' +
-          Object.keys(rates.node_family_xlarge_hourly).map(function(k) {
-            return '<tr><td>' + esc(k) + '</td><td class="num">' + fmtMoney(rates.node_family_xlarge_hourly[k]) + '</td></tr>';
-          }).join('') + '</tbody></table></div>';
-      }
-      html += '<p class="cost-rates-note">Region us-east-2, AWS on-demand list prices.</p>';
     }
     html += '<p class="cost-rates-note">Each pod is billed at <code>max(request, usage)</code> per resource for every hour. Cluster overhead ' +
       '(control plane, NAT, load balancers, and compute not directly attributable to a workload) is split across organizations, projects, ' +
