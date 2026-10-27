@@ -598,13 +598,19 @@ def _resolve_custom_range(
         _parse_range_param(start) if start is not None else (first_hour or now)
     )
     range_end = _parse_range_param(end) if end is not None else now
+    range_end = min(range_end, now)
 
     # Clamp the low end to the start of available data; clamp the high end
-    # only to "now" (not to last_hour), so a requested range can still reach
-    # into the most recent, possibly-not-yet-collected, in-progress hour.
-    if first_hour is not None and range_start < first_hour:
-        range_start = first_hour
-    range_end = min(range_end, now)
+    # only to "now", so a requested range can still reach into the most
+    # recent, possibly-not-yet-collected, in-progress hour. With no data
+    # collected yet (first_hour is None) there's nothing to clamp against,
+    # so fall back to the default 90-day window -- otherwise a `start` years
+    # in the past would make `_freshness`/bucketing iterate empty hours by
+    # the thousands.
+    if first_hour is not None:
+        range_start = max(range_start, first_hour)
+    else:
+        range_start = max(range_start, range_end - RANGE_CONFIG["90d"]["duration"])
     if range_end <= range_start:
         range_end = range_start + datetime.timedelta(hours=1)
 
