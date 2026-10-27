@@ -1065,10 +1065,15 @@ def process_check_suite_hook(hook):
 
         access_token = access_token_response.json()
 
+        # Lock the push row so concurrent check_suite webhooks for this SHA
+        # gate and record deployed targets one at a time; each sees what the
+        # previous one deployed instead of failing on a stale version_id.
         push_event = (
             Hook.query.filter(Hook.commit_sha == commit_sha)
             .filter(Hook.headers.op("->>")("X-Github-Event") == "push")
             .order_by(Hook.created.desc())
+            .with_for_update()
+            .populate_existing()
             .first()
         )
         if push_event is None:
@@ -1137,8 +1142,8 @@ def process_check_suite_hook(hook):
         if not ready:
             return False
 
-        # Record deployed targets *before* creating deployments to prevent
-        # races between concurrent check_suite webhooks for the same SHA.
+        # Record deployed targets *before* creating deployments; committing
+        # also releases the lock on the push row.
         push_event.deployed_app_envs = sorted(
             deployed_app_envs | {str(app_env.id) for app_env, _ in ready}
         )
