@@ -26,6 +26,9 @@ class CostRunStats(TypedDict, total=False):
     node_hours: float
     nodes_unpriced: int
     node_data_available: bool
+    #: Why the Kubernetes node list couldn't be refreshed this hour (e.g. RBAC),
+    #: leaving nodes unpriced; None when it succeeded or Kubernetes is off.
+    node_inventory_error: str | None
     cluster_compute_cost: float
     tenant_compute_cost: float
     overhead_pool: float
@@ -156,6 +159,57 @@ class CostNode(Model):
     cpu_capacity: Mapped[float | None] = mapped_column(Float())
     memory_gib: Mapped[float | None] = mapped_column(Float())
     last_seen: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CostNodeHour(Model):
+    """One node's capacity, load, and price for one collected hour.
+
+    Quantities are summed over the hour's 5-minute steps (vCPU-hr, GiB-hr),
+    so dividing by ``node_hours`` gives the hour's average. ``requested``,
+    ``used`` and ``billed`` cover every pod on the node, attributed or not;
+    ``billed`` is the per-pod ``max(usage, request)`` tenants are charged
+    on. Dollar columns are frozen at collection time and NULL when the node
+    has no instance type to price.
+    """
+
+    __tablename__ = "cost_node_hours"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("cost_collection_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    period_start: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    node_name: Mapped[str] = mapped_column(String(253), nullable=False)
+    instance_type: Mapped[str | None] = mapped_column(String(64))
+    capacity_type: Mapped[str | None] = mapped_column(String(32))
+    cpu_capacity: Mapped[float | None] = mapped_column(Float())
+    memory_gib: Mapped[float | None] = mapped_column(Float())
+    node_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cpu_request_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cpu_usage_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cpu_billed_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    memory_request_gib_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    memory_usage_gib_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    memory_billed_gib_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+    requested_cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+    used_cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+    idle_cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "node_name", name="uq_cost_node_hours_run_id_node_name"
+        ),
+        Index("ix_cost_node_hours_period_start", "period_start"),
+    )
 
 
 class CostPriceSnapshot(Model):
