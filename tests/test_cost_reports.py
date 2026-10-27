@@ -415,14 +415,14 @@ class TestBuildReportBasics:
         # through the most recently completed hour, have no run at all.
         assert freshness["missing_hours"] > 0
 
-    def test_freshness_currently_failing_streak_survives_data_preservation(
+    def test_freshness_reports_failed_hours_from_preserved_data(
         self, app, org, project, environment, application
     ):
         """A preserved-on-failure hour (status still "succeeded" because the
         collector kept its prior good data, per collector._record_attempt)
-        must still count as part of an ongoing failing streak, and
-        `failing_since` must point to the earliest attempt in that
-        unbroken streak, not just the most recent one.
+        must still count as failed in `failed_hours`, since an hour's own
+        `status` only describes the data it currently holds, not whether
+        its most recent collection attempt actually succeeded.
         """
         floor_now = NOW.replace(minute=0, second=0, microsecond=0)
         healthy_hour = floor_now - datetime.timedelta(hours=4)
@@ -483,8 +483,6 @@ class TestBuildReportBasics:
         report = build_report(scope, "24h", now=NOW)
         freshness = report["freshness"]
 
-        assert freshness["currently_failing"] is True
-        assert freshness["failing_since"] == streak_start_at
         # The preserved hour still shows up as failed even though its own
         # `status` is "succeeded".
         assert streak_start_hour.isoformat() in freshness["failed_hours"]
@@ -647,7 +645,9 @@ class TestBuildReportBasics:
             for values in breakdown["values"].values():
                 assert len(values) == n
 
-    def test_heatmap_dims(self, app, org, project, environment, application):
+    def test_heatmap_puts_cost_in_its_weekday_hour(
+        self, app, org, project, environment, application
+    ):
         hour = NOW.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
             hours=1
         )
@@ -668,8 +668,17 @@ class TestBuildReportBasics:
         heatmap = report["heatmap"]
         assert heatmap["days"] == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         assert heatmap["hours"] == list(range(24))
-        assert len(heatmap["values"]) == 7
-        assert all(len(row) == 24 for row in heatmap["values"])
+
+        # `_heatmap` averages cost per (weekday, hour) cell; a 24h range only
+        # ever visits one period_start per (weekday, hour) pair, so the
+        # inserted item's cell holds its cost and every other cell is 0.
+        day_index = hour.weekday()
+        for day, row in enumerate(heatmap["values"]):
+            for col, value in enumerate(row):
+                if day == day_index and col == hour.hour:
+                    assert value == pytest.approx(1.0, rel=1e-6)
+                else:
+                    assert value == 0.0
 
     def test_platform_reconciliation_balances(
         self, app, org, project, environment, application

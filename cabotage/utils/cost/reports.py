@@ -25,7 +25,6 @@ from cabotage.server.models.cost import (
     CostCollectionRun,
     CostLineItem,
     CostNode,
-    CostRunStats,
 )
 from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.models.resources import Resource
@@ -62,7 +61,6 @@ class BreakdownRow(TypedDict):
     slugs: BreakdownSlugs
     deleted: bool
     meters: list[MeterRow] | None
-    resource_series: dict[str, list[float]] | None
 
 
 class MoverRow(TypedDict):
@@ -70,10 +68,7 @@ class MoverRow(TypedDict):
     name: str
     context: str | None
     cost: float
-    previous_cost: float
     change: float
-    change_pct: float | None
-    slugs: BreakdownSlugs
 
 
 class SeriesBreakdownEntry(TypedDict):
@@ -161,8 +156,6 @@ class FreshnessStats(TypedDict):
     stale: bool
     missing_hours: int
     failed_hours: list[str]
-    currently_failing: bool
-    failing_since: str | None
 
 
 #: A breakdown's raw group-by key: a scope id, or a component/process name.
@@ -306,11 +299,6 @@ STALE_AFTER = datetime.timedelta(hours=2)
 # reporting.
 COLLECTION_GRACE_MINUTES = 10
 
-# Bound on how far back `_freshness` walks hour-by-hour to find the start of
-# an ongoing collection-failure streak, so a years-long outage can't turn
-# into an unbounded per-hour query loop.
-FAILING_STREAK_LOOKBACK_HOURS = 24 * 14
-
 # A custom start/end range charts hourly up to this span, daily beyond it.
 CUSTOM_HOURLY_SPAN = datetime.timedelta(days=3)
 
@@ -360,20 +348,6 @@ class CostScope:
     environment: Environment | None = None
     application: Application | None = None
 
-    @property
-    def name(self) -> str:
-        if self.kind == "platform":
-            return "Platform"
-        if self.kind == "application" and self.application is not None:
-            return self.application.name
-        if self.kind == "environment" and self.environment is not None:
-            return self.environment.name
-        if self.kind == "project" and self.project is not None:
-            return self.project.name
-        if self.organization is None:
-            raise ValueError("Non-platform cost scopes require an organization")
-        return self.organization.name
-
 
 def build_report(
     scope: CostScope,
@@ -389,7 +363,7 @@ def build_report(
 
     if start is not None or end is not None:
         range_start, range_end, interval, label = _resolve_custom_range(
-            start, end, now, first_hour, last_hour
+            start, end, now, first_hour
         )
     else:
         range_start, range_end, interval, label = _resolve_range(range_key, now)
@@ -457,32 +431,27 @@ def build_report(
         raw_keys_by_name[name] = raw_keys
 
     series["breakdowns"] = _series_breakdowns(
-        scope, range_start, range_end, interval, buckets, raw_keys_by_name
+        scope, range_start, range_end, interval, buckets, raw_keys_by_name, breakdowns
     )
 
     for name, rows in breakdowns.items():
         column, category_filter = _BREAKDOWN_DIMENSIONS[name]
         raw_keys = raw_keys_by_name[name]
         top_keys = raw_keys[:TOP_N_BREAKDOWN_SERIES]
-        meters_by_key, resource_series_by_key = _breakdown_detail(
+        meters_by_key = _breakdown_detail(
             scope,
             column,
             category_filter,
             top_keys,
             range_start,
             range_end,
-            interval,
-            buckets,
             rates,
         )
         top_key_set = set(top_keys)
         for row, raw_key in zip(rows, raw_keys, strict=True):
-            if raw_key in top_key_set:
-                row["meters"] = meters_by_key.get(raw_key, [])
-                row["resource_series"] = resource_series_by_key.get(raw_key)
-            else:
-                row["meters"] = None
-                row["resource_series"] = None
+            row["meters"] = (
+                meters_by_key.get(raw_key, []) if raw_key in top_key_set else None
+            )
 
     primary_name = PRIMARY_BREAKDOWN[scope.kind]
     movers = _movers(breakdowns[primary_name])
@@ -514,7 +483,6 @@ def build_report(
         }
 
     return {
-        "scope": {"kind": scope.kind, "name": scope.name},
         "range": {
             "key": range_key,
             "label": label,
@@ -557,12 +525,7 @@ def build_report(
         "breakdowns": breakdowns,
         "freshness": freshness,
         "rates": rates_display,
-        "rates_raw": rates,
         "rates_source": RATES_SOURCE,
-        "extent": {
-            "first_hour": first_hour.isoformat() if first_hour is not None else None,
-            "last_hour": last_hour.isoformat() if last_hour is not None else None,
-        },
         "extent_series": extent_series,
         "calendar": extent_series,
         "heatmap": heatmap,
@@ -620,7 +583,6 @@ def _resolve_custom_range(
     end: datetime.datetime | str | None,
     now: datetime.datetime,
     first_hour: datetime.datetime | None,
-    last_hour: datetime.datetime | None,
 ) -> tuple[datetime.datetime, datetime.datetime, Interval, str]:
     range_start = (
         _parse_range_param(start) if start is not None else (first_hour or now)
@@ -829,6 +791,7 @@ def _series_breakdowns(
     interval: Interval,
     buckets: list[datetime.datetime],
     raw_keys_by_name: dict[str, list[BreakdownKey]],
+    breakdowns: dict[str, list[BreakdownRow]],
 ) -> dict[str, SeriesBreakdownEntry]:
     trunc = _utc_trunc(interval, CostLineItem.period_start)
     result: dict[str, SeriesBreakdownEntry] = {}
@@ -871,10 +834,10 @@ def _series_breakdowns(
             else:
                 other_by_bucket[bucket] += float(row.cost)
 
-        names = _resolve_names(name, top_keys)
+        names = {row["key"]: row["name"] for row in breakdowns[name]}
         result[name] = {
             "keys": [str(key) for key in top_keys],
-            "names": {str(key): names.get(key, str(key)) for key in top_keys},
+            "names": {str(key): names.get(str(key), str(key)) for key in top_keys},
             "values": {
                 str(key): [values_by_key[key][bucket] for bucket in buckets]
                 for key in top_keys
@@ -884,35 +847,6 @@ def _series_breakdowns(
     return result
 
 
-def _resolve_names(
-    breakdown_name: str, keys: list[BreakdownKey]
-) -> dict[BreakdownKey, str]:
-    names: dict[BreakdownKey, str] = {}
-    if breakdown_name == "processes":
-        return {key: str(key) for key in keys}
-    if breakdown_name == "organizations":
-        for key in keys:
-            organization: Organization | None = Organization.query.get(key)
-            names[key] = organization.name if organization is not None else "(deleted)"
-    elif breakdown_name == "projects":
-        for key in keys:
-            project: Project | None = Project.query.get(key)
-            names[key] = project.name if project is not None else "(deleted)"
-    elif breakdown_name == "environments":
-        for key in keys:
-            environment: Environment | None = Environment.query.get(key)
-            names[key] = environment.name if environment is not None else "(deleted)"
-    elif breakdown_name == "applications":
-        for key in keys:
-            application: Application | None = Application.query.get(key)
-            names[key] = application.name if application is not None else "(deleted)"
-    elif breakdown_name == "backing_services":
-        for key in keys:
-            resource: Resource | None = Resource.query.get(key)
-            names[key] = resource.name if resource is not None else "(deleted)"
-    return names
-
-
 def _breakdown_detail(
     scope: CostScope,
     column: InstrumentedAttribute[BreakdownKey | None],
@@ -920,14 +854,10 @@ def _breakdown_detail(
     keys: list[BreakdownKey],
     start: datetime.datetime,
     end: datetime.datetime,
-    interval: Interval,
-    buckets: list[datetime.datetime],
     rates: CostRates,
-) -> tuple[
-    dict[BreakdownKey, list[MeterRow]], dict[BreakdownKey, dict[str, list[float]]]
-]:
+) -> dict[BreakdownKey, list[MeterRow]]:
     if not keys:
-        return {}, {}
+        return {}
 
     totals_query = _scope_filter(
         db.session.query(
@@ -964,36 +894,7 @@ def _breakdown_detail(
             for meter in METER_ORDER
         ]
 
-    trunc = _utc_trunc(interval, CostLineItem.period_start)
-    series_query = _scope_filter(
-        db.session.query(
-            trunc.label("bucket"),
-            column.label("key"),
-            CostLineItem.meter,
-            func.sum(CostLineItem.quantity).label("quantity"),
-        ),
-        scope,
-    ).filter(
-        CostLineItem.period_start >= start,
-        CostLineItem.period_start < end,
-        column.in_(keys),
-    )
-    if category_filter:
-        series_query = series_query.filter(CostLineItem.category.in_(category_filter))
-    series_tmp: defaultdict[
-        BreakdownKey, defaultdict[str, defaultdict[datetime.datetime, float]]
-    ] = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
-    for row in series_query.group_by("bucket", "key", CostLineItem.meter).all():
-        series_tmp[row.key][row.meter][_as_utc(row.bucket)] += float(row.quantity)
-
-    resource_series_by_key: dict[BreakdownKey, dict[str, list[float]]] = {}
-    for key in keys:
-        resource_series_by_key[key] = {
-            meter: [series_tmp[key][meter][bucket] for bucket in buckets]
-            for meter in ("vcpu", "memory", "egress", "storage")
-        }
-
-    return meters_by_key, resource_series_by_key
+    return meters_by_key
 
 
 def _run_rate_hourly(scope: CostScope, now: datetime.datetime) -> float | None:
@@ -1183,7 +1084,6 @@ def _build_rows(
                 "slugs": slugs,
                 "deleted": deleted,
                 "meters": None,
-                "resource_series": None,
             }
         )
         row_costs.append(float(cost))
@@ -1480,19 +1380,13 @@ def _movers(rows: list[BreakdownRow], limit: int = 5) -> list[MoverRow]:
     movers: list[MoverRow] = []
     for row in ranked[:limit]:
         change = row["cost"] - row["previous_cost"]
-        change_pct = (
-            (change / row["previous_cost"] * 100.0) if row["previous_cost"] else None
-        )
         movers.append(
             {
                 "key": row["key"],
                 "name": row["name"],
                 "context": row["context"],
                 "cost": row["cost"],
-                "previous_cost": row["previous_cost"],
                 "change": change,
-                "change_pct": change_pct,
-                "slugs": row["slugs"],
             }
         )
     return movers
@@ -1916,37 +1810,6 @@ def _freshness(
         or (run.stats or {}).get("last_attempt_status") == "failed"
     )
 
-    # Currently-failing streak: starting from the single most recently
-    # attempted hour install-wide (not just within this report's range),
-    # walk back hour by hour while each hour's last recorded attempt also
-    # failed, to find when the ongoing failure started.
-    currently_failing = False
-    failing_since: str | None = None
-    latest_attempt_run: CostCollectionRun | None = (
-        CostCollectionRun.query.filter(
-            CostCollectionRun.stats["last_attempt_at"].isnot(None)
-        )
-        .order_by(CostCollectionRun.stats["last_attempt_at"].astext.desc())
-        .first()
-    )
-    if latest_attempt_run is not None:
-        latest_stats = latest_attempt_run.stats or {}
-        if latest_stats.get("last_attempt_status") == "failed":
-            currently_failing = True
-            failing_since = latest_stats.get("last_attempt_at")
-            cursor = latest_attempt_run.period_start
-            for _ in range(FAILING_STREAK_LOOKBACK_HOURS):
-                prev_hour = cursor - datetime.timedelta(hours=1)
-                prev_run: CostCollectionRun | None = CostCollectionRun.query.filter_by(
-                    period_start=prev_hour
-                ).first()
-                prev_stats: CostRunStats = (prev_run.stats or {}) if prev_run else {}
-                if prev_stats.get("last_attempt_status") != "failed":
-                    break
-                if prev_attempt_at := prev_stats.get("last_attempt_at"):
-                    failing_since = prev_attempt_at
-                cursor = prev_hour
-
     return {
         "collection_enabled": collection_enabled,
         "last_run_at": last_run.started_at.isoformat()
@@ -1956,6 +1819,4 @@ def _freshness(
         "stale": stale,
         "missing_hours": len(missing_hours),
         "failed_hours": [hour.isoformat() for hour in failed_hours],
-        "currently_failing": currently_failing,
-        "failing_since": failing_since,
     }
