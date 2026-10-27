@@ -1276,6 +1276,8 @@
             <span class="status-dot status-dot-success" style="width:6px;height:6px"></span>
           {% elif latest_deployment.error %}
             <span class="status-dot status-dot-error" style="width:6px;height:6px"></span>
+          {% elif latest_deployment.queued %}
+            <span class="status-dot status-dot-neutral" style="width:6px;height:6px"></span>
           {% else %}
             <span class="status-dot status-dot-info status-dot-pulse"
                   style="width:6px;
