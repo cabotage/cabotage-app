@@ -181,6 +181,12 @@ def celery_init_app(app):
             "schedule": crontab(minute="7"),
             "args": None,
         }
+        if app.config.get("COST_AWS_PRICING_ENABLED"):
+            celery_app.conf.beat_schedule["cost-aws-prices"] = {
+                "task": "cabotage.celery.tasks.cost.refresh_aws_prices",
+                "schedule": crontab(minute="37", hour="4"),
+                "args": None,
+            }
     app.extensions["celery"] = celery_app
     return celery_app
 
