@@ -9633,13 +9633,6 @@
       "severity": "error"
     },
     {
-      "column": 18,
-      "path": "cabotage/celery/tasks/deploy.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `deployment` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
       "column": 9,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unused-call-result",

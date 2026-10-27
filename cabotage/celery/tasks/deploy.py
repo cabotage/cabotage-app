@@ -1,8 +1,11 @@
 import logging
 import secrets
+import socket
 import time
+import uuid
 from base64 import b64encode
 from datetime import UTC
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import kubernetes.client
@@ -13,6 +16,7 @@ from flask import current_app
 from kubernetes.client.exceptions import ApiException
 from sqlalchemy.orm.attributes import flag_modified
 
+from cabotage._types import assume_not_none
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
     dispatch_pipeline_notification,
@@ -3450,14 +3454,81 @@ def remove_none(obj):
         return obj
 
 
+_SERVICE_ACCOUNT_NAMESPACE = Path(
+    "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+)
+# How long the reaper waits for the Job's pod to start; deploy_release then
+# keeps the heartbeat alive itself.
+_DEPLOY_JOB_START_TTL = 600
+# envconsul runs trailing arguments instead of its configured command; -once
+# stops it from restarting that command when secrets change.
+_DEPLOY_JOB_ARGS = ("-once", "python", "-m", "cabotage.scripts.deploy")
+
+
+def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
+    """Run the deployment in a Job cloned from this worker, so a rollout that
+    replaces the worker (Cabotage deploying itself) can't kill it midway."""
+    redis_client = get_redis_client(cast(str, current_app.config["CELERY_BROKER_URL"]))
+    refresh_heartbeat(
+        redis_client, "deploy", str(deployment_id), ttl=_DEPLOY_JOB_START_TTL
+    )
+
+    api_client = kubernetes_ext.kubernetes_client
+    namespace = _SERVICE_ACCOUNT_NAMESPACE.read_text().strip()
+    pod = kubernetes.client.CoreV1Api(api_client).read_namespaced_pod(
+        socket.gethostname(), namespace
+    )
+    pod_meta = assume_not_none(pod.metadata, because="pods have metadata")
+    # The owner ReplicaSet is named <deployment>-<pod-template-hash>.
+    replica_set = (pod_meta.owner_references or [])[0].name
+    worker = kubernetes.client.AppsV1Api(api_client).read_namespaced_deployment(
+        replica_set.rsplit("-", 1)[0], namespace
+    )
+
+    template = assume_not_none(worker.spec, because="deployments have a spec").template
+    spec = assume_not_none(template.spec, because="pod templates have a spec")
+    labels = assume_not_none(
+        template.metadata, because="templates have metadata"
+    ).labels
+    # Selectors for the worker process count pods by this label.
+    _ = (labels or {}).pop("process", None)
+    container = spec.containers[0]
+    container.args = [*(container.args or []), *_DEPLOY_JOB_ARGS, str(deployment_id)]
+    container.liveness_probe = None
+    container.readiness_probe = None
+    container.startup_probe = None
+    spec.restart_policy = "Never"
+
+    job = kubernetes.client.V1Job(
+        metadata=kubernetes.client.V1ObjectMeta(name=f"deploy-{deployment_id}"),
+        spec=kubernetes.client.V1JobSpec(
+            template=template, backoff_limit=0, ttl_seconds_after_finished=86400
+        ),
+    )
+    try:
+        _ = kubernetes.client.BatchV1Api(api_client).create_namespaced_job(
+            namespace, job
+        )
+    except ApiException as exc:
+        if exc.status != 409:  # 409: a redelivered task already submitted it
+            raise
+
+
 @shared_task(acks_late=True)
-def run_deploy(deployment_id=None):
-    deployment = Deployment.query.filter_by(id=deployment_id).first()
+def run_deploy(deployment_id: uuid.UUID | str) -> None:
+    if kubernetes_ext.in_cluster:
+        _submit_deploy_job(deployment_id)
+    else:
+        execute_deployment(deployment_id)
+
+
+def execute_deployment(deployment_id: uuid.UUID | str) -> None:
+    deployment: Deployment | None = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
         raise KeyError(f"Deployment with ID {deployment_id} not found!")
     error_detail = ""
     try:
-        deploy_release(deployment)
+        _ = deploy_release(deployment)
     except DeployError as exc:
         error_detail = str(exc)
         print(error_detail)

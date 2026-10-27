@@ -9,14 +9,16 @@ if TYPE_CHECKING:
 
 
 class Kubernetes:
-    def __init__(self, app: Flask | None = None):
+    def __init__(self, app: Flask | None = None) -> None:
         self.app = app
+        self.in_cluster: bool = False
         if app is not None:
             self.init_app(app)
 
-    def init_app(self, app: Flask):
+    def init_app(self, app: Flask) -> None:
         try:
             kubernetes.config.load_incluster_config()
+            self.in_cluster = True
         except Exception:
             try:
                 # FIXME: Remove once "typed config" is implemented
