@@ -170,6 +170,11 @@
       <a href="{{ url_for('user.infra_pipeline') }}"
          title="Pipeline"
          class="tab-item {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} <span class="tab-label">Pipeline</span></a>
+      {% if config.SHOW_COST_ESTIMATES %}
+      <a href="{{ url_for('cost.platform_cost') }}"
+         title="Cost"
+         class="tab-item {% if active == 'cost' %}tab-active{% endif %}">{{ icon('dollar-sign', 'w-4 h-4') }} <span class="tab-label">Cost</span></a>
+      {% endif %}
     </div>
   </div>
 {% endmacro %}
@@ -345,21 +350,6 @@
     </div>
   </div>
   <script>document.addEventListener('keydown',function(e){if(e.key==='Escape')document.activeElement.blur()})</script>
-{% endmacro %}
-
-{% macro infra_tab_nav(active='') %}
-  <div class="app-content-padded !py-0">
-    <div class="tab-bar" data-tabs>
-      <a href="{{ url_for('user.infra_observe') }}"
-         title="Observe"
-         class="tab-item {% if active == 'observe' %}tab-active{% endif %}">{{ icon('search', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
-      {% if config.SHOW_COST_ESTIMATES %}
-      <a href="{{ url_for('cost.platform_cost') }}"
-         title="Cost"
-         class="tab-item {% if active == 'cost' %}tab-active{% endif %}">{{ icon('dollar-sign', 'w-4 h-4') }} <span class="tab-label">Cost</span></a>
-      {% endif %}
-    </div>
-  </div>
 {% endmacro %}
 
 {% macro release_changes(rel, img=none, org_slug='', project_slug='', app_slug='', change_details=none) %}
