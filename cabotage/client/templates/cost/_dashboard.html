@@ -908,8 +908,8 @@
         var idle = Math.max(0, totalReq - totalUse);
         callout.style.display = 'block';
         callout.textContent = idle > 0.01
-          ? fmtMoney(idle) + ' of reserved capacity went unused this range — right-size requests to close the gap.'
-          : 'Usage tracked requests closely this range — little idle spend.';
+          ? fmtMoney(idle) + ' of reserved capacity went unused in this period. Review your workload sizes and replica counts.'
+          : 'Your workloads used nearly all their reserved capacity in this period.';
       } else { series = []; callout.style.display = 'none'; }
     } else {
       document.getElementById('efficiency-callout').style.display = 'none';
@@ -2050,7 +2050,7 @@
           '. ' + esc(source.basis || '') + '</p>';
       }
     }
-    html += '<p class="cost-rates-note">Each pod is billed at <code>max(request, usage)</code> per resource for every hour. Cluster overhead ' +
+    html += '<p class="cost-rates-note">For each hour, CPU and memory costs use whichever is higher: the capacity reserved for your workload or what it actually used. Cluster overhead ' +
       '(control plane, NAT, load balancers, and compute not directly attributable to a workload) is split across organizations, projects, ' +
       'environments and applications in proportion to their direct compute cost. These are estimates, not an invoice.</p>';
     panel.innerHTML = html;
