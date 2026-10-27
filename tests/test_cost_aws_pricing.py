@@ -256,6 +256,23 @@ class TestEffectiveRates:
         assert enabled["egress_gb"] == pytest.approx(0.07)
         assert enabled["storage_gib_month"] == pytest.approx(0.1)
 
+    def test_family_override_beats_snapshot_instance_price(self, app):
+        db.session.add(
+            CostPriceSnapshot(
+                fetched_at=datetime.datetime.now(datetime.UTC),
+                region=REGION,
+                rates={"node_instance_hourly": {"m8g.xlarge": 0.2, "c8g.xlarge": 0.15}},
+            )
+        )
+        db.session.commit()
+        app.config["COST_AWS_PRICING_ENABLED"] = True
+        app.config["COST_RATES"] = {"node_family_xlarge_hourly": {"m8g": 0.12}}
+
+        rates = effective_rates()
+
+        assert node_hourly_price("m8g.xlarge", rates) == pytest.approx(0.12)
+        assert node_hourly_price("c8g.xlarge", rates) == pytest.approx(0.15)
+
 
 @pytest.mark.usefixtures("clean_pricing")
 class TestRefreshPrices:

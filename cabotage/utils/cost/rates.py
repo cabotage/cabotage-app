@@ -155,6 +155,15 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
         )
     overrides = cast(dict[str, object], overrides_raw)
     _validate_overrides(overrides)
+    family_overrides = overrides.get("node_family_xlarge_hourly")
+    if isinstance(family_overrides, dict) and "node_instance_hourly" in rates:
+        snapshot_prices = cast(dict[str, float], rates["node_instance_hourly"])
+        # A family override beats the snapshot's list price for that family.
+        rates["node_instance_hourly"] = {
+            instance_type: price
+            for instance_type, price in snapshot_prices.items()
+            if instance_type.partition(".")[0] not in family_overrides
+        }
     _merge_into(rates, overrides)
     return cast(CostRates, rates)
 
