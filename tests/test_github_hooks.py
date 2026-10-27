@@ -482,6 +482,31 @@ class TestAllRequiredChecksPassed:
             is False
         )
 
+    @pytest.mark.parametrize("conclusion", ["skipped", "neutral"])
+    @patch("cabotage.celery.tasks.github.github_session")
+    def test_skipped_and_neutral_check_runs_pass(self, mock_session, app, conclusion):
+        check_runs_resp = MagicMock()
+        check_runs_resp.raise_for_status = MagicMock()
+        check_runs_resp.json.return_value = {
+            "check_runs": [
+                {"name": "Tests", "conclusion": "success"},
+                {"name": "clabot", "conclusion": conclusion},
+            ]
+        }
+        status_resp = MagicMock()
+        status_resp.raise_for_status = MagicMock()
+        status_resp.json.return_value = {"statuses": []}
+        mock_session.get.side_effect = [check_runs_resp, status_resp]
+
+        from cabotage.celery.tasks.github import _all_required_checks_passed
+
+        assert (
+            _all_required_checks_passed(
+                {"token": "t"}, REPO, COMMIT_SHA, ["Tests", "clabot"]
+            )
+            is True
+        )
+
     @patch("cabotage.celery.tasks.github.github_session")
     def test_pending_check_run_returns_false(self, mock_session, app):
         check_runs_resp = MagicMock()
