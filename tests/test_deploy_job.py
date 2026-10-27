@@ -20,6 +20,7 @@ WORKER_ARGS = ["envconsul", "-config=/etc/cabotage/envconsul-worker.hcl"]
 class Cluster:
     apps: MagicMock
     batch: MagicMock
+    core: MagicMock
     deploy_release: MagicMock
     deployment: SimpleNamespace
     refresh_heartbeat: MagicMock
@@ -29,7 +30,15 @@ class Cluster:
 def cluster(tmp_path: Path) -> Iterator[Cluster]:
     namespace_file = tmp_path / "namespace"
     _ = namespace_file.write_text("cabotage\n")
-    deployment = SimpleNamespace(id=DEPLOYMENT_ID, complete=False, error=False)
+    deployment = SimpleNamespace(
+        id=DEPLOYMENT_ID,
+        application_environment=SimpleNamespace(effective_deployment_timeout=300),
+        release_object=SimpleNamespace(
+            release_commands=["release"], postdeploy_commands=[]
+        ),
+        complete=False,
+        error=False,
+    )
     core = MagicMock()
     core.read_namespaced_pod.return_value = kubernetes.client.V1Pod(
         metadata=kubernetes.client.V1ObjectMeta(
@@ -44,12 +53,16 @@ def cluster(tmp_path: Path) -> Iterator[Cluster]:
         )
     )
     apps = MagicMock()
-    apps.read_namespaced_deployment.return_value = kubernetes.client.V1Deployment(
-        spec=kubernetes.client.V1DeploymentSpec(
+    apps.read_namespaced_replica_set.return_value = kubernetes.client.V1ReplicaSet(
+        spec=kubernetes.client.V1ReplicaSetSpec(
             selector=kubernetes.client.V1LabelSelector(),
             template=kubernetes.client.V1PodTemplateSpec(
                 metadata=kubernetes.client.V1ObjectMeta(
-                    labels={"app": "cabotage-app", "process": "worker"}
+                    labels={
+                        "app": "cabotage-app",
+                        "process": "worker",
+                        "pod-template-hash": "7ccccd8887",
+                    }
                 ),
                 spec=kubernetes.client.V1PodSpec(
                     containers=[
@@ -69,6 +82,7 @@ def cluster(tmp_path: Path) -> Iterator[Cluster]:
         patch.object(deploy_module, "_SERVICE_ACCOUNT_NAMESPACE", namespace_file),
         patch.object(deploy_module, "kubernetes_ext") as kubernetes_ext,
         patch.object(deploy_module, "Deployment") as model,
+        patch.object(deploy_module, "db"),
         patch.object(deploy_module, "get_redis_client"),
         patch.object(deploy_module, "refresh_heartbeat") as refresh_heartbeat,
         patch.object(deploy_module, "deploy_release") as deploy_release,
@@ -81,30 +95,34 @@ def cluster(tmp_path: Path) -> Iterator[Cluster]:
         yield Cluster(
             apps=apps,
             batch=batch,
+            core=core,
             deploy_release=deploy_release,
             deployment=deployment,
             refresh_heartbeat=refresh_heartbeat,
         )
 
 
-def test_in_cluster_deploy_runs_in_a_job_from_the_worker_template(
+def test_in_cluster_deploy_runs_in_a_job_from_the_worker_replica_set(
     cluster: Cluster,
 ) -> None:
     deploy_module.run_deploy(deployment_id=DEPLOYMENT_ID)
 
     cluster.deploy_release.assert_not_called()
-    cluster.apps.read_namespaced_deployment.assert_called_once_with(
-        "cabotage-app-worker", "cabotage"
+    cluster.apps.read_namespaced_replica_set.assert_called_once_with(
+        "cabotage-app-worker-7ccccd8887", "cabotage"
     )
+    cluster.apps.read_namespaced_deployment.assert_not_called()
     namespace, job = cluster.batch.create_namespaced_job.call_args.args
     assert namespace == "cabotage"
     assert isinstance(job, kubernetes.client.V1Job)
     assert job.metadata is not None and job.spec is not None
     assert job.metadata.name == f"deploy-{DEPLOYMENT_ID}"
     assert job.spec.backoff_limit == 0
+    # start window + deploy timeout + heartbeat slack + one release command
+    assert job.spec.active_deadline_seconds == 600 + 300 + 90 + 1800
     pod = job.spec.template
     assert pod.metadata is not None and pod.spec is not None
-    assert pod.metadata.labels == {"app": "cabotage-app"}
+    assert pod.metadata.labels == {"app": "cabotage-app", "process": "deploy"}
     assert pod.spec.restart_policy == "Never"
     container = pod.spec.containers[0]
     assert container.args == [
@@ -121,7 +139,7 @@ def test_in_cluster_deploy_runs_in_a_job_from_the_worker_template(
 def test_worker_without_envconsul_runs_the_deploy_as_the_command(
     cluster: Cluster,
 ) -> None:
-    worker = cluster.apps.read_namespaced_deployment.return_value
+    worker = cluster.apps.read_namespaced_replica_set.return_value
     worker_container = worker.spec.template.spec.containers[0]
     worker_container.command = ["celery"]
     worker_container.args = ["-A", "cabotage.celery.worker.celery_app", "worker"]
@@ -155,6 +173,15 @@ def test_job_submission_errors_are_raised(cluster: Cluster) -> None:
 def test_outside_the_cluster_deploys_inline(cluster: Cluster) -> None:
     with patch.object(deploy_module.kubernetes_ext, "in_cluster", False):
         deploy_module.run_deploy(deployment_id=DEPLOYMENT_ID)
+
+    cluster.deploy_release.assert_called_once()
+    cluster.batch.create_namespaced_job.assert_not_called()
+
+
+def test_worker_without_replica_set_owner_deploys_inline(cluster: Cluster) -> None:
+    cluster.core.read_namespaced_pod.return_value.metadata.owner_references = None
+
+    deploy_module.run_deploy(deployment_id=DEPLOYMENT_ID)
 
     cluster.deploy_release.assert_called_once()
     cluster.batch.create_namespaced_job.assert_not_called()

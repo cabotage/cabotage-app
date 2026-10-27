@@ -2268,6 +2268,9 @@ def resize_deployment(namespace, release, process_name, pod_class_name):
     apps_api_instance.patch_namespaced_deployment(deployment_name, namespace, patch)
 
 
+_RELEASE_JOB_DEADLINE = 1800
+
+
 def render_job(namespace, release, service_account_name, process_name, job_id):
     label_value = k8s_label_value(release)
     safe_labels = _safe_labels_from_release(release)
@@ -2288,7 +2291,7 @@ def render_job(namespace, release, service_account_name, process_name, job_id):
             },
         ),
         spec=kubernetes.client.V1JobSpec(
-            active_deadline_seconds=1800,
+            active_deadline_seconds=_RELEASE_JOB_DEADLINE,
             backoff_limit=0,
             parallelism=1,
             template=kubernetes.client.V1PodTemplateSpec(
@@ -3489,9 +3492,43 @@ _DEPLOY_JOB_START_TTL = 600
 _DEPLOY_JOB_COMMAND = ("python", "-m", "cabotage.scripts.deploy")
 
 
-def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
+def _submit_deploy_job(deployment_id: uuid.UUID | str) -> bool:
     """Run the deployment in a Job cloned from this worker, so a rollout that
-    replaces the worker (Cabotage deploying itself) can't kill it midway."""
+    replaces the worker (Cabotage deploying itself) can't kill it midway.
+
+    Returns False when this worker isn't managed by a ReplicaSet and the
+    deployment should run inline instead."""
+    deployment: Deployment | None = Deployment.query.filter_by(id=deployment_id).first()
+    if deployment is None:
+        raise KeyError(f"Deployment with ID {deployment_id} not found!")
+    release = deployment.release_object
+    job_commands = (
+        len(release.release_commands) + len(release.postdeploy_commands)
+        if release is not None
+        else 0
+    )
+    deadline = (
+        _DEPLOY_JOB_START_TTL
+        + deployment.application_environment.effective_deployment_timeout
+        + _HEARTBEAT_TTL
+        + job_commands * _RELEASE_JOB_DEADLINE
+    )
+    db.session.commit()
+
+    api_client = kubernetes_ext.kubernetes_client
+    namespace = _SERVICE_ACCOUNT_NAMESPACE.read_text().strip()
+    pod = kubernetes.client.CoreV1Api(api_client).read_namespaced_pod(
+        socket.gethostname(), namespace
+    )
+    pod_meta = assume_not_none(pod.metadata, because="pods have metadata")
+    replica_set = next(
+        (o.name for o in pod_meta.owner_references or [] if o.kind == "ReplicaSet"),
+        None,
+    )
+    if replica_set is None:
+        log.warning("Worker pod has no ReplicaSet owner, deploying inline")
+        return False
+
     try:
         redis_client = get_redis_client(
             cast(str, current_app.config["CELERY_BROKER_URL"])
@@ -3502,25 +3539,24 @@ def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
     except Exception:
         log.warning("Failed to send deploy heartbeat to redis", exc_info=True)
 
-    api_client = kubernetes_ext.kubernetes_client
-    namespace = _SERVICE_ACCOUNT_NAMESPACE.read_text().strip()
-    pod = kubernetes.client.CoreV1Api(api_client).read_namespaced_pod(
-        socket.gethostname(), namespace
+    # Clone this worker's own ReplicaSet, not the Deployment: a failed rollout
+    # leaves the Deployment template on the broken release.
+    owner = kubernetes.client.AppsV1Api(api_client).read_namespaced_replica_set(
+        replica_set, namespace
     )
-    pod_meta = assume_not_none(pod.metadata, because="pods have metadata")
-    # The owner ReplicaSet is named <deployment>-<pod-template-hash>.
-    replica_set = (pod_meta.owner_references or [])[0].name
-    worker = kubernetes.client.AppsV1Api(api_client).read_namespaced_deployment(
-        replica_set.rsplit("-", 1)[0], namespace
+    template = assume_not_none(
+        assume_not_none(owner.spec, because="replica sets have a spec").template,
+        because="a Deployment's replica sets have a pod template",
     )
-
-    template = assume_not_none(worker.spec, because="deployments have a spec").template
     spec = assume_not_none(template.spec, because="pod templates have a spec")
-    labels = assume_not_none(
+    template_meta = assume_not_none(
         template.metadata, because="templates have metadata"
-    ).labels
-    # Selectors for the worker process count pods by this label.
-    _ = (labels or {}).pop("process", None)
+    )
+    labels = template_meta.labels or {}
+    # Keep the Job pod out of the worker's ReplicaSet and process counts.
+    _ = labels.pop("pod-template-hash", None)
+    labels["process"] = "deploy"
+    template_meta.labels = labels
     container = spec.containers[0]
     deploy_command = [*_DEPLOY_JOB_COMMAND, str(deployment_id)]
     if container.args and container.args[0] == "envconsul":
@@ -3541,7 +3577,10 @@ def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
     job = kubernetes.client.V1Job(
         metadata=kubernetes.client.V1ObjectMeta(name=f"deploy-{deployment_id}"),
         spec=kubernetes.client.V1JobSpec(
-            template=template, backoff_limit=0, ttl_seconds_after_finished=86400
+            template=template,
+            backoff_limit=0,
+            active_deadline_seconds=deadline,
+            ttl_seconds_after_finished=86400,
         ),
     )
     try:
@@ -3551,14 +3590,14 @@ def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
     except ApiException as exc:
         if exc.status != 409:  # 409: a redelivered task already submitted it
             raise
+    return True
 
 
 @shared_task(acks_late=True)
 def run_deploy(deployment_id: uuid.UUID | str) -> None:
-    if kubernetes_ext.in_cluster:
-        _submit_deploy_job(deployment_id)
-    else:
-        execute_deployment(deployment_id)
+    if kubernetes_ext.in_cluster and _submit_deploy_job(deployment_id):
+        return
+    execute_deployment(deployment_id)
 
 
 def execute_deployment(deployment_id: uuid.UUID | str) -> None:
