@@ -2,7 +2,7 @@
 
 import datetime
 import uuid
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 import sqlalchemy as sa
@@ -278,7 +278,36 @@ class TestReaper:
         db_session.refresh(queued)
         assert stuck.error
         assert queued.started_at is not None
-        run_deploy_task.assert_called_once_with(deployment_id=queued.id)
+        assert call(deployment_id=queued.id) in run_deploy_task.call_args_list
+
+    def test_idle_queue_is_restarted(self, db_session, app_env, run_deploy_task):
+        # Promotion was lost: queued deployments, nothing running.
+        first = _deployment(db_session, app_env)
+        second = _deployment(db_session, app_env)
+
+        self._reap([])
+
+        db_session.refresh(first)
+        db_session.refresh(second)
+        assert first.started_at is not None
+        assert second.queued
+        assert call(deployment_id=first.id) in run_deploy_task.call_args_list
+
+    def test_idle_queue_left_alone_without_kubernetes(
+        self, app, db_session, app_env, run_deploy_task
+    ):
+        # Without Kubernetes, deployments run synchronously before completing.
+        in_flight = _deployment(db_session, app_env)
+
+        with patch.dict(app.config, {"KUBERNETES_ENABLED": False}):
+            self._reap([])
+
+        db_session.refresh(in_flight)
+        assert in_flight.queued
+        assert call(deployment_id=in_flight.id) not in run_deploy_task.call_args_list
+        # Don't leave an idle queue behind for later reaper sweeps.
+        in_flight.complete = True
+        db_session.commit()
 
     def test_live_task_without_heartbeat_is_not_reaped(
         self, db_session, app_env, run_deploy_task
@@ -293,7 +322,7 @@ class TestReaper:
             db_session.refresh(deployment)
             assert not deployment.error
             assert db_session.get(Deployment, queued_id).queued
-            run_deploy_task.assert_not_called()
+            assert call(deployment_id=queued_id) not in run_deploy_task.call_args_list
 
         with patch(
             "cabotage.celery.tasks.deploy.deploy_release", side_effect=reap_mid_deploy

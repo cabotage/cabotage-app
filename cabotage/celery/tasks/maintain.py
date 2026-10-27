@@ -1,8 +1,8 @@
 import datetime
 import logging
-import uuid
 
 import kubernetes.client
+import sqlalchemy as sa
 from celery import shared_task
 from flask import current_app
 
@@ -189,7 +189,6 @@ def reap_stale_builds() -> None:
         Deployment.error.is_(False),
         Deployment.updated < cutoff,
     ).all()
-    reaped_app_env_ids = set[uuid.UUID]()
     for deployment in stuck_deployments:
         key = heartbeat_key("deploy", str(deployment.id))
         if not redis_client.exists(key) and try_deploy_execution_lock(
@@ -197,7 +196,6 @@ def reap_stale_builds() -> None:
         ):
             deployment.error = True
             deployment.error_detail = "Reaped: deploy timed out with no progress"
-            reaped_app_env_ids.add(deployment.application_environment_id)
             if deployment.job_id:
                 try:
                     log_key = stream_key("deploy", deployment.job_id)
@@ -234,8 +232,20 @@ def reap_stale_builds() -> None:
 
     db.session.commit()
 
-    for application_environment_id in reaped_app_env_ids:
-        start_next_deployment(application_environment_id)
+    # Kick any environment that has deploys waiting; start_next_deployment
+    # does nothing if one is already running there.
+    if current_app.config["KUBERNETES_ENABLED"]:
+        queued_app_env_ids = db.session.scalars(
+            sa.select(Deployment.application_environment_id)
+            .where(
+                Deployment.started_at.is_(None),
+                Deployment.complete.is_(False),
+                Deployment.error.is_(False),
+            )
+            .distinct()
+        ).all()
+        for application_environment_id in queued_app_env_ids:
+            start_next_deployment(application_environment_id)
 
 
 @shared_task()
