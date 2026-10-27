@@ -10,7 +10,7 @@ import bisect
 import datetime
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, cast
 
@@ -274,6 +274,31 @@ def _rate_for_meter_optional(rates: CostRates, meter: str) -> float | None:
     return _simple_rates(rates).get(rate_key) if rate_key else None
 
 
+def _meter_rows(
+    rates: CostRates, totals: Mapping[str, tuple[float, float]]
+) -> list[MeterRow]:
+    rows: list[MeterRow] = []
+    for meter in METER_ORDER:
+        quantity, cost = totals.get(meter, (0.0, 0.0))
+        # Storage cost includes IOPS and throughput, so show cost per GiB-mo.
+        rate = (
+            cost / quantity
+            if meter == "storage" and quantity
+            else _rate_for_meter_optional(rates, meter)
+        )
+        rows.append(
+            {
+                "key": meter,
+                "label": METER_LABELS[meter],
+                "unit": METER_UNITS[meter],
+                "quantity": quantity,
+                "rate": rate,
+                "cost": cost,
+            }
+        )
+    return rows
+
+
 class _RangeConfig(TypedDict):
     duration: datetime.timedelta
     interval: Interval
@@ -524,17 +549,7 @@ def build_report(
             }
             for category in CATEGORY_ORDER
         ],
-        "meters": [
-            {
-                "key": meter,
-                "label": METER_LABELS[meter],
-                "unit": METER_UNITS[meter],
-                "quantity": meters.get(meter, (0.0, 0.0))[0],
-                "rate": _rate_for_meter_optional(rates, meter),
-                "cost": meters.get(meter, (0.0, 0.0))[1],
-            }
-            for meter in METER_ORDER
-        ],
+        "meters": _meter_rows(rates, meters),
         "series": series,
         "breakdowns": breakdowns,
         "freshness": freshness,
@@ -902,17 +917,7 @@ def _breakdown_detail(
 
     meters_by_key: dict[BreakdownKey, list[MeterRow]] = {}
     for key in keys:
-        meters_by_key[key] = [
-            {
-                "key": meter,
-                "label": METER_LABELS[meter],
-                "unit": METER_UNITS[meter],
-                "quantity": totals_by_key[key].get(meter, (0.0, 0.0))[0],
-                "rate": _rate_for_meter_optional(rates, meter),
-                "cost": totals_by_key[key].get(meter, (0.0, 0.0))[1],
-            }
-            for meter in METER_ORDER
-        ]
+        meters_by_key[key] = _meter_rows(rates, totals_by_key[key])
 
     return meters_by_key
 
