@@ -78,7 +78,7 @@ def _parse_procfile_line(line: str) -> tuple[str, str, list[tuple[str, str]]]:
     line = line.strip()
     match = _PROCFILE_LINE.match(line)
     if match is None:
-        raise ValueError('Invalid profile line "%s".' % line)
+        raise ValueError(f'Invalid procfile line "{line}".')
     parts = match.groupdict()
     environment = parts["environment"]
     return (
@@ -106,8 +106,7 @@ def loads(content: str) -> Procfile:
     duplicates = _find_duplicates(((i, line[0]) for i, line in lines))
     for i, process_type, j in duplicates:
         errors.append(
-            'Line %d: duplicate process type "%s": already appears on line %d.'
-            % (i + 1, process_type, j + 1)
+            f'Line {i + 1}: duplicate process type "{process_type}": already appears on line {j + 1}.'
         )
     # Reject commands with duplicate variables (no sane default).
     for i, line in lines:
@@ -115,8 +114,7 @@ def loads(content: str) -> Procfile:
         duplicates = _find_duplicates((0, var[0]) for var in env)
         for _, variable, _ in duplicates:
             errors.append(
-                'Line %d: duplicate variable "%s" for process type "%s".'
-                % (i + 1, variable, process_type)
+                f'Line {i + 1}: duplicate variable "{variable}" for process type "{process_type}".'
             )
     # Done!
     if errors:

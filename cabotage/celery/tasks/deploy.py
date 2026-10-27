@@ -1632,8 +1632,10 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
                 command=[
                     "sh",
                     "-c",
-                    "test -f /var/run/secrets/vault/vault-token && "
-                    "test -f /var/run/secrets/vault/consul-token",
+                    (
+                        "test -f /var/run/secrets/vault/vault-token && "
+                        "test -f /var/run/secrets/vault/consul-token"
+                    ),
                 ],
             ),
             period_seconds=1,
@@ -1741,6 +1743,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             "--timed-reload=300s",
             "--shutdown-timeout=10s",
             "--connect-timeout=10s",
+            "--max-concurrent-conns=400",
             "--disable-authentication",
             "--quiet=handshake-errs",
             "--quiet=conns",
@@ -1759,11 +1762,11 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         readiness_probe=readiness_probe,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
-                "memory": "128Mi",
+                "memory": "256Mi",
                 "cpu": "100m",
             },
             requests={
-                "memory": "64Mi",
+                "memory": "128Mi",
                 "cpu": "20m",
             },
         ),
@@ -1816,6 +1819,8 @@ def render_process_container(
         args=[
             "envconsul",
             "-kill-signal=SIGTERM",
+            # The supervisor's kill signal does not set the child's kill signal.
+            "-exec-kill-signal=SIGTERM",
             f"-config=/etc/cabotage/envconsul-{process_name}.hcl",
         ],
         resources=kubernetes.client.V1ResourceRequirements(

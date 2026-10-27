@@ -1,0 +1,23 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import resource_path, infra_tab_nav %}
+
+{% block title %}Platform Cost - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ resource_path([
+    {'label': 'Infrastructure'},
+    {'label': 'Cost'}
+  ]) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ infra_tab_nav('cost') }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% set data_url = url_for('cost.platform_cost_data') %}
+  {% set scope_kind = 'platform' %}
+  {% set dashboard_title = 'Platform Cost' %}
+  {% set dashboard_subtitle = 'All organizations' %}
+  {% include "cost/_dashboard.html" %}
+{% endblock content %}

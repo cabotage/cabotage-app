@@ -1,0 +1,2303 @@
+{#
+  Shared cost dashboard body. Each including template sets `data_url` before including this.
+  Expects: data_url (str), dashboard_title (str), dashboard_subtitle (str)
+#}
+<link rel="stylesheet" href="https://unpkg.com/uplot@1.6.31/dist/uPlot.min.css" integrity="sha384-IfV0B7MIOYuO95kO9G5ySKPz/85zqFNOAs8iy4tkK5zd9izhJAB8b7lHrwYqqmYE" crossorigin="anonymous">
+<script src="https://unpkg.com/uplot@1.6.31/dist/uPlot.iife.min.js" integrity="sha384-XMP23k7YSCFr13Xrkxh4IO0v1W+8fB6AP+3Vycxphp2Z0V2vocAZHyuGaFCysrtM" crossorigin="anonymous"></script>
+
+<style>
+.cost {
+  --cost-compute: var(--color-info);
+  --cost-backing: oklch(0.58 0.1 195);
+  --cost-storage: var(--color-success);
+  --cost-egress: var(--color-warning);
+  --cost-build: oklch(0.5 0.1 55);
+  --cost-overhead: var(--text-faint);
+  --cost-up: var(--color-error, #dc2626);
+  --cost-down: var(--color-success, #16a34a);
+  --cost-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+/* Terminal is green-on-black; a mono-green ramp would make every category look the same, so
+   give it its own distinguishable multi-hue set instead of mixing with base-content/accent. */
+[data-theme='terminal'] .cost {
+  --cost-compute: #33ff33;
+  --cost-backing: #33ffc8;
+  --cost-storage: #c8ff33;
+  --cost-egress: #ffcc33;
+  --cost-build: #33ccff;
+  --cost-overhead: rgba(51, 255, 51, 0.45);
+}
+/* Color-blind safe themes: Okabe–Ito palette (distinguishable under protanopia/deuteranopia/
+   tritanopia). JS also overlays a hatch pattern per category so hue is never the only cue. */
+[data-theme='cb-protanopia'] .cost,
+[data-theme='cb-deuteranopia'] .cost,
+[data-theme='cb-tritanopia'] .cost {
+  --cost-compute: #0072b2;
+  --cost-backing: #e69f00;
+  --cost-storage: #009e73;
+  --cost-egress: #d55e00;
+  --cost-build: #cc79a7;
+  --cost-overhead: #8a8a8a;
+}
+.cost .num { font-family: var(--cost-mono); font-variant-numeric: tabular-nums; }
+.cost-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; }
+.cost-label { font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-faint); }
+.cost-section-title { font-size: 0.8125rem; font-weight: 600; color: var(--text-bright); }
+.cost-note { padding: 1.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--text-muted); }
+.cost ::selection { background: color-mix(in srgb, var(--color-primary) 35%, transparent); }
+
+/* ── Header ── */
+.cost-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 0.75rem 1rem; margin-bottom: 0.875rem; }
+.cost-head-tools { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; margin-left: auto; }
+.cost-pill { display: inline-flex; align-items: center; gap: 0.375rem; height: 1.625rem; padding: 0 0.625rem; border-radius: 9999px;
+  font-size: 0.75rem; white-space: nowrap; background: var(--surface-inset); color: var(--text-muted); border: 1px solid var(--border-color); }
+.cost-pill.is-stale { background: color-mix(in oklch, var(--color-warning, oklch(0.8 0.15 85)) 12%, transparent);
+  color: var(--color-warning, oklch(0.8 0.15 85)); border-color: color-mix(in oklch, var(--color-warning, oklch(0.8 0.15 85)) 30%, transparent); }
+
+/* Range nav: ‹ label ▾ › */
+.cost-rangenav { display: inline-flex; align-items: center; gap: 2px; background: var(--surface-inset); border: 1px solid var(--border-color);
+  border-radius: 0.5rem; padding: 2px; position: relative; }
+.cost-rangenav button { display: inline-flex; align-items: center; gap: 0.25rem; height: 1.75rem; padding: 0 0.5rem; border-radius: 0.375rem;
+  font-size: 0.75rem; font-weight: 500; color: var(--text-muted); }
+.cost-rangenav button:hover { color: var(--text-bright); background: var(--hover-overlay); }
+.cost-rangenav .cost-rangenav-label { color: var(--text-bright); padding: 0 0.625rem; font-weight: 600; }
+.cost-rangenav button:disabled { opacity: 0.3; pointer-events: none; }
+.cost-rangepop { display: none; position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; width: 15rem;
+  background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.625rem; padding: 0.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+.cost-rangepop.is-open { display: block; }
+.cost-rangepop-presets { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.25rem; margin-bottom: 0.5rem; }
+.cost-rangepop-presets button { height: 1.75rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500; color: var(--text-muted); background: var(--surface-inset); }
+.cost-rangepop-presets button:hover { color: var(--text-bright); background: var(--hover-overlay-strong); }
+.cost-rangepop-presets button.is-active { background: var(--color-primary); color: var(--color-primary-content, #fff); }
+.cost-rangepop-custom { display: flex; flex-direction: column; gap: 0.375rem; border-top: 1px solid var(--border-color-subtle); padding-top: 0.5rem; }
+.cost-rangepop-custom label { font-size: 0.6875rem; color: var(--text-faint); display: flex; flex-direction: column; gap: 0.125rem; }
+.cost-rangepop-custom input { background: var(--surface-inset); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 0.25rem 0.4rem; font-size: 0.75rem; color: var(--text-bright); }
+.cost-rangepop-custom .btn { margin-top: 0.125rem; }
+
+/* ── Explorer ── */
+.cost-explorer { padding: 0.625rem 0.875rem 0.5rem; margin-bottom: 0.875rem; }
+.cost-explorer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem; }
+.cost-explorer-plot { height: 56px; position: relative; }
+.cost-explorer-band { position: absolute; top: 0; bottom: 0; border-left: 1.5px solid var(--color-primary); border-right: 1.5px solid var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent); pointer-events: none; z-index: 4; display: none; }
+.cost-explorer-dim { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--surface-card) 55%, transparent); pointer-events: none; z-index: 3; display: none; }
+.cost-explorer .u-select { background: color-mix(in srgb, var(--color-primary) 16%, transparent) !important;
+  box-shadow: inset 1px 0 0 var(--color-primary), inset -1px 0 0 var(--color-primary) !important; }
+.cost-explorer .u-over { cursor: crosshair; }
+.cost-explorer .u-cursor-x, .cost-explorer .u-cursor-y { display: none; }
+
+/* ── Layout grid ── */
+.cost-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 0.875rem; margin-bottom: 0.875rem; align-items: stretch; }
+@media (max-width: 920px) { .cost-grid { grid-template-columns: 1fr; } }
+
+/* ── Hero / main chart card ── */
+.cost-hero { padding: 1rem 1.125rem 0.75rem; }
+.cost-hero-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem 1rem; margin-bottom: 0.75rem; }
+.cost-hero-total { font-size: 1.875rem; font-weight: 700; line-height: 1; color: var(--text-bright); }
+.cost-hero-totalrow { display: flex; align-items: baseline; gap: 0.625rem; flex-wrap: wrap; }
+.cost-delta-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+.cost-delta-chip.is-up { background: color-mix(in srgb, var(--cost-up) 14%, transparent); color: var(--cost-up); }
+.cost-delta-chip.is-down { background: color-mix(in srgb, var(--cost-down) 14%, transparent); color: var(--cost-down); }
+.cost-delta-chip.is-flat { background: var(--surface-inset); color: var(--text-faint); }
+.cost-hero-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.1875rem; }
+.cost-hero-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.cost-chip { display: flex; flex-direction: column; gap: 0.0625rem; padding: 0.375rem 0.625rem; border-radius: 0.5rem; background: var(--surface-inset); min-width: 6rem; }
+.cost-chip .cost-label { font-size: 0.625rem; }
+.cost-chip-value { font-size: 0.9375rem; font-weight: 600; color: var(--text-bright); }
+.cost-seg2 { display: inline-flex; padding: 2px; gap: 2px; border-radius: 0.5rem; background: var(--surface-inset); border: 1px solid var(--border-color); }
+.cost-seg2 button { padding: 0.25rem 0.625rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500; color: var(--text-muted); }
+.cost-seg2 button:hover { color: var(--text-bright); }
+.cost-seg2 button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-bright); box-shadow: 0 1px 2px rgba(0,0,0,0.2); }
+.cost-legend { display: flex; flex-wrap: wrap; gap: 0.375rem 1rem; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.375rem; }
+.cost-legend > span { display: inline-flex; align-items: center; gap: 0.375rem; cursor: pointer; user-select: none; white-space: nowrap; }
+.cost-legend > span.is-off { opacity: 0.35; }
+.cost-legend .num { color: var(--text-bright); margin-left: 0.125rem; }
+.cost-swatch { width: 0.625rem; height: 0.625rem; border-radius: 0.25rem; flex-shrink: 0; display: inline-block; }
+.cost-plot { position: relative; }
+.cost-tip { display: none; position: fixed; pointer-events: none; z-index: 1000; min-width: 10rem;
+  background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.625rem;
+  padding: 0.625rem 0.75rem; font-size: 0.75rem; box-shadow: 0 10px 28px rgba(0,0,0,0.3); }
+.cost-tip-time { color: var(--text-faint); margin-bottom: 0.3125rem; font-weight: 600; }
+.cost-tip-row { display: flex; align-items: center; gap: 0.625rem; padding: 1.5px 0; color: var(--text-muted); }
+.cost-tip-row .num { margin-left: auto; color: var(--text-bright); font-weight: 600; }
+.cost-tip-total { border-top: 1px solid var(--border-color-subtle); margin-top: 0.3125rem; padding-top: 0.3125rem; font-weight: 700; color: var(--text-bright); }
+
+/* ── Pace (mtd cumulative + projection) ── */
+.cost-pace { margin-top: 0.625rem; border-top: 1px solid var(--border-color-subtle); padding-top: 0.625rem; }
+.cost-pace-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.25rem; }
+
+/* ── Donut ── */
+.cost-donut-card { padding: 1rem 1.125rem; display: flex; flex-direction: column; height: 100%; }
+.cost-donut-wrap { position: relative; width: 9.5rem; height: 9.5rem; margin: 0.25rem auto 0.75rem; }
+.cost-donut-svg { width: 100%; height: 100%; }
+.cost-donut-svg circle[data-cat]:focus-visible { filter: drop-shadow(0 0 0 2px var(--color-primary)); }
+.cost-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; }
+.cost-donut-total { font-size: 1.25rem; font-weight: 700; color: var(--text-bright); }
+.cost-donut-sub { font-size: 0.6875rem; color: var(--text-faint); }
+.cost-donut-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.cost-donut-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--text-muted); cursor: pointer; border-radius: 0.375rem; padding: 0.125rem 0.25rem; margin: 0 -0.25rem; }
+.cost-donut-item:hover { background: var(--hover-overlay); }
+.cost-donut-item.is-off { opacity: 0.4; }
+.cost-donut-item.is-dim { opacity: 0.35; }
+.cost-donut-teaser { margin-top: auto; padding-top: 0.875rem; border-top: 1px solid var(--border-color-subtle); display: flex; flex-direction: column; gap: 0.625rem; }
+.cost-donut-teaser-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.75rem; }
+.cost-donut-teaser-row a { color: var(--text-bright); text-decoration: none; }
+.cost-donut-teaser-row a:hover { text-decoration: underline; }
+.cost-donut-eff-bar { height: 0.5rem; border-radius: 0.25rem; background: var(--surface-inset); overflow: hidden; }
+.cost-donut-eff-bar > span { display: block; height: 100%; background: var(--color-primary); border-radius: 0.25rem; }
+.cost-donut-tick { width: 0.4375rem; height: 0.4375rem; border-radius: 9999px; flex-shrink: 0; }
+.cost-donut-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cost-donut-val { color: var(--text-bright); font-weight: 600; white-space: nowrap; }
+.cost-donut-pct { color: var(--text-faint); width: 2.75rem; text-align: right; white-space: nowrap; }
+
+/* ── Calendar heatmap ── */
+.cost-calendar-card { padding: 0.875rem 1rem; }
+.cost-calendar-wrap { overflow-x: auto; padding-bottom: 0.25rem; }
+.cost-calendar-months { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(18px, 1fr); gap: 3px; margin-left: 2.25rem; font-size: 0.6875rem; color: var(--text-faint); margin-bottom: 0.25rem; min-width: 100%; width: max-content; }
+.cost-calendar-body { display: flex; gap: 0.375rem; min-width: 100%; width: max-content; }
+.cost-calendar-weekdays { display: grid; grid-template-rows: repeat(7, 1fr); gap: 3px; font-size: 0.625rem; color: var(--text-faint); width: 2rem; flex-shrink: 0; }
+.cost-calendar-grid { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(18px, 1fr); grid-template-rows: repeat(7, 1fr); gap: 3px; flex: 1; }
+.cal-cell { height: 20px; border-radius: 4px; background: var(--surface-inset); cursor: default; }
+.cost-calendar-grid .cal-cell[data-day] { cursor: pointer; }
+.cost-calendar-grid .cal-cell[data-day]:hover { outline: 1.5px solid var(--color-primary); outline-offset: -1.5px; }
+.cost-calendar-scale { display: flex; align-items: center; gap: 0.3125rem; font-size: 0.6875rem; color: var(--text-faint); margin-top: 0.5rem; justify-content: flex-end; }
+.cost-calendar-scale .cal-cell { cursor: default; }
+.cost-hourheatmap-wrap { overflow-x: auto; }
+.cost-hourheatmap { display: grid; grid-template-columns: 2.25rem repeat(24, minmax(16px, 1fr)); gap: 2px; width: max-content; min-width: 100%; }
+.cost-hourheatmap .hh-rowlabel { font-size: 0.625rem; color: var(--text-faint); display: flex; align-items: center; padding-right: 0.25rem; }
+.cost-hourheatmap .hh-collabel { font-size: 0.5625rem; color: var(--text-faint); text-align: center; }
+.hh-cell { height: 14px; border-radius: 2px; background: var(--surface-inset); cursor: default; }
+
+/* ── Movers ── */
+.cost-movers-card { padding: 0.875rem 1rem; }
+.cost-movers-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+@media (max-width: 640px) { .cost-movers-cols { grid-template-columns: 1fr; } }
+.cost-movers-col-title { display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.5rem; }
+
+/* ── Platform (admin-only) ── */
+.cost-platform-card { padding: 0.875rem 1rem; margin-bottom: 0.875rem; }
+.cost-platform-card > * + * { margin-top: 0.75rem; }
+.cost-platform-waterfall { display: flex; flex-direction: column; gap: 0.625rem; }
+.cost-waterfall-row { display: grid; grid-template-columns: 7.5rem 1fr; align-items: start; gap: 0.75rem; font-size: 0.8125rem; }
+.cost-waterfall-row-label { color: var(--text-muted); white-space: nowrap; padding-top: 0.5rem; }
+.cost-waterfall-row-main { min-width: 0; }
+.cost-waterfall-bar { display: flex; height: 1.75rem; border-radius: 0.375rem; background: var(--surface-inset); overflow: hidden; }
+.cost-waterfall-seg { display: block; height: 100%; min-width: 2px; transition: width 200ms ease-out; }
+.cost-waterfall-seg.is-residual { background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.18) 0 4px, transparent 4px 8px); }
+.cost-waterfall-labels { display: flex; margin-top: 0.375rem; }
+.cost-waterfall-seg-label { display: flex; flex-direction: column; gap: 0.0625rem; min-width: 2.5rem; padding-right: 0.5rem; overflow: hidden; }
+.cost-waterfall-seg-label .cost-swatch { margin-bottom: 0.125rem; }
+.cost-waterfall-seg-name { font-size: 0.6875rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cost-waterfall-seg-value { font-size: 0.6875rem; color: var(--text-bright); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cost-waterfall-seg-label.is-residual .cost-waterfall-seg-name,
+.cost-waterfall-seg-label.is-residual .cost-waterfall-seg-value { color: var(--color-warning, oklch(0.8 0.15 85)); }
+.cost-waterfall-legend { display: flex; flex-wrap: wrap; gap: 0.375rem 1.25rem; font-size: 0.75rem; color: var(--text-muted); }
+.cost-waterfall-legend:empty { display: none; }
+.cost-waterfall-legend-item { display: flex; align-items: center; gap: 0.375rem; }
+.cost-waterfall-legend-item.is-residual { color: var(--color-warning, oklch(0.8 0.15 85)); }
+.cost-waterfall-legend-item .num { color: var(--text-bright); font-weight: 600; }
+.cost-platform-unallocated-stat { display: flex; flex-direction: column; gap: 0.25rem; }
+.cost-platform-unallocated-amount { font-size: 1.5rem; font-weight: 600; font-family: var(--cost-mono); }
+.cost-platform-unallocated-share { font-size: 0.8125rem; color: var(--text-muted); }
+.cost-mover-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0; border-bottom: 1px solid var(--border-color-subtle); font-size: 0.8125rem; }
+.cost-mover-row:last-child { border-bottom: 0; }
+.cost-mover-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-bright); }
+.cost-mover-name a { color: inherit; text-decoration: none; }
+.cost-mover-name a:hover { text-decoration: underline; }
+.cost-mover-ctx { color: var(--text-faint); font-size: 0.6875rem; }
+.cost-mover-delta { font-weight: 600; white-space: nowrap; }
+.cost-mover-delta.is-up { color: var(--cost-up); }
+.cost-mover-delta.is-down { color: var(--cost-down); }
+
+/* ── Breakdown accordions ── */
+.cost-bd-card { padding: 0; }
+.cost-bd-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.875rem 1rem 0.5rem; flex-wrap: wrap; }
+.cost-bd-sort { display: flex; gap: 0.25rem; }
+.cost-bd-sort button { font-size: 0.6875rem; color: var(--text-faint); padding: 0.125rem 0.5rem; border-radius: 0.3125rem; }
+.cost-bd-sort button:hover, .cost-bd-sort button.is-active { color: var(--text-bright); background: var(--surface-inset); }
+.cost-bd-filter { font-size: 0.75rem; color: var(--text-bright); background: var(--surface-inset); border: 1px solid var(--border-color); border-radius: 0.375rem;
+  padding: 0.25rem 0.625rem; width: 12rem; max-width: 100%; margin-left: auto; }
+.cost-bd-filter::placeholder { color: var(--text-faint); }
+.cost-bd-footer { padding: 0.625rem 1rem; border-top: 1px solid var(--border-color-subtle); text-align: center; }
+.cost-bd-show-all { font-size: 0.75rem; font-weight: 600; color: var(--color-primary); padding: 0.25rem 0.75rem; border-radius: 0.3125rem; }
+.cost-bd-show-all:hover { background: var(--surface-inset); }
+.cost-bd-row { border-top: 1px solid var(--border-color-subtle); }
+.cost-bd-summary { display: grid; grid-template-columns: minmax(8rem, 2fr) 4.5rem minmax(5rem, 1fr) 4.75rem 5.5rem; align-items: center;
+  gap: 0 0.875rem; padding: 0.625rem 1rem; cursor: pointer; transition: background-color 150ms ease-out; }
+.cost-bd-spark { width: 4.5rem; height: 1.5rem; }
+.cost-bd-spark svg { width: 100%; height: 100%; display: block; }
+.cost-bd-spark-empty line { stroke: var(--border-color); stroke-width: 1.5; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; }
+.cost-bd-meters { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-top: 0.375rem; }
+.cost-bd-meters th { text-align: left; font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); padding: 0.25rem 0.5rem; }
+.cost-bd-meters td { padding: 0.1875rem 0.5rem; color: var(--text-bright); font-family: var(--cost-mono); }
+.cost-bd-meters th.num, .cost-bd-meters td.num { text-align: right; }
+.cost-bd-summary:hover { background: var(--hover-overlay); }
+.cost-bd-row.is-open .cost-bd-summary { background: var(--hover-overlay); }
+.cost-bd-row.is-deleted .cost-bd-summary { opacity: 0.5; }
+.cost-bd-name-wrap { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.cost-bd-chevron { color: var(--text-faint); flex-shrink: 0; transition: transform 150ms ease-out; }
+.cost-bd-row.is-open .cost-bd-chevron { transform: rotate(90deg); }
+.cost-bd-name { display: flex; flex-direction: column; gap: 0.0625rem; min-width: 0; }
+.cost-bd-name-row { display: flex; align-items: center; gap: 0.375rem; min-width: 0; }
+.cost-bd-name a { color: var(--text-bright); text-decoration: none; font-size: 0.8125rem; font-weight: 500; }
+.cost-bd-name a:hover { text-decoration: underline; }
+.cost-bd-name span.plain { color: var(--text-bright); font-size: 0.8125rem; font-weight: 500; }
+.cost-bd-ctx { font-size: 0.6875rem; color: var(--text-faint); }
+.cost-bd-deleted-badge { font-size: 0.625rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint);
+  border: 1px solid var(--border-color); border-radius: 0.25rem; padding: 0 0.25rem; }
+.cost-bd-share { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.cost-bd-share-bar { flex: 1; height: 0.375rem; border-radius: 0.25rem; background: var(--surface-inset); overflow: hidden; min-width: 2rem; }
+.cost-bd-share-bar > span { display: block; height: 100%; background: var(--color-primary); border-radius: 0.25rem; }
+.cost-bd-share .num { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.cost-bd-delta { text-align: right; font-size: 0.75rem; font-weight: 600; white-space: nowrap; }
+.cost-bd-delta.is-up { color: var(--cost-up); }
+.cost-bd-delta.is-down { color: var(--cost-down); }
+.cost-bd-cost { text-align: right; font-weight: 700; color: var(--text-bright); white-space: nowrap; }
+.cost-bd-body { display: none; padding: 0 1rem 0.875rem 2.375rem; }
+.cost-bd-row.is-open .cost-bd-body { display: block; }
+.cost-bd-cats { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; font-size: 0.75rem; color: var(--text-muted); }
+.cost-bd-cats > span { display: inline-flex; align-items: center; gap: 0.375rem; white-space: nowrap; }
+.cost-bd-cats .num { color: var(--text-bright); }
+@media (max-width: 640px) {
+  .cost-bd-summary { grid-template-columns: minmax(6rem, 2fr) 3.5rem 5rem; }
+  .cost-bd-summary > .cost-bd-share, .cost-bd-summary > .cost-bd-spark { display: none; }
+}
+
+/* ── Meters ── */
+.cost-meters-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.cost-meters-table th { text-align: left; font-size: 0.6875rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-faint); padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+.cost-meters-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color-subtle); color: var(--text-bright); }
+.cost-meters-table tbody tr:last-child td { border-bottom: 0; }
+.cost-meters-table th.num, .cost-meters-table td.num { text-align: right; font-family: var(--cost-mono); font-variant-numeric: tabular-nums; }
+.cost-table-scroll { overflow-x: auto; }
+
+/* ── Rates panel ── */
+.cost-rates-section + .cost-rates-section { margin-top: 1rem; }
+.cost-rates-table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.cost-rates-table th { text-align: left; font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--border-color); }
+.cost-rates-table td { padding: 0.375rem 0.5rem; border-bottom: 1px solid var(--border-color-subtle); color: var(--text-bright); font-family: var(--cost-mono); font-variant-numeric: tabular-nums; }
+.cost-rates-table th.num, .cost-rates-table td.num { text-align: right; }
+.cost-rates-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.75rem; line-height: 1.5; }
+
+/* ── Loading / empty ── */
+.cost-skel { border-radius: 0.375rem; background: linear-gradient(90deg, var(--surface-inset) 0%,
+  color-mix(in srgb, var(--surface-inset) 60%, var(--surface-card)) 50%, var(--surface-inset) 100%);
+  background-size: 200% 100%; animation: cost-shimmer 1.4s ease-in-out infinite; }
+@keyframes cost-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .cost-skel { animation: none; }
+  .cost-bd-chevron, .cost-bd-summary { transition: none; }
+}
+@media (max-width: 480px) {
+  .cost-head-tools button[type="submit"] { min-height: 2.75rem; }
+  .cost-hero-total { font-size: 1.5rem; }
+  .cost-hero-chips { gap: 0.375rem; }
+  .cost-chip { min-width: 5rem; padding: 0.3125rem 0.5rem; }
+}
+</style>
+
+<div class="cost" id="cost-dashboard" data-url="{{ data_url }}" data-scope-kind="{{ scope_kind }}" data-environments='{{ (env_options or []) | tojson }}' data-env="{{ current_env_slug or '' }}">
+  <div class="cost-head">
+    <div>
+      <h1 class="text-lg font-semibold text-base-content">{{ dashboard_title }}</h1>
+      <p class="text-xs text-base-content/50">{{ dashboard_subtitle }}</p>
+    </div>
+    <div class="cost-head-tools">
+      <span class="cost-pill" id="freshness-pill" hidden></span>
+      {% if scope_kind == 'platform' %}
+        <form method="POST" action="{{ url_for('cost.platform_cost_collect', range=request.args.get('range'), start=request.args.get('start'), end=request.args.get('end')) }}"
+              onsubmit="const button = this.querySelector('button'); button.disabled = true; button.textContent = 'Queuing…';">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-xs btn-outline">Collect now</button>
+        </form>
+      {% endif %}
+      <div class="cost-seg2" id="env-toggle" role="group" aria-label="Environment" hidden></div>
+      <div class="cost-rangenav">
+        <button type="button" id="range-prev" title="Previous period" aria-label="Previous period">‹</button>
+        <button type="button" class="cost-rangenav-label" id="range-label-btn" aria-haspopup="true">Loading…</button>
+        <button type="button" id="range-next" title="Next period" aria-label="Next period">›</button>
+        <div class="cost-rangepop" id="range-pop">
+          <div class="cost-rangepop-presets" id="range-presets">
+            {% for r in ['24h', '7d', '30d', 'mtd', '90d'] %}
+              <button type="button" data-range="{{ r }}">{{ r if r != 'mtd' else 'MTD' }}</button>
+            {% endfor %}
+          </div>
+          <div class="cost-rangepop-custom">
+            <label>From <input type="date" id="custom-start"></label>
+            <label>To <input type="date" id="custom-end"></label>
+            <button type="button" class="btn btn-xs btn-primary" id="custom-apply">Apply custom range</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section class="cost-card cost-explorer" aria-label="90-day history">
+    <div class="cost-explorer-head">
+      <span class="cost-label">90-day history &middot; drag to select a range, click for a single day</span>
+      <button type="button" class="btn btn-xs btn-ghost" id="explorer-reset" hidden>Reset</button>
+    </div>
+    <div class="cost-explorer-plot" data-chart="explorer"><div class="cost-skel h-full"></div></div>
+  </section>
+
+  <div id="cost-error" class="cost-card cost-note mb-3" hidden>
+    Couldn't load cost data. <button type="button" class="btn btn-xs btn-ghost ml-1" data-retry>Retry</button>
+  </div>
+
+  <div id="cost-empty" class="cost-card cost-note" hidden>
+    <span id="cost-empty-text">No cost data for this range yet.</span>
+  </div>
+
+  <div id="cost-body" hidden>
+    <div class="cost-grid">
+      <section class="cost-card cost-hero" aria-label="Cost over time">
+        <div class="cost-hero-head">
+          <div>
+            <span class="cost-label" data-range-label>Range total</span>
+            <div class="cost-hero-totalrow">
+              <span class="cost-hero-total num" data-hero="total"><span class="cost-skel inline-block w-24 h-7"></span></span>
+              <span class="cost-delta-chip" id="hero-delta" hidden></span>
+            </div>
+            <div class="cost-hero-sub" id="hero-sub"></div>
+          </div>
+          <div class="cost-seg2" id="chart-mode" role="group" aria-label="Chart grouping">
+            <button type="button" data-mode="category" aria-pressed="true">Category</button>
+            <button type="button" data-mode="breakdown" aria-pressed="false" hidden></button>
+            <button type="button" data-mode="efficiency" aria-pressed="false" hidden>Efficiency</button>
+          </div>
+        </div>
+        <div class="cost-hero-chips mb-3">
+          <div class="cost-chip"><span class="cost-label">Month to date</span><span class="cost-chip-value num" data-chip="mtd">—</span></div>
+          <div class="cost-chip"><span class="cost-label">Projected month</span><span class="cost-chip-value num" data-chip="projected">—</span></div>
+          <div class="cost-chip"><span class="cost-label">Run rate /mo</span><span class="cost-chip-value num" data-chip="runrate">—</span></div>
+          <div class="cost-chip"><span class="cost-label">Efficiency</span><span class="cost-chip-value num" data-chip="efficiency">—</span></div>
+        </div>
+        <div class="cost-legend" id="chart-legend"></div>
+        <div class="cost-note" id="efficiency-callout" style="display:none;padding:0.375rem 0;text-align:left"></div>
+        <div class="cost-plot" data-chart="main" style="height:210px"><div class="cost-skel h-full"></div></div>
+        <div class="cost-pace" id="pace-section" hidden>
+          <div class="cost-pace-head">
+            <span class="cost-label">Pace this month</span>
+            <span class="cost-label" id="pace-callout"></span>
+          </div>
+          <div class="cost-plot" data-chart="pace" style="height:110px"></div>
+        </div>
+      </section>
+
+      <section class="cost-card cost-donut-card" aria-label="Share of spend">
+        <span class="cost-section-title">Share of spend</span>
+        <div class="cost-donut-wrap">
+          <svg viewBox="0 0 120 120" class="cost-donut-svg" id="donut-svg"></svg>
+          <div class="cost-donut-center">
+            <span class="cost-donut-total num" id="donut-total">—</span>
+            <span class="cost-donut-sub">total</span>
+          </div>
+        </div>
+        <div class="cost-donut-list" id="donut-list"></div>
+        <div class="cost-donut-teaser" id="donut-teaser"></div>
+      </section>
+    </div>
+
+    <section class="cost-card cost-calendar-card mb-3" aria-label="Daily cost, last 90 days">
+      <span class="cost-section-title">Daily cost &middot; last 90 days &middot; click a day to select it</span>
+      <div class="cost-calendar-wrap mt-3">
+        <div class="cost-calendar-months" id="calendar-months"></div>
+        <div class="cost-calendar-body">
+          <div class="cost-calendar-weekdays">
+            <span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span>Sun</span>
+          </div>
+          <div class="cost-calendar-grid" id="calendar-grid"></div>
+        </div>
+      </div>
+      <div class="cost-calendar-scale">
+        <span>Less</span>
+        <span class="cal-cell" data-scale="0" style="width:14px"></span>
+        <span class="cal-cell" data-scale="1" style="width:14px"></span>
+        <span class="cal-cell" data-scale="2" style="width:14px"></span>
+        <span class="cal-cell" data-scale="3" style="width:14px"></span>
+        <span class="cal-cell" data-scale="4" style="width:14px"></span>
+        <span class="cal-cell" data-scale="5" style="width:14px"></span>
+        <span>More</span>
+      </div>
+    </section>
+
+    <section class="cost-card cost-calendar-card mb-3" aria-label="Cost by hour of day" id="hourheat-section" hidden>
+      <span class="cost-section-title">When we spend &middot; hour of day (UTC)</span>
+      <div class="cost-hourheatmap-wrap mt-3">
+        <div class="cost-hourheatmap" id="hourheat-grid"></div>
+      </div>
+    </section>
+
+    <section class="cost-card cost-movers-card mb-3" aria-label="Biggest changes" id="movers-section" hidden>
+      <span class="cost-section-title">Biggest changes vs previous period</span>
+      <div class="cost-movers-cols mt-3">
+        <div>
+          <div class="cost-movers-col-title" style="color:var(--cost-up)">&#9650; Increases</div>
+          <div id="movers-up"></div>
+        </div>
+        <div>
+          <div class="cost-movers-col-title" style="color:var(--cost-down)">&#9660; Decreases</div>
+          <div id="movers-down"></div>
+        </div>
+      </div>
+    </section>
+
+    {# ── Platform-only sections (scope_kind == 'platform'); hidden unless report.platform is present. ── #}
+    <section class="cost-card cost-platform-card" aria-label="Cluster compute reconciliation" id="platform-waterfall-section" hidden>
+      <span class="cost-section-title">Where cluster compute goes</span>
+      <div class="cost-platform-waterfall" id="platform-waterfall"></div>
+    </section>
+
+    <section class="cost-card cost-platform-card" aria-label="Capacity vs requested vs used" id="platform-capacity-section" hidden>
+      <span class="cost-section-title">Capacity vs. requested vs. used</span>
+      <div class="cost-legend" id="platform-capacity-legend"></div>
+      <div class="cost-plot" data-chart="platform-capacity" style="height:180px"></div>
+    </section>
+
+    <div class="cost-grid" id="platform-row2" hidden>
+      <section class="cost-card cost-platform-card" aria-label="Top organizations by cost">
+        <span class="cost-section-title">Top organizations</span>
+        <div class="cost-legend" id="platform-top-orgs-legend"></div>
+        <div class="cost-plot" data-chart="platform-top-orgs" style="height:180px"></div>
+      </section>
+      <section class="cost-card cost-platform-card" aria-label="Unallocated spend">
+        <span class="cost-section-title">Unallocated</span>
+        <div id="platform-unallocated"></div>
+      </section>
+    </div>
+
+    <section class="cost-card cost-platform-card" aria-label="Node fleet" id="platform-nodes-section" hidden>
+      <span class="cost-section-title">Node fleet</span>
+      <div class="cost-table-scroll">
+        <table class="cost-meters-table">
+          <thead><tr><th>Instance type</th><th class="num">Nodes</th><th class="num">Node-hours</th><th class="num">Hourly rate</th><th class="num">Cost</th></tr></thead>
+          <tbody id="platform-nodes-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div id="breakdown-tables"></div>
+
+    <section class="cost-card mb-3" aria-label="Meters">
+      <div class="p-4 pb-0"><span class="cost-section-title">Meters</span></div>
+      <div class="cost-table-scroll">
+        <table class="cost-meters-table">
+          <thead><tr><th>Meter</th><th class="num">Quantity</th><th class="num">Rate</th><th class="num">Cost</th></tr></thead>
+          <tbody id="meters-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="collapse collapse-arrow bg-base-content/[0.02] border border-base-300 rounded-lg mb-3">
+      <input type="checkbox" />
+      <div class="collapse-title text-sm font-medium">How costs are calculated</div>
+      <div class="collapse-content text-xs text-base-content/70" id="rates-panel"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var root = document.getElementById('cost-dashboard');
+  var dataUrl = root.dataset.url;
+  var scopeKind = root.dataset.scopeKind;
+
+  var CATEGORIES = [
+    { key: 'compute', label: 'Compute', color: 'var(--cost-compute)' },
+    { key: 'backing_service', label: 'Backing services', color: 'var(--cost-backing)' },
+    { key: 'storage', label: 'Storage', color: 'var(--cost-storage)' },
+    { key: 'egress', label: 'Egress', color: 'var(--cost-egress)' },
+    { key: 'build', label: 'Build', color: 'var(--cost-build)' },
+    { key: 'overhead', label: 'Overhead', color: 'var(--cost-overhead)' }
+  ];
+  var BREAKDOWN_LABELS = { projects: 'Projects', applications: 'Applications', environments: 'Environments',
+    backing_services: 'Backing services', processes: 'Processes', organizations: 'Organizations' };
+  var PRIMARY_BREAKDOWN = { organization: 'projects', project: 'applications', environment: 'applications', application: 'processes', platform: 'organizations' };
+  var EXTRA_HUES = [262, 199, 330, 24, 160, 46, 280, 10];
+  var envOptions = [];
+  try { envOptions = JSON.parse(root.dataset.environments || '[]'); } catch (e) { envOptions = []; }
+
+  var state = {
+    rangeKey: 'mtd', customStart: null, customEnd: null,
+    report: null,
+    chartMode: 'category',
+    hiddenCategories: {},
+    envSlug: root.dataset.env || null
+  };
+  var palette = null;
+
+  // ── Shared tooltip: one floating card used by every hoverable surface ──
+  var sharedTip = (function() {
+    var el = document.createElement('div');
+    el.className = 'cost-tip';
+    el.style.position = 'fixed';
+    document.body.appendChild(el);
+    function headerBottom() {
+      var topbar = document.querySelector('.app-topbar');
+      return topbar ? topbar.getBoundingClientRect().bottom : 0;
+    }
+    function show(html, clientX, clientY) {
+      el.innerHTML = html;
+      el.style.display = 'block';
+      var gap = 14, pad = 8;
+      var w = el.offsetWidth, h = el.offsetHeight;
+      var minTop = headerBottom() + pad;
+      // Vertical: prefer above the anchor; flip below when there's no room under the sticky header.
+      var y = clientY - h - gap;
+      if (y < minTop) y = clientY + gap;
+      if (y + h > window.innerHeight - pad) y = Math.max(minTop, window.innerHeight - pad - h);
+      // Horizontal: prefer right of the anchor; flip left near the edge; clamp.
+      var x = clientX + gap;
+      if (x + w > window.innerWidth - pad) x = clientX - w - gap;
+      if (x < pad) x = pad;
+      if (x + w > window.innerWidth - pad) x = window.innerWidth - pad - w;
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+    }
+    function showAt(html, anchorRect, side) {
+      el.innerHTML = html;
+      el.style.display = 'block';
+      var gap = 10, pad = 8;
+      var w = el.offsetWidth, h = el.offsetHeight;
+      var minTop = headerBottom() + pad;
+      var x, y;
+      if (side === 'right' || side === 'left') {
+        y = anchorRect.top + anchorRect.height / 2 - h / 2;
+        y = Math.max(minTop, Math.min(window.innerHeight - pad - h, y));
+        x = side === 'right' ? anchorRect.right + gap : anchorRect.left - w - gap;
+        if (x + w > window.innerWidth - pad) x = anchorRect.left - w - gap;
+        if (x < pad) x = anchorRect.right + gap;
+      } else {
+        x = anchorRect.left + anchorRect.width / 2 - w / 2;
+        x = Math.max(pad, Math.min(window.innerWidth - pad - w, x));
+        y = anchorRect.top - h - gap;
+        if (y < minTop) y = anchorRect.bottom + gap;
+      }
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+    }
+    function hide() { el.style.display = 'none'; }
+    return { show: show, showAt: showAt, hide: hide };
+  })();
+
+  // ── Formatters ──
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; }); }
+  function fmtMoney(v) {
+    if (v == null || isNaN(v)) return '—';
+    var n = +v, sign = n < 0 ? '-' : '';
+    n = Math.abs(n);
+    if (n >= 1000) return sign + '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    return sign + '$' + n.toFixed(2);
+  }
+  function fmtPct(v, digits) { if (v == null || isNaN(v)) return '—'; return (+v * 100).toFixed(digits == null ? 0 : digits) + '%'; }
+  function fmtQty(v) {
+    if (v == null || isNaN(v)) return '—';
+    var n = +v;
+    if (Math.abs(n) >= 1000) return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    return n.toFixed(2).replace(/\.00$/, '');
+  }
+  function fmtRate(v, unit) {
+    if (v == null || isNaN(v)) return '—';
+    var n = +v;
+    var s = n.toFixed(5).replace(/0+$/, '').replace(/\.$/, '');
+    if (s === '' || s === '-') s = '0';
+    return '$' + s + (unit ? '/' + unit : '');
+  }
+  function relTime(iso) {
+    if (!iso) return 'never';
+    var d = new Date(iso), diff = Math.max(0, (Date.now() - d.getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
+  }
+  function fmtClock(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
+  }
+  // A bucket is "partial" (still in progress) when its end timestamp is after the freshness
+  // watermark; only the very last bucket in a series can ever be partial. Returns -1 if none.
+  function partialBucketIdx(xs, bucketSpan, dataThroughIso) {
+    if (!xs || !xs.length || !dataThroughIso) return -1;
+    var dataThroughTs = new Date(dataThroughIso).getTime() / 1000;
+    var lastIdx = xs.length - 1;
+    return (xs[lastIdx] + bucketSpan) > dataThroughTs ? lastIdx : -1;
+  }
+  function titleCase(s) { return String(s || '').replace(/_/g, ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }); }
+  function setText(sel, text) { var el = document.querySelector(sel); if (el) el.textContent = text; }
+  function fmtRangeLabel(range) {
+    if (!range || !range.start || !range.end) return 'Loading…';
+    var s = new Date(range.start);
+    var e = new Date(new Date(range.end).getTime() - 1000);
+    if (range.interval === 'hour') {
+      return s.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', timeZone: 'UTC' }) + ' – ' +
+        new Date(range.end).toLocaleString(undefined, { hour: 'numeric', timeZone: 'UTC' }) + ' UTC';
+    }
+    if (s.toISOString().slice(0, 10) === e.toISOString().slice(0, 10)) {
+      return s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    }
+    var sameMonth = s.getUTCFullYear() === e.getUTCFullYear() && s.getUTCMonth() === e.getUTCMonth();
+    var eStr = sameMonth ? String(e.getUTCDate()) : e.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    return s.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }) + ' – ' + eStr + ', ' + e.getUTCFullYear();
+  }
+  function fmtDelta(cost, previous) {
+    if (previous == null || !previous) return null;
+    return (cost - previous) / previous * 100;
+  }
+
+  // ── Theme palette: resolve CSS custom properties (incl. color-mix/oklch) to concrete rgb via canvas readback ──
+  function resolvePalette() {
+    var probe = document.createElement('span');
+    var ctx = document.createElement('canvas').getContext('2d');
+    root.appendChild(probe);
+    function rgb(cssValue) {
+      probe.style.color = cssValue;
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = getComputedStyle(probe).color;
+      ctx.fillRect(0, 0, 1, 1);
+      var p = ctx.getImageData(0, 0, 1, 1).data;
+      return [p[0], p[1], p[2]];
+    }
+    function css(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (a == null ? 1 : a) + ')'; }
+    var colors = {};
+    CATEGORIES.forEach(function(c) { colors[c.key] = rgb(c.color); });
+    var text = rgb('var(--text-bright)');
+    var primary = rgb('var(--color-primary)');
+    root.removeChild(probe);
+    palette = { css: css, colors: colors, text: text, primary: primary,
+      axis: css(text, 0.45), grid: css(text, 0.07), track: css(text, 0.05) };
+  }
+  function extraColor(i) { return 'hsl(' + EXTRA_HUES[i % EXTRA_HUES.length] + ' 60% 55%)'; }
+
+  // ── Theme-reactive helpers: contrast themes drop translucency for stronger strokes;
+  // color-blind themes add a non-hue cue (hatch pattern) on top of the Okabe-Ito palette. ──
+  function currentTheme() { return document.documentElement.getAttribute('data-theme') || 'dark'; }
+  function isContrastTheme() { var t = currentTheme(); return t === 'contrast-dark' || t === 'contrast-light'; }
+  function isCbTheme() { return currentTheme().indexOf('cb-') === 0; }
+  var CB_PATTERNS = {
+    compute: 'none', backing_service: 'diagonal', storage: 'dots',
+    egress: 'cross', build: 'horizontal', overhead: 'diagonal2'
+  };
+  function drawHatch(ctx, x, y, w, h, kind) {
+    if (!kind || kind === 'none' || w <= 0 || h <= 0) return;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    var step = 5;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    if (kind === 'diagonal' || kind === 'diagonal2') {
+      var dir = kind === 'diagonal' ? 1 : -1;
+      for (var o = -h; o < w + h; o += step) {
+        ctx.beginPath();
+        if (dir === 1) { ctx.moveTo(x + o, y + h); ctx.lineTo(x + o + h, y); }
+        else { ctx.moveTo(x + o, y); ctx.lineTo(x + o + h, y + h); }
+        ctx.stroke();
+      }
+    } else if (kind === 'cross') {
+      for (var vx = x + 2; vx < x + w; vx += step) { ctx.beginPath(); ctx.moveTo(vx, y); ctx.lineTo(vx, y + h); ctx.stroke(); }
+      for (var hy = y + 2; hy < y + h; hy += step) { ctx.beginPath(); ctx.moveTo(x, hy); ctx.lineTo(x + w, hy); ctx.stroke(); }
+    } else if (kind === 'dots') {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      for (var yy = y + 3; yy < y + h; yy += step) {
+        for (var xx = x + 3; xx < x + w; xx += step) { ctx.beginPath(); ctx.arc(xx, yy, 0.9, 0, Math.PI * 2); ctx.fill(); }
+      }
+    } else if (kind === 'horizontal') {
+      for (var hy2 = y + 2; hy2 < y + h; hy2 += step) { ctx.beginPath(); ctx.moveTo(x, hy2); ctx.lineTo(x + w, hy2); ctx.stroke(); }
+    }
+    ctx.restore();
+  }
+
+  // ── Canvas helpers ──
+  function roundTopRectPath(ctx, x, y, w, h, r) {
+    r = Math.max(0, Math.min(r, w / 2, h));
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h);
+    ctx.closePath();
+  }
+
+  // ── Stacked bar chart (category or breakdown grouping), with track + rounded tops + previous-period ghost + rich tooltip ──
+  function makeStackedChart(el, xs, stackSeries, opts) {
+    opts = opts || {};
+    el.innerHTML = '';
+    if (!xs.length) {
+      el.innerHTML = '<div class="h-full flex items-center justify-center text-xs" style="color:var(--text-faint)">No data in range</div>';
+      return null;
+    }
+    var cols = stackSeries.map(function(s) { return s.values; });
+    var maxStack = 0;
+    for (var i = 0; i < xs.length; i++) {
+      var sum = 0;
+      for (var s = 0; s < cols.length; s++) sum += (cols[s][i] || 0);
+      if (opts.previous && opts.previous[i] > sum) sum = opts.previous[i];
+      if (sum > maxStack) maxStack = sum;
+    }
+    var guide = document.createElement('div');
+    guide.style.cssText = 'display:none;position:absolute;top:0;bottom:0;width:0;border-left:1px dashed ' + (palette ? palette.axis : 'rgba(128,128,128,.4)') + ';pointer-events:none;z-index:5;';
+    var hoverIdx = null;
+
+    function plugin() {
+      return { hooks: {
+        init: function(u) {
+          u.over.appendChild(guide);
+          u.over.addEventListener('mousemove', function(e) {
+            var idx = u.cursor.idx;
+            if (idx === hoverIdx) { if (idx != null) showTip(u, idx, e.clientX, e.clientY); return; }
+            hoverIdx = idx;
+            showTip(u, idx, e.clientX, e.clientY);
+          });
+          u.over.addEventListener('mouseleave', function() { hoverIdx = null; sharedTip.hide(); guide.style.display = 'none'; });
+        },
+        draw: [function(u) {
+          var ctx = u.ctx;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+          ctx.clip();
+          var n = xs.length;
+          var barW = Math.max(3, Math.min(opts.maxBarWidth || 40, (u.bbox.width / n) * (opts.barFactor || 0.6)));
+          var yBase = u.valToPos(0, 'y', true);
+          var trackColor = palette ? palette.track : 'rgba(128,128,128,.05)';
+          for (var i = 0; i < n; i++) {
+            ctx.globalAlpha = (i === opts.partialIdx) ? 0.55 : 1;
+            var xPix = u.valToPos(xs[i], 'x', true);
+            if (opts.showTrack !== false) {
+              ctx.fillStyle = trackColor;
+              roundTopRectPath(ctx, xPix - barW / 2, u.bbox.top, barW, yBase - u.bbox.top, 3);
+              ctx.fill();
+            }
+            var cum = 0, lastIdx = -1;
+            for (var k = 0; k < cols.length; k++) { if (cols[k][i]) lastIdx = k; }
+            for (var s2 = 0; s2 < cols.length; s2++) {
+              var val = cols[s2][i];
+              if (!val) continue;
+              var yPrev = u.valToPos(cum, 'y', true);
+              cum += val;
+              var yTop = u.valToPos(cum, 'y', true);
+              var h = Math.max(1, yPrev - yTop);
+              var segX = Math.round(xPix - barW / 2), segW = Math.ceil(barW), segY = Math.round(yTop), segH = Math.ceil(h);
+              ctx.fillStyle = stackSeries[s2]._fill;
+              if (s2 === lastIdx) { roundTopRectPath(ctx, xPix - barW / 2, yTop, barW, h, 3); ctx.fill(); }
+              else { ctx.fillRect(segX, segY, segW, segH); }
+              if (stackSeries[s2]._stroke) { ctx.strokeStyle = stackSeries[s2]._stroke; ctx.lineWidth = 1; ctx.strokeRect(segX + 0.5, segY + 0.5, Math.max(0, segW - 1), Math.max(0, segH - 1)); }
+              if (isCbTheme()) drawHatch(ctx, segX, segY, segW, segH, CB_PATTERNS[stackSeries[s2].key]);
+            }
+            if (opts.previous && opts.previous[i] != null) {
+              var py = u.valToPos(opts.previous[i], 'y', true);
+              ctx.save();
+              ctx.strokeStyle = palette ? palette.css(palette.text, 0.55) : 'rgba(150,150,150,.6)';
+              ctx.setLineDash([3, 2]);
+              ctx.lineWidth = 1.5;
+              ctx.beginPath();
+              ctx.moveTo(xPix - barW / 2 - 1, py);
+              ctx.lineTo(xPix + barW / 2 + 1, py);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+          ctx.globalAlpha = 1;
+          ctx.restore();
+        }]
+      } };
+    }
+    function showTip(u, idx, clientX, clientY) {
+      if (idx == null) { sharedTip.hide(); guide.style.display = 'none'; return; }
+      var rows = '', total = 0;
+      for (var s = 0; s < cols.length; s++) {
+        var v = cols[s][idx];
+        total += (v || 0);
+        if (!v) continue;
+        rows += '<div class="cost-tip-row"><span class="cost-swatch" style="background:' + stackSeries[s]._swatch + '"></span>' +
+          esc(stackSeries[s].label) + '<span class="num">' + fmtMoney(v) + '</span></div>';
+      }
+      if (!rows) { sharedTip.hide(); guide.style.display = 'none'; return; }
+      var when = new Date(xs[idx] * 1000).toLocaleString(undefined, opts.interval === 'hour'
+        ? { month: 'short', day: 'numeric', hour: 'numeric', timeZone: 'UTC' }
+        : { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) + (idx === opts.partialIdx ? ' · today so far' : '');
+      var totalRow = '<div class="cost-tip-row cost-tip-total"><span>Total</span><span class="num">' + fmtMoney(total) + '</span></div>';
+      var deltaRow = '';
+      if (opts.previous && opts.previous[idx] != null) {
+        var pct = fmtDelta(total, opts.previous[idx]);
+        if (pct != null) {
+          var up = pct > 0;
+          deltaRow = '<div class="cost-tip-row" style="color:' + (up ? 'var(--cost-up)' : 'var(--cost-down)') + '"><span>vs previous period</span>' +
+            '<span class="num">' + (up ? '+' : '') + pct.toFixed(0) + '%</span></div>';
+        }
+      }
+      var html = '<div class="cost-tip-time">' + esc(when) + '</div>' + rows + totalRow + deltaRow;
+      sharedTip.show(html, clientX, clientY);
+      guide.style.display = 'block';
+      guide.style.left = u.cursor.left + 'px';
+    }
+    var font = '10px ' + getComputedStyle(root).getPropertyValue('--cost-mono');
+    var axis = { stroke: palette.axis, font: font, grid: { stroke: palette.grid, width: 1 }, ticks: { show: false } };
+    var tickStride = Math.max(1, Math.ceil(xs.length / Math.max(1, Math.floor(el.clientWidth / 58))));
+    var xSplits = xs.filter(function(_, i) { return i % tickStride === 0; });
+    var isHour = opts.interval === 'hour';
+    var chart = new uPlot({
+      width: el.clientWidth, height: el.clientHeight,
+      series: [{}].concat(stackSeries.map(function(s) { return { key: s.key, label: s.label, _swatch: s._swatch, _fill: s._fill, paths: function() { return null; }, points: { show: false } }; })),
+      legend: { show: false },
+      cursor: { points: { show: false }, drag: { x: false, y: false } },
+      plugins: [plugin()],
+      axes: opts.showAxes === false ? [{ show: false }, { show: false }] : [
+        Object.assign({}, axis, { size: 20, gap: 4, space: 50, splits: function() { return xSplits; }, values: function(u, vals) {
+          return vals.map(function(ts) {
+            var d = new Date(ts * 1000);
+            return isHour ? d.toLocaleTimeString(undefined, { hour: 'numeric', timeZone: 'UTC' })
+              : d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
+          });
+        } }),
+        Object.assign({}, axis, { size: 48, gap: 4, values: function(u, vals) {
+          return vals.map(function(v) { return v === 0 ? '' : fmtMoney(v); });
+        } })
+      ],
+      scales: { x: { time: true }, y: { range: [0, maxStack ? maxStack * 1.15 : 1] } }
+    }, [xs].concat(cols), el);
+    return chart;
+  }
+
+  function categorySeries() {
+    var contrast = isContrastTheme();
+    return CATEGORIES.map(function(c) {
+      var rgb = palette.colors[c.key];
+      return {
+        key: c.key, label: c.label, _swatch: palette.css(rgb),
+        _fill: palette.css(rgb, contrast ? 1 : 0.9),
+        _stroke: contrast ? palette.css(rgb, 1) : null
+      };
+    });
+  }
+
+  // ── Main chart ──
+  function renderMainChart(report) {
+    var el = root.querySelector('[data-chart="main"]');
+    var xs = (report.series && report.series.timestamps) || [];
+    var prevFlat = (report.series && report.series.previous) || null;
+    var series;
+    document.getElementById('efficiency-callout').style.display = state.chartMode === 'efficiency' ? '' : 'none';
+    if (state.chartMode === 'breakdown') {
+      var primaryKey = PRIMARY_BREAKDOWN[scopeKind];
+      var bd = report.series && report.series.breakdowns && report.series.breakdowns[primaryKey];
+      if (bd) {
+        series = (bd.keys || []).map(function(k, i) {
+          var color = extraColor(i);
+          return { key: k, label: bd.names[k] || k, values: bd.values[k] || xs.map(function() { return 0; }),
+            _swatch: color, _fill: color };
+        });
+        if (bd.other && bd.other.some(function(v) { return v; })) {
+          series.push({ key: '__other', label: 'Other', values: bd.other, _swatch: palette.css(palette.text, 0.3), _fill: palette.css(palette.text, 0.3) });
+        }
+      } else { series = categorySeries().map(function(s) { return Object.assign({}, s, { values: ((report.series.categories || {})[s.key]) || xs.map(function() { return 0; }) }); }); }
+    } else if (state.chartMode === 'efficiency') {
+      var eff = report.series && report.series.efficiency;
+      var callout = document.getElementById('efficiency-callout');
+      if (eff) {
+        var reservedColor = palette.css(palette.text, 0.35), usedColor = palette.css(palette.colors.compute);
+        series = [
+          { key: 'request', label: 'Reserved', values: eff.request, _swatch: reservedColor, _fill: reservedColor },
+          { key: 'usage', label: 'Used', values: eff.usage, _swatch: usedColor, _fill: usedColor }
+        ];
+        var totalReq = eff.request.reduce(function(s, v) { return s + (v || 0); }, 0);
+        var totalUse = eff.usage.reduce(function(s, v) { return s + (v || 0); }, 0);
+        var idle = Math.max(0, totalReq - totalUse);
+        callout.style.display = 'block';
+        callout.textContent = idle > 0.01
+          ? fmtMoney(idle) + ' of reserved capacity went unused in this period. Review your workload sizes and replica counts.'
+          : 'Your workloads used nearly all their reserved capacity in this period.';
+      } else { series = []; callout.style.display = 'none'; }
+    } else {
+      document.getElementById('efficiency-callout').style.display = 'none';
+      series = categorySeries().map(function(s) {
+        var values = ((report.series.categories || {})[s.key]) || xs.map(function() { return 0; });
+        if (state.hiddenCategories[s.key]) values = values.map(function() { return 0; });
+        return Object.assign({}, s, { values: values });
+      });
+    }
+    var mainBucketSpan = (report.range && report.range.interval === 'hour') ? 3600 : 86400;
+    makeStackedChart(el, xs, series, {
+      interval: report.range && report.range.interval,
+      previous: state.chartMode === 'category' ? prevFlat : null,
+      partialIdx: partialBucketIdx(xs, mainBucketSpan, report.freshness && report.freshness.data_through)
+    });
+  }
+
+  function renderLegend(report) {
+    var el = document.getElementById('chart-legend');
+    if (state.chartMode !== 'category') { el.innerHTML = ''; return; }
+    el.innerHTML = (report.categories || []).map(function(c) {
+      var off = state.hiddenCategories[c.key];
+      var colorVar = CATEGORIES.filter(function(x) { return x.key === c.key; })[0];
+      return '<span data-cat="' + c.key + '"' + (off ? ' class="is-off"' : '') + '>' +
+        '<span class="cost-swatch" style="background:' + (colorVar ? colorVar.color : 'var(--text-faint)') + '"></span>' + esc(c.label) +
+        '<span class="num">' + fmtMoney(c.cost) + '</span></span>';
+    }).join('');
+  }
+  document.getElementById('chart-legend').addEventListener('click', function(e) {
+    var span = e.target.closest('[data-cat]');
+    if (!span || state.chartMode !== 'category') return;
+    toggleCategory(span.dataset.cat);
+  });
+
+  function setupChartModeToggle(report) {
+    var bdBtn = document.querySelector('#chart-mode [data-mode="breakdown"]');
+    var primaryKey = PRIMARY_BREAKDOWN[scopeKind];
+    var hasBreakdownSeries = !!(report.series && report.series.breakdowns && report.series.breakdowns[primaryKey]);
+    bdBtn.hidden = !hasBreakdownSeries;
+    if (hasBreakdownSeries) bdBtn.textContent = BREAKDOWN_LABELS[primaryKey] || titleCase(primaryKey);
+    else if (state.chartMode === 'breakdown') state.chartMode = 'category';
+    var effBtn = document.querySelector('#chart-mode [data-mode="efficiency"]');
+    var hasEfficiency = !!(report.series && report.series.efficiency);
+    effBtn.hidden = !hasEfficiency;
+    if (!hasEfficiency && state.chartMode === 'efficiency') state.chartMode = 'category';
+    document.querySelectorAll('#chart-mode button').forEach(function(b) {
+      b.setAttribute('aria-pressed', b.dataset.mode === state.chartMode ? 'true' : 'false');
+    });
+  }
+  document.getElementById('chart-mode').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-mode]');
+    if (!btn || btn.hidden) return;
+    state.chartMode = btn.dataset.mode;
+    document.querySelectorAll('#chart-mode button').forEach(function(b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
+    renderLegend(state.report);
+    renderMainChart(state.report);
+  });
+
+  // ── Pace chart (MTD only): cumulative actual + dashed projection to month end ──
+  function renderPace(report) {
+    var section = document.getElementById('pace-section');
+    var isMtd = report.range && report.range.key === 'mtd';
+    var xs = (report.series && report.series.timestamps) || [];
+    if (!isMtd || !xs.length) { section.hidden = true; return; }
+    section.hidden = false;
+    var cats = report.series.categories || {};
+    var dailyTotal = xs.map(function(_, i) {
+      return CATEGORIES.reduce(function(sum, c) { return sum + ((cats[c.key] || [])[i] || 0); }, 0);
+    });
+    var cum = [];
+    var running = 0;
+    dailyTotal.forEach(function(v) { running += v; cum.push(running); });
+    var previousFlat = (report.series && report.series.previous) || null;
+    var ghostCum = null;
+    if (previousFlat) {
+      ghostCum = [];
+      var gRunning = 0;
+      previousFlat.forEach(function(v) { gRunning += (v || 0); ghostCum.push(gRunning); });
+    }
+    var projected = report.kpis ? report.kpis.projected_month : null;
+    var lastDate = new Date(xs[xs.length - 1] * 1000);
+    var monthStartTs = Date.UTC(lastDate.getUTCFullYear(), lastDate.getUTCMonth(), 1) / 1000;
+    var daysInMonth = new Date(Date.UTC(lastDate.getUTCFullYear(), lastDate.getUTCMonth() + 1, 0)).getUTCDate();
+    var allXs = [];
+    for (var d = 0; d < daysInMonth; d++) allXs.push(monthStartTs + d * 86400);
+    var actual = allXs.map(function(_, i) { return i < cum.length ? cum[i] : null; });
+    var ghost = ghostCum ? allXs.map(function(_, i) { return i < ghostCum.length ? ghostCum[i] : null; }) : null;
+    var proj = allXs.map(function() { return null; });
+    if (projected != null && cum.length) {
+      var lastIdx = cum.length - 1;
+      proj[lastIdx] = cum[lastIdx];
+      for (var i = lastIdx + 1; i < allXs.length; i++) {
+        var frac = (i - lastIdx) / (allXs.length - 1 - lastIdx);
+        proj[i] = cum[lastIdx] + (projected - cum[lastIdx]) * frac;
+      }
+    }
+    var el = root.querySelector('[data-chart="pace"]');
+    el.innerHTML = '';
+    var actualColor = palette.css(palette.colors.compute);
+    var projColor = palette.css(palette.text, 0.5);
+    var ghostColor = palette.css(palette.text, 0.3);
+    var font = '10px ' + getComputedStyle(root).getPropertyValue('--cost-mono');
+    var axis = { stroke: palette.axis, font: font, grid: { stroke: palette.grid, width: 1 }, ticks: { show: false } };
+    var tickStride = Math.max(1, Math.ceil(allXs.length / Math.max(1, Math.floor((el.clientWidth || 300) / 52))));
+    var xSplits = allXs.filter(function(_, i) { return i % tickStride === 0 || i === allXs.length - 1; });
+    var seriesDefs = [{}, { label: 'Actual', stroke: actualColor, width: 2, fill: palette.css(palette.colors.compute, 0.1), points: { show: false }, _swatch: actualColor },
+      { label: 'Projected', stroke: projColor, width: 1.5, dash: [4, 3], points: { show: false }, _swatch: projColor }];
+    if (ghost) seriesDefs.push({ label: 'Last period', stroke: ghostColor, width: 1.5, dash: [2, 2], points: { show: false }, _swatch: ghostColor });
+    var data = [allXs, actual, proj];
+    if (ghost) data.push(ghost);
+    function showPaceTip(u, idx, clientX, clientY) {
+      if (idx == null) { sharedTip.hide(); return; }
+      var rows = '';
+      for (var s = 1; s < u.series.length; s++) {
+        var v = u.data[s][idx];
+        if (v == null) continue;
+        rows += '<div class="cost-tip-row"><span class="cost-swatch" style="background:' + seriesDefs[s]._swatch + '"></span>' +
+          esc(u.series[s].label) + '<span class="num">' + fmtMoney(v) + '</span></div>';
+      }
+      if (!rows) { sharedTip.hide(); return; }
+      var when = new Date(allXs[idx] * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      sharedTip.show('<div class="cost-tip-time">' + esc(when) + '</div>' + rows, clientX, clientY);
+    }
+    new uPlot({
+      width: el.clientWidth, height: el.clientHeight,
+      series: seriesDefs,
+      legend: { show: false },
+      cursor: {},
+      hooks: { setCursor: [function(u) {
+        var idx = u.cursor.idx;
+        if (idx == null) { sharedTip.hide(); return; }
+        var rect = u.over.getBoundingClientRect();
+        showPaceTip(u, idx, rect.left + u.cursor.left, rect.top + u.cursor.top);
+      }] },
+      axes: [Object.assign({}, axis, { size: 18, splits: function() { return xSplits; }, values: function(u, vals) {
+        return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }); });
+      } }),
+        Object.assign({}, axis, { size: 46, values: function(u, vals) { return vals.map(function(v) { return fmtMoney(v); }); } })],
+      scales: { x: { time: true } }
+    }, data, el);
+    document.getElementById('pace-callout').textContent = projected != null ? 'Projected ' + fmtMoney(projected) + ' by month end' : '';
+  }
+
+  // ── Explorer (full-history background strip with drag-to-select, from report.extent_series) ──
+  function renderExplorer(extent) {
+    var el = root.querySelector('[data-chart="explorer"]');
+    var xs = (extent && extent.timestamps) || [];
+    el.innerHTML = '';
+    if (!xs.length) { el.innerHTML = '<div class="h-full flex items-center justify-center text-xs" style="color:var(--text-faint)">No history yet</div>'; return; }
+    var cats = extent.categories || {};
+    var cols = CATEGORIES.map(function(c) {
+      var vals = cats[c.key] || xs.map(function() { return 0; });
+      return state.hiddenCategories[c.key] ? vals.map(function() { return 0; }) : vals;
+    });
+    var maxStack = 0;
+    for (var i = 0; i < xs.length; i++) {
+      var sum = 0;
+      for (var s = 0; s < cols.length; s++) sum += (cols[s][i] || 0);
+      if (sum > maxStack) maxStack = sum;
+    }
+    var seriesDefs = categorySeries();
+    var bucketSpan = xs.length > 1 ? (xs[1] - xs[0]) : 86400;
+    var explorerPartialIdx = partialBucketIdx(xs, bucketSpan, state.report && state.report.freshness && state.report.freshness.data_through);
+
+    var bandEl = document.createElement('div'); bandEl.className = 'cost-explorer-band';
+    var dimLeftEl = document.createElement('div'); dimLeftEl.className = 'cost-explorer-dim';
+    var dimRightEl = document.createElement('div'); dimRightEl.className = 'cost-explorer-dim';
+    var resetChip = document.getElementById('explorer-reset');
+
+    // All pixel math below stays in CSS-pixel space. `u.valToPos(ts,'x')`/`u.posToVal(pos,'x')`
+    // WITHOUT the canvas-space `true` flag already operate relative to u.over's own box in CSS
+    // px, so values can be written to style.left/width directly with no extra offset needed.
+    // Plot width/clamp bounds come from u.bbox/u.pxRatio (always valid synchronously, even
+    // inside the `init` hook before u.over has been painted) rather than
+    // u.over.getBoundingClientRect() (can read a zero-width rect pre-paint). Real mouse events
+    // always fire post-paint, so cssX() safely uses getBoundingClientRect for those.
+    function dpr(u) { return u.pxRatio || window.devicePixelRatio || 1; }
+    function plotWidthCss(u) { return u.bbox.width / dpr(u); }
+    function cssX(u, e) { return e.clientX - u.over.getBoundingClientRect().left; }
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+    function positionBand(u, startTs, endTs) {
+      if (startTs == null || endTs == null) { bandEl.style.display = 'none'; dimLeftEl.style.display = 'none'; dimRightEl.style.display = 'none'; return; }
+      var width = plotWidthCss(u);
+      var left = clamp(u.valToPos(startTs, 'x'), 0, width);
+      var right = clamp(u.valToPos(endTs, 'x'), 0, width);
+      if (right < left) { var t = left; left = right; right = t; }
+      bandEl.style.display = 'block';
+      bandEl.style.left = left + 'px';
+      bandEl.style.width = Math.max(2, right - left) + 'px';
+      dimLeftEl.style.display = 'block';
+      dimLeftEl.style.left = '0px';
+      dimLeftEl.style.width = Math.max(0, left) + 'px';
+      dimRightEl.style.display = 'block';
+      dimRightEl.style.left = right + 'px';
+      dimRightEl.style.width = Math.max(0, width - right) + 'px';
+    }
+
+    // Snap a pointer position to the bucket whose bar it falls nearest, so clicks/drags
+    // always resolve to clean bucket boundaries (never a mid-bucket timestamp like 23:17).
+    function nearestBucketIdx(u, posCss) {
+      var val = u.posToVal(posCss, 'x');
+      var idx = Math.round((val - xs[0]) / bucketSpan);
+      return Math.max(0, Math.min(xs.length - 1, idx));
+    }
+    function bucketRange(idxA, idxB) {
+      var lo = Math.min(idxA, idxB), hi = Math.max(idxA, idxB);
+      return { start: xs[lo], end: xs[hi] + bucketSpan };
+    }
+    function brushPlugin() {
+      var downX = null, dragging = false, hoverIdx = null;
+      return { hooks: { init: function(u) {
+        u.over.appendChild(dimLeftEl);
+        u.over.appendChild(dimRightEl);
+        u.over.appendChild(bandEl);
+        u.over.style.cursor = 'crosshair';
+        resetChip.addEventListener('click', function() { clearBrush(); });
+        u.over.addEventListener('mousedown', function(e) {
+          downX = clamp(cssX(u, e), 0, plotWidthCss(u));
+          dragging = true;
+          var idx = nearestBucketIdx(u, downX);
+          var b = bucketRange(idx, idx);
+          positionBand(u, b.start, b.end);
+        });
+        u.over.addEventListener('mousemove', function(e) {
+          if (dragging) {
+            var x = clamp(cssX(u, e), 0, plotWidthCss(u));
+            var b = bucketRange(nearestBucketIdx(u, downX), nearestBucketIdx(u, x));
+            positionBand(u, b.start, b.end);
+            sharedTip.hide();
+            return;
+          }
+          var idx = u.cursor.idx;
+          if (idx == null) { sharedTip.hide(); return; }
+          if (idx !== hoverIdx) { hoverIdx = idx; }
+          sharedTip.show(explorerTipHtml(idx), e.clientX, e.clientY);
+        });
+        u.over.addEventListener('mouseleave', function() { if (!dragging) sharedTip.hide(); });
+        u.over.addEventListener('mouseup', function(e) {
+          if (!dragging) return;
+          dragging = false;
+          var upX = clamp(cssX(u, e), 0, plotWidthCss(u));
+          var b = bucketRange(nearestBucketIdx(u, downX), nearestBucketIdx(u, upX));
+          downX = null;
+          onExplorerBrush(new Date(b.start * 1000), new Date(b.end * 1000));
+        });
+        document.addEventListener('dblclick', function(e) { if (u.over.contains(e.target)) clearBrush(); });
+      }, ready: function(u) {
+        // u.bbox is only guaranteed sized once `ready` fires (not yet at `init` time), so the
+        // initially-visible active-range band is positioned here, not in the init hook above.
+        var r = state.report && state.report.range;
+        if (r) positionBand(u, new Date(r.start).getTime() / 1000, new Date(r.end).getTime() / 1000);
+        resetChip.hidden = !state.customStart;
+      } } };
+    }
+    function explorerTipHtml(idx) {
+      var rows = '', total = 0;
+      for (var s = 0; s < cols.length; s++) {
+        var v = cols[s][idx];
+        total += (v || 0);
+        if (!v) continue;
+        rows += '<div class="cost-tip-row"><span class="cost-swatch" style="background:' + seriesDefs[s]._swatch + '"></span>' +
+          esc(seriesDefs[s].label) + '<span class="num">' + fmtMoney(v) + '</span></div>';
+      }
+      var when = new Date(xs[idx] * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) +
+        (idx === explorerPartialIdx ? ' · today so far' : '');
+      return '<div class="cost-tip-time">' + esc(when) + '</div>' + rows +
+        '<div class="cost-tip-row cost-tip-total"><span>Total</span><span class="num">' + fmtMoney(total) + '</span></div>';
+    }
+    var tickStride = Math.max(1, Math.ceil(xs.length / Math.max(1, Math.floor(el.clientWidth / 56))));
+    var xSplits = xs.filter(function(_, i) { return i % tickStride === 0; });
+    var font = '9px ' + getComputedStyle(root).getPropertyValue('--cost-mono');
+    new uPlot({
+      width: el.clientWidth, height: el.clientHeight,
+      series: [{}].concat(seriesDefs.map(function(s) {
+        return Object.assign({}, s, { paths: function() { return null; }, points: { show: false } });
+      })),
+      legend: { show: false },
+      cursor: { points: { show: false }, drag: { x: false, y: false } },
+      plugins: [(function() {
+        return { hooks: { draw: [function(u) {
+          var ctx = u.ctx;
+          ctx.save();
+          ctx.beginPath(); ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height); ctx.clip();
+          var n = xs.length;
+          var yBase = u.valToPos(0, 'y', true);
+          for (var i = 0; i < n; i++) {
+            ctx.globalAlpha = (i === explorerPartialIdx) ? 0.55 : 1;
+            // Draw each bar centered within its bucket's own pixel slot ([xs[i], xs[i]+bucketSpan)),
+            // not centered on the bucket-start timestamp itself — otherwise half the bar for a
+            // bucket visually sits in the *previous* bucket's territory, misaligning with the
+            // brush/dim selection highlight (which is drawn exactly at bucket boundaries).
+            var slotStartPix = u.valToPos(xs[i], 'x', true);
+            var slotEndPix = u.valToPos(xs[i] + bucketSpan, 'x', true);
+            var slotW = slotEndPix - slotStartPix;
+            var barW = Math.max(1, slotW * 0.7);
+            var xPix = slotStartPix + slotW / 2;
+            var cum = 0;
+            for (var s2 = 0; s2 < cols.length; s2++) {
+              var val = cols[s2][i];
+              if (!val) continue;
+              var yPrev = u.valToPos(cum, 'y', true);
+              cum += val;
+              var yTop = u.valToPos(cum, 'y', true);
+              var exSegX = xPix - barW / 2, exSegW = Math.max(1, barW), exSegY = yTop, exSegH = Math.max(1, yPrev - yTop);
+              ctx.fillStyle = seriesDefs[s2]._fill;
+              ctx.fillRect(exSegX, exSegY, exSegW, exSegH);
+              if (seriesDefs[s2]._stroke) { ctx.strokeStyle = seriesDefs[s2]._stroke; ctx.lineWidth = 1; ctx.strokeRect(exSegX + 0.5, exSegY + 0.5, Math.max(0, exSegW - 1), Math.max(0, exSegH - 1)); }
+              if (isCbTheme()) drawHatch(ctx, exSegX, exSegY, exSegW, exSegH, CB_PATTERNS[seriesDefs[s2].key]);
+            }
+          }
+          ctx.globalAlpha = 1;
+          ctx.restore();
+        }] } };
+      })(), brushPlugin()],
+      axes: [Object.assign({}, { stroke: palette.axis, font: font, grid: { show: false }, ticks: { show: false }, size: 14, splits: function() { return xSplits; } }, {
+        values: function(u, vals) { return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }); }); }
+      }), { show: false }],
+      scales: { x: { time: true }, y: { range: [0, maxStack ? maxStack * 1.1 : 1] } }
+    }, [xs].concat(cols), el);
+  }
+  function clearBrush() {
+    state.customStart = null;
+    state.customEnd = null;
+    loadMain();
+  }
+  function onExplorerBrush(start, end) {
+    state.customStart = start.toISOString();
+    state.customEnd = end.toISOString();
+    loadMain();
+  }
+
+  // ── Calendar heatmap ──
+  // Quantile scale shared by the day-grid and hour-of-day heatmaps: six levels bucketed by the
+  // 20/40/60/80th percentiles over positive values, mapped to increasing alpha steps of the
+  // theme's primary color (computed fresh per call so theme/accent changes take effect).
+  function makeHeatmapScale(values) {
+    var nonZero = values.filter(function(v) { return v > 0; }).sort(function(a, b) { return a - b; });
+    function quantile(p) {
+      if (!nonZero.length) return 0;
+      return nonZero[Math.min(nonZero.length - 1, Math.floor(p * nonZero.length))];
+    }
+    var q20 = quantile(0.2), q40 = quantile(0.4), q60 = quantile(0.6), q80 = quantile(0.8);
+    function level(v) {
+      if (!v) return 0;
+      if (v <= q20) return 1;
+      if (v <= q40) return 2;
+      if (v <= q60) return 3;
+      if (v <= q80) return 4;
+      return 5;
+    }
+    var colors = ['var(--surface-inset)',
+      palette.css(palette.primary, 0.18), palette.css(palette.primary, 0.36),
+      palette.css(palette.primary, 0.54), palette.css(palette.primary, 0.74), palette.css(palette.primary, 0.95)];
+    return { level: level, colors: colors };
+  }
+  function renderCalendar(extent) {
+    var grid = document.getElementById('calendar-grid');
+    var monthsEl = document.getElementById('calendar-months');
+    var xs = (extent && extent.timestamps) || [];
+    if (!xs.length) { grid.innerHTML = ''; monthsEl.innerHTML = ''; return; }
+    var cats = extent.categories || {};
+    var totals = xs.map(function(_, i) { return CATEGORIES.reduce(function(sum, c) { return sum + ((cats[c.key] || [])[i] || 0); }, 0); });
+    var topCategory = xs.map(function(_, i) {
+      var best = null, bestVal = 0;
+      CATEGORIES.forEach(function(c) {
+        var v = ((cats[c.key] || [])[i]) || 0;
+        if (v > bestVal) { bestVal = v; best = c; }
+      });
+      return best;
+    });
+    var scale = makeHeatmapScale(totals);
+    var firstDow = (new Date(xs[0] * 1000).getUTCDay() + 6) % 7; // 0=Mon
+    var cells = [];
+    for (var p2 = 0; p2 < firstDow; p2++) cells.push(null);
+    xs.forEach(function(ts, i) { cells.push({ ts: ts, cost: totals[i], idx: i }); });
+    var bucketSpan = xs.length > 1 ? (xs[1] - xs[0]) : 86400;
+
+    grid.innerHTML = cells.map(function(c) {
+      if (!c) return '<div class="cal-cell" style="visibility:hidden"></div>';
+      var lvl = scale.level(c.cost);
+      return '<div class="cal-cell" style="background:' + scale.colors[lvl] + '" data-idx="' + c.idx + '" data-day="1"></div>';
+    }).join('');
+
+    var numCols = Math.ceil(cells.length / 7);
+    // One label per calendar month, placed at the week-column containing that month's first
+    // day. A straight per-column scan (checking "does this week contain a day <= 7") can match
+    // two adjacent week-columns for the same month when the 1st falls mid-week, duplicating the
+    // label ("Aug Aug"); walking the cells chronologically and emitting on each new month key
+    // avoids that.
+    var monthLabels = new Array(numCols).fill('');
+    var lastMonthKey = null;
+    cells.forEach(function(c, idx) {
+      if (!c) return;
+      var d = new Date(c.ts * 1000);
+      var monthKey = d.getUTCFullYear() + '-' + d.getUTCMonth();
+      if (monthKey !== lastMonthKey) {
+        lastMonthKey = monthKey;
+        var col = Math.floor(idx / 7);
+        if (!monthLabels[col]) monthLabels[col] = d.toLocaleDateString(undefined, { month: 'short', timeZone: 'UTC' });
+      }
+    });
+    monthsEl.innerHTML = monthLabels.map(function(l) { return '<span>' + esc(l) + '</span>'; }).join('');
+    monthsEl.style.gridTemplateColumns = 'repeat(' + numCols + ', minmax(18px, 1fr))';
+    grid.style.gridTemplateColumns = 'repeat(' + numCols + ', minmax(18px, 1fr))';
+
+    grid.querySelectorAll('.cal-cell[data-idx]').forEach(function(cellEl) {
+      var idx = +cellEl.dataset.idx;
+      cellEl.addEventListener('mouseenter', function(e) { showCalTip(idx, e.clientX, e.clientY); });
+      cellEl.addEventListener('mousemove', function(e) { showCalTip(idx, e.clientX, e.clientY); });
+      cellEl.addEventListener('mouseleave', function() { sharedTip.hide(); });
+      cellEl.addEventListener('click', function() {
+        var dayStart = new Date(xs[idx] * 1000);
+        var dayEnd = new Date(dayStart.getTime() + bucketSpan * 1000);
+        onExplorerBrush(dayStart, dayEnd);
+      });
+    });
+    function showCalTip(idx, clientX, clientY) {
+      var dateStr = new Date(xs[idx] * 1000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+      var topCat = topCategory[idx];
+      var rows = '<div class="cost-tip-row"><span>Total</span><span class="num">' + fmtMoney(totals[idx]) + '</span></div>';
+      if (topCat) {
+        rows += '<div class="cost-tip-row"><span class="cost-swatch" style="background:' + topCat.color + '"></span><span>Top: ' + esc(topCat.label) + '</span></div>';
+      }
+      sharedTip.show('<div class="cost-tip-time">' + esc(dateStr) + '</div>' + rows, clientX, clientY);
+    }
+    document.querySelectorAll('.cost-calendar-scale .cal-cell[data-scale]').forEach(function(el) {
+      el.style.background = scale.colors[+el.dataset.scale];
+    });
+  }
+
+  // ── Hour-of-day heatmap (day × hour cost intensity) ──
+  function renderHourHeatmap(heatmap) {
+    var section = document.getElementById('hourheat-section');
+    if (!heatmap || !heatmap.values) { section.hidden = true; return; }
+    section.hidden = false;
+    var grid = document.getElementById('hourheat-grid');
+    var flat = [], sum = 0, count = 0;
+    heatmap.values.forEach(function(row) {
+      row.forEach(function(v) {
+        flat.push(v || 0);
+        sum += (v || 0); count++;
+      });
+    });
+    var mean = count ? sum / count : 0;
+    var scale = makeHeatmapScale(flat);
+    var html = '<div></div>';
+    heatmap.hours.forEach(function(h) { html += '<div class="hh-collabel">' + (h % 3 === 0 ? h : '') + '</div>'; });
+    heatmap.days.forEach(function(day, di) {
+      html += '<div class="hh-rowlabel">' + esc(day) + '</div>';
+      heatmap.hours.forEach(function(h, hi) {
+        var v = (heatmap.values[di] || [])[hi] || 0;
+        html += '<div class="hh-cell" style="background:' + scale.colors[scale.level(v)] + '" data-day="' + esc(day) + '" data-hour="' + h + '" data-val="' + v + '"></div>';
+      });
+    });
+    grid.innerHTML = html;
+    grid.querySelectorAll('.hh-cell').forEach(function(cell) {
+      function show(e) {
+        var v = +cell.dataset.val;
+        var vsMean = mean > 0 ? (v / mean) : null;
+        var vsMeanText = vsMean == null ? '' : (vsMean >= 1
+          ? (vsMean.toFixed(1) + '&times; avg')
+          : (Math.round((1 - vsMean) * 100) + '% below avg'));
+        var html = '<div class="cost-tip-time">' + esc(cell.dataset.day) + ' ' + cell.dataset.hour + ':00 UTC</div>' +
+          '<div class="cost-tip-row"><span>Avg cost</span><span class="num">' + fmtMoney(v) + '</span></div>' +
+          (vsMeanText ? '<div class="cost-tip-row"><span>vs. hourly average</span><span class="num">' + vsMeanText + '</span></div>' : '');
+        sharedTip.show(html, e.clientX, e.clientY);
+      }
+      cell.addEventListener('mouseenter', show);
+      cell.addEventListener('mousemove', show);
+      cell.addEventListener('mouseleave', function() { sharedTip.hide(); });
+    });
+  }
+
+  // ── Donut (category share; hidden categories redistribute across the visible ones) ──
+  var REDUCED_MOTION = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // SVG <pattern> fills for color-blind themes: a solid category-color background plus
+  // hatch lines, referenced as stroke="url(#...)" on the donut's arcs so each category is
+  // distinguishable by pattern as well as hue.
+  function donutHatchSvg(kind) {
+    var s = 'stroke="rgba(0,0,0,0.4)" stroke-width="1"';
+    if (kind === 'diagonal') return '<path d="M0,8 L8,0M-2,2 L2,-2M6,10 L10,6" ' + s + '/>';
+    if (kind === 'diagonal2') return '<path d="M0,0 L8,8M-2,6 L2,10M6,-2 L10,2" ' + s + '/>';
+    if (kind === 'cross') return '<path d="M4,0 L4,8M0,4 L8,4" ' + s + '/>';
+    if (kind === 'dots') return '<circle cx="2" cy="2" r="1" fill="rgba(0,0,0,0.4)"/><circle cx="6" cy="6" r="1" fill="rgba(0,0,0,0.4)"/>';
+    if (kind === 'horizontal') return '<path d="M0,4 L8,4" ' + s + '/>';
+    return '';
+  }
+  function donutPatternDefs(cb, visible) {
+    if (!cb) return '';
+    var defs = '<defs>';
+    visible.forEach(function(c) {
+      var kind = CB_PATTERNS[c.key];
+      if (!kind || kind === 'none') return;
+      var colorDef = CATEGORIES.filter(function(x) { return x.key === c.key; })[0];
+      var color = colorDef ? colorDef.color : 'var(--text-faint)';
+      defs += '<pattern id="cost-pat-' + c.key + '" width="8" height="8" patternUnits="userSpaceOnUse">' +
+        '<rect width="8" height="8" fill="' + color + '"/>' + donutHatchSvg(kind) + '</pattern>';
+    });
+    return defs + '</defs>';
+  }
+  function renderDonut(report) {
+    var svg = document.getElementById('donut-svg');
+    var list = document.getElementById('donut-list');
+    var allCats = (report.categories || []).filter(function(c) { return c.cost > 0; });
+    var totalLabel = document.getElementById('donut-total');
+    var subLabel = document.querySelector('.cost-donut-sub');
+    if (!allCats.length) {
+      svg.innerHTML = '<circle cx="60" cy="60" r="50" fill="none" stroke="var(--surface-inset)" stroke-width="14"/>';
+      list.innerHTML = '<div class="cost-note" style="padding:0.5rem 0">No spend yet</div>';
+      totalLabel.textContent = fmtMoney(0);
+      subLabel.textContent = 'total';
+      return;
+    }
+    var visible = allCats.filter(function(c) { return !state.hiddenCategories[c.key]; });
+    var visibleTotal = visible.reduce(function(s, c) { return s + c.cost; }, 0);
+    function setDefaultCenter() {
+      totalLabel.textContent = fmtMoney(visibleTotal);
+      subLabel.textContent = visible.length < allCats.length
+        ? visible.length + ' of ' + allCats.length + ' shown'
+        : 'total';
+    }
+    setDefaultCenter();
+
+    var r = 50, circumference = 2 * Math.PI * r;
+    var gapDeg = visible.length > 1 ? 3 : 0;
+    var minDeg = 8;
+    var availableDeg = 360 - gapDeg * visible.length;
+    var rawDeg = visible.map(function(c) { return visibleTotal ? (c.cost / visibleTotal) * availableDeg : 0; });
+    var clamped = rawDeg.map(function(d) { return Math.max(minDeg, d); });
+    var clampedSum = clamped.reduce(function(a, b) { return a + b; }, 0);
+    var scale = clampedSum ? availableDeg / clampedSum : 1;
+    var finalDeg = clamped.map(function(d) { return d * scale; });
+
+    var offsetDeg = 0;
+    var midAngle = {};
+    var cb = isCbTheme();
+    var transition = REDUCED_MOTION ? 'none' : 'stroke-dasharray 300ms cubic-bezier(.16,1,.3,1), stroke-dashoffset 300ms cubic-bezier(.16,1,.3,1), opacity 150ms ease';
+    var paths = visible.map(function(c, i) {
+      var colorDef = CATEGORIES.filter(function(x) { return x.key === c.key; })[0];
+      var color = colorDef ? colorDef.color : 'var(--text-faint)';
+      var kind = CB_PATTERNS[c.key];
+      var strokeVal = (cb && kind && kind !== 'none') ? 'url(#cost-pat-' + c.key + ')' : color;
+      var len = (finalDeg[i] / 360) * circumference;
+      var dash = Math.max(0, len) + ' ' + (circumference - len);
+      var offsetLen = (offsetDeg / 360) * circumference;
+      var pct = visibleTotal ? c.cost / visibleTotal : 0;
+      var label = c.label + ' ' + fmtMoney(c.cost) + ', ' + fmtPct(pct);
+      var el = '<circle cx="60" cy="60" r="' + r + '" fill="none" stroke="' + strokeVal + '" stroke-width="14" ' +
+        'stroke-dasharray="' + dash + '" stroke-dashoffset="' + (-offsetLen) + '" stroke-linecap="butt" ' +
+        'data-cat="' + c.key + '" tabindex="0" role="button" aria-label="' + esc(label) + '" ' +
+        'style="transition:' + transition + ';cursor:pointer;outline:none"/>';
+      midAngle[c.key] = offsetDeg + finalDeg[i] / 2;
+      offsetDeg += finalDeg[i] + gapDeg;
+      return el;
+    });
+    svg.innerHTML = donutPatternDefs(cb, visible) + '<g transform="rotate(-90 60 60)">' + paths.join('') + '</g>';
+    function arcOuterPoint(key) {
+      var angle = (midAngle[key] || 0) * Math.PI / 180;
+      var svgRect = svg.getBoundingClientRect();
+      var scale = svgRect.width / 120;
+      var px = 60 + (r + 10) * Math.sin(angle);
+      var py = 60 - (r + 10) * Math.cos(angle);
+      var screenX = svgRect.left + px * scale;
+      var screenY = svgRect.top + py * scale;
+      return { left: screenX, right: screenX, top: screenY, bottom: screenY, width: 0, height: 0 };
+    }
+
+    function highlight(key) {
+      svg.querySelectorAll('[data-cat]').forEach(function(p) { p.style.opacity = (!key || p.dataset.cat === key) ? '1' : '0.25'; });
+      list.querySelectorAll('.cost-donut-item').forEach(function(it) { it.classList.toggle('is-dim', !!key && it.dataset.cat !== key); });
+      if (key) {
+        var c = allCats.filter(function(x) { return x.key === key; })[0];
+        if (c) {
+          totalLabel.textContent = fmtMoney(c.cost);
+          subLabel.textContent = c.label;
+        }
+      } else {
+        setDefaultCenter();
+      }
+    }
+    svg.querySelectorAll('[data-cat]').forEach(function(seg) {
+      var key = seg.dataset.cat;
+      function enter() { highlight(key); sharedTip.showAt(donutTipHtml(key), arcOuterPoint(key), 'right'); }
+      function leave() { highlight(null); sharedTip.hide(); }
+      seg.addEventListener('mouseenter', enter);
+      seg.addEventListener('mouseleave', leave);
+      seg.addEventListener('focus', enter);
+      seg.addEventListener('blur', leave);
+      seg.addEventListener('click', function() { toggleCategory(key); });
+      seg.addEventListener('keydown', function(e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCategory(key); } });
+    });
+    function donutTipHtml(key) {
+      var c = allCats.filter(function(x) { return x.key === key; })[0];
+      if (!c) return '';
+      var hidden = !!state.hiddenCategories[key];
+      var shareRow = hidden
+        ? '<div class="cost-tip-row"><span>Share</span><span class="num">hidden</span></div>'
+        : '<div class="cost-tip-row"><span>Share</span><span class="num">' + fmtPct(visibleTotal ? c.cost / visibleTotal : 0) + '</span></div>';
+      return '<div class="cost-tip-time">' + esc(c.label) + '</div>' +
+        '<div class="cost-tip-row"><span>Cost</span><span class="num">' + fmtMoney(c.cost) + '</span></div>' + shareRow;
+    }
+
+    list.innerHTML = allCats.map(function(c) {
+      var colorDef = CATEGORIES.filter(function(x) { return x.key === c.key; })[0];
+      var color = colorDef ? colorDef.color : 'var(--text-faint)';
+      var hidden = !!state.hiddenCategories[c.key];
+      var pct = hidden ? '—' : fmtPct(visibleTotal ? c.cost / visibleTotal : 0);
+      return '<div class="cost-donut-item' + (hidden ? ' is-off' : '') + '" data-cat="' + c.key + '">' +
+        '<span class="cost-donut-tick" style="background:' + color + '"></span>' +
+        '<span class="cost-donut-name">' + esc(c.label) + '</span>' +
+        '<span class="cost-donut-val num">' + fmtMoney(c.cost) + '</span>' +
+        '<span class="cost-donut-pct num">' + pct + '</span></div>';
+    }).join('');
+    list.querySelectorAll('.cost-donut-item').forEach(function(it) {
+      it.addEventListener('mouseenter', function(e) { highlight(it.dataset.cat); sharedTip.show(donutTipHtml(it.dataset.cat), e.clientX, e.clientY); });
+      it.addEventListener('mousemove', function(e) { sharedTip.show(donutTipHtml(it.dataset.cat), e.clientX, e.clientY); });
+      it.addEventListener('mouseleave', function() { highlight(null); sharedTip.hide(); });
+    });
+  }
+  function toggleCategory(key) {
+    if (!state.report) return;
+    var allCats = (state.report.categories || []).filter(function(c) { return c.cost > 0; });
+    var visibleCount = allCats.filter(function(c) { return !state.hiddenCategories[c.key]; }).length;
+    if (!state.hiddenCategories[key] && visibleCount <= 1) return; // keep at least one category visible
+    state.hiddenCategories[key] = !state.hiddenCategories[key];
+    renderDonut(state.report);
+    renderLegend(state.report);
+    renderMainChart(state.report);
+    var extent = state.report.extent_series;
+    if (extent) renderExplorer(extent);
+  }
+  document.getElementById('donut-list').addEventListener('click', function(e) {
+    var item = e.target.closest('[data-cat]');
+    if (!item) return;
+    toggleCategory(item.dataset.cat);
+  });
+
+  // ── Movers ──
+  function renderMovers(report) {
+    var section = document.getElementById('movers-section');
+    var rows = report.movers;
+    if (!rows.length) { section.hidden = true; return; }
+    section.hidden = false;
+    var up = rows.filter(function(r) { return r.change > 0; }).sort(function(a, b) { return b.change - a.change; }).slice(0, 5);
+    var down = rows.filter(function(r) { return r.change < 0; }).sort(function(a, b) { return a.change - b.change; }).slice(0, 5);
+    function rowHtml(r, isUp) {
+      var nameHtml = r.url ? '<a href="' + esc(r.url) + '">' + esc(r.name) + '</a>' : esc(r.name);
+      return '<div class="cost-mover-row"><div class="cost-mover-name">' + nameHtml +
+        (r.context ? '<span class="cost-mover-ctx"> · ' + esc(r.context) + '</span>' : '') + '</div>' +
+        '<div class="cost-mover-delta ' + (isUp ? 'is-up' : 'is-down') + ' num">' + (isUp ? '+' : '') + fmtMoney(r.change) + '</div></div>';
+    }
+    document.getElementById('movers-up').innerHTML = up.length ? up.map(function(r) { return rowHtml(r, true); }).join('') : '<div class="cost-note" style="padding:0.5rem 0">No increases</div>';
+    document.getElementById('movers-down').innerHTML = down.length ? down.map(function(r) { return rowHtml(r, false); }).join('') : '<div class="cost-note" style="padding:0.5rem 0">No decreases</div>';
+    return rows;
+  }
+
+  function renderDonutTeaser(report, moverRows) {
+    var el = document.getElementById('donut-teaser');
+    var parts = [];
+    if (moverRows && moverRows.length) {
+      var biggest = moverRows.slice().sort(function(a, b) { return Math.abs(b.change) - Math.abs(a.change); })[0];
+      if (biggest) {
+        var up = biggest.change > 0;
+        var nameHtml = biggest.url ? '<a href="' + esc(biggest.url) + '">' + esc(biggest.name) + '</a>' : esc(biggest.name);
+        parts.push('<div><span class="cost-label">Biggest change</span>' +
+          '<div class="cost-donut-teaser-row"><span>' + nameHtml + '</span>' +
+          '<span class="num" style="color:' + (up ? 'var(--cost-up)' : 'var(--cost-down)') + '">' + (up ? '+' : '') + fmtMoney(biggest.change) + '</span></div></div>');
+      }
+    }
+    var eff = report.kpis ? report.kpis.efficiency : null;
+    if (eff != null) {
+      parts.push('<div><span class="cost-label">Efficiency</span>' +
+        '<div class="cost-donut-eff-bar mt-1"><span style="width:' + Math.min(100, eff * 100).toFixed(0) + '%"></span></div>' +
+        '<div class="cost-donut-teaser-row mt-1"><span>Used of reserved</span><span class="num">' + fmtPct(eff) + '</span></div></div>');
+    }
+    el.innerHTML = parts.join('');
+  }
+
+  // ── Breakdown accordions ──
+  var sortState = {};
+  function sortRows(tableKey, field, rows) {
+    var stateKey = tableKey + ':' + field;
+    var dir = sortState[stateKey] === 'asc' ? 'desc' : 'asc';
+    sortState = {}; sortState[stateKey] = dir;
+    var mul = dir === 'asc' ? 1 : -1;
+    return rows.slice().sort(function(a, b) {
+      var av = field === 'name' ? (a.name || '') : (a[field] == null ? -Infinity : a[field]);
+      var bv = field === 'name' ? (b.name || '') : (b[field] == null ? -Infinity : b[field]);
+      if (av < bv) return -1 * mul;
+      if (av > bv) return 1 * mul;
+      return 0;
+    });
+  }
+  function renderBreakdownAccordions(report) {
+    var container = document.getElementById('breakdown-tables');
+    container.innerHTML = '';
+    Object.keys(report.breakdowns || {}).forEach(function(key) {
+      container.appendChild(buildAccordionSection(key, report.breakdowns[key] || [], report));
+    });
+  }
+  function buildAccordionSection(key, rows, report) {
+    var label = BREAKDOWN_LABELS[key] || titleCase(key);
+    var section = document.createElement('section');
+    section.className = 'cost-card cost-bd-card mb-3';
+    section.setAttribute('aria-label', label);
+    section.innerHTML =
+      '<div class="cost-bd-head"><span class="cost-section-title">' + esc(label) + '</span>' +
+      (rows.length > 15 ? '<input type="search" class="cost-bd-filter" data-filter placeholder="Filter ' + esc(label.toLowerCase()) + '…" aria-label="Filter ' + esc(label.toLowerCase()) + '">' : '') +
+      '<div class="cost-bd-sort">' +
+      '<button type="button" data-sort="cost" class="is-active">Cost</button>' +
+      '<button type="button" data-sort="name">Name</button>' +
+      '<button type="button" data-sort="efficiency">Efficiency</button></div></div>' +
+      '<div data-rows></div>' +
+      (rows.length > 10 ? '<div class="cost-bd-footer"><button type="button" data-toggle-all hidden></button></div>' : '');
+    var rowsEl = section.querySelector('[data-rows]');
+    var filterEl = section.querySelector('[data-filter]');
+    var toggleBtn = section.querySelector('[data-toggle-all]');
+
+    var bdSeries = report.series && report.series.breakdowns && report.series.breakdowns[key];
+    function sparkSvg(rowKey) {
+      var vals = bdSeries && bdSeries.values[rowKey];
+      if (!vals || vals.length < 2) {
+        // Reserve the grid column even without series data, so share/delta/cost columns
+        // stay aligned across rows (rows beyond the top-7 have no per-row series).
+        return '<div class="cost-bd-spark cost-bd-spark-empty" title="No daily trend available">' +
+          '<svg viewBox="0 0 100 24" preserveAspectRatio="none"><line x1="0" y1="18" x2="100" y2="18"></line></svg></div>';
+      }
+      var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+      var span = (max - min) || 1;
+      var n = vals.length;
+      var pts = vals.map(function(v, i) { return (i / (n - 1) * 100).toFixed(1) + ',' + (24 - ((v - min) / span) * 22 - 1).toFixed(1); });
+      var line = pts.join(' ');
+      var area = '0,24 ' + line + ' 100,24';
+      var title = 'Min ' + fmtMoney(min) + ' · Max ' + fmtMoney(max);
+      return '<div class="cost-bd-spark" title="' + esc(title) + '"><svg viewBox="0 0 100 24" preserveAspectRatio="none">' +
+        '<polygon points="' + area + '" fill="var(--color-primary)" opacity="0.12"></polygon>' +
+        '<polyline points="' + line + '" fill="none" stroke="var(--color-primary)" stroke-width="2" vector-effect="non-scaling-stroke"></polyline>' +
+        '</svg></div>';
+    }
+    var currentRows = rows;
+    function draw(data) {
+      currentRows = data;
+      if (!data.length) { rowsEl.innerHTML = '<div class="cost-note">Nothing here for this range.</div>'; return; }
+      rowsEl.innerHTML = data.map(function(row, i) {
+        var deltaPct = fmtDelta(row.cost, row.previous_cost);
+        var deltaCls = deltaPct == null ? '' : (deltaPct > 0 ? 'is-up' : deltaPct < 0 ? 'is-down' : '');
+        var deltaText = deltaPct == null ? '—' : (deltaPct >= 0 ? '+' : '') + deltaPct.toFixed(0) + '%';
+        var nameHtml = row.url ? '<a href="' + esc(row.url) + '">' + esc(row.name) + '</a>' : '<span class="plain">' + esc(row.name) + '</span>';
+        var bodyHtml;
+        if (row.meters && row.meters.length) {
+          bodyHtml = '<table class="cost-bd-meters"><thead><tr><th>Meter</th><th class="num">Quantity</th><th class="num">Rate</th><th class="num">Cost</th></tr></thead><tbody>' +
+            row.meters.map(meterRowHtml).join('') + '</tbody></table>';
+        } else {
+          var catsHtml = Object.keys(row.categories || {}).filter(function(k) { return row.categories[k]; }).map(function(k) {
+            var def = CATEGORIES.filter(function(x) { return x.key === k; })[0];
+            return '<span><span class="cost-swatch" style="background:' + (def ? def.color : 'var(--text-faint)') + '"></span>' +
+              esc(def ? def.label : titleCase(k)) + '<span class="num">' + fmtMoney(row.categories[k]) + '</span></span>';
+          }).join('');
+          bodyHtml = '<div class="cost-bd-cats">' + (catsHtml || '<span style="color:var(--text-faint)">No cost breakdown available</span>') + '</div>';
+        }
+        return '<div class="cost-bd-row' + (row.deleted ? ' is-deleted' : '') + '" data-idx="' + i + '">' +
+          '<div class="cost-bd-summary">' +
+          '<div class="cost-bd-name-wrap"><span class="cost-bd-chevron">▸</span><div class="cost-bd-name">' +
+          '<div class="cost-bd-name-row">' + nameHtml + (row.deleted ? '<span class="cost-bd-deleted-badge">Deleted</span>' : '') + '</div>' +
+          (row.context ? '<span class="cost-bd-ctx">' + esc(row.context) + '</span>' : '') + '</div></div>' +
+          sparkSvg(row.key) +
+          '<div class="cost-bd-share"><div class="cost-bd-share-bar"><span style="width:' + Math.max(2, (row.share || 0) * 100).toFixed(1) + '%"></span></div>' +
+          '<span class="num">' + fmtPct(row.share) + '</span></div>' +
+          '<div class="cost-bd-delta ' + deltaCls + ' num">' + deltaText + '</div>' +
+          '<div class="cost-bd-cost num">' + fmtMoney(row.cost) + '</div></div>' +
+          '<div class="cost-bd-body">' + bodyHtml + '</div></div>';
+      }).join('');
+    }
+    var activeSorted = rows;
+    var filterQuery = '';
+    var expanded = false;
+    function renderRows() {
+      var filtered = filterQuery
+        ? activeSorted.filter(function(r) { return (r.name || '').toLowerCase().indexOf(filterQuery) !== -1; })
+        : activeSorted;
+      var capped = !filterQuery && !expanded && filtered.length > 10;
+      draw(capped ? filtered.slice(0, 10) : filtered);
+      if (toggleBtn) {
+        var showToggle = !filterQuery && activeSorted.length > 10;
+        toggleBtn.hidden = !showToggle;
+        if (showToggle) toggleBtn.textContent = expanded ? 'Show top 10' : 'Show all ' + activeSorted.length;
+      }
+    }
+    renderRows();
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', function() { expanded = !expanded; renderRows(); });
+    }
+    if (filterEl) {
+      filterEl.addEventListener('input', function() {
+        filterQuery = filterEl.value.trim().toLowerCase();
+        renderRows();
+      });
+    }
+    section.querySelectorAll('[data-sort]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        section.querySelectorAll('[data-sort]').forEach(function(b) { b.classList.remove('is-active'); });
+        btn.classList.add('is-active');
+        activeSorted = sortRows(key, btn.dataset.sort, rows);
+        renderRows();
+      });
+    });
+    rowsEl.addEventListener('click', function(e) {
+      if (e.target.closest('a')) return;
+      var summary = e.target.closest('.cost-bd-summary');
+      if (!summary) return;
+      summary.closest('.cost-bd-row').classList.toggle('is-open');
+    });
+    function rowTipHtml(row) {
+      var deltaPct = fmtDelta(row.cost, row.previous_cost);
+      var deltaHtml = deltaPct == null ? '—' : (deltaPct >= 0 ? '+' : '') + deltaPct.toFixed(0) + '%';
+      var rowsHtml = '<div class="cost-tip-row"><span>Cost</span><span class="num">' + fmtMoney(row.cost) + '</span></div>' +
+        '<div class="cost-tip-row"><span>Share</span><span class="num">' + fmtPct(row.share) + '</span></div>' +
+        '<div class="cost-tip-row"><span>vs previous</span><span class="num">' + deltaHtml + '</span></div>';
+      if (row.efficiency != null) rowsHtml += '<div class="cost-tip-row"><span>Efficiency</span><span class="num">' + fmtPct(row.efficiency) + '</span></div>';
+      return '<div class="cost-tip-time">' + esc(row.name) + '</div>' + rowsHtml;
+    }
+    rowsEl.addEventListener('mousemove', function(e) {
+      var summary = e.target.closest('.cost-bd-summary');
+      if (!summary) { sharedTip.hide(); return; }
+      var row = currentRows[+summary.closest('.cost-bd-row').dataset.idx];
+      if (row) sharedTip.show(rowTipHtml(row), e.clientX, e.clientY);
+    });
+    rowsEl.addEventListener('mouseleave', function() { sharedTip.hide(); });
+    return section;
+  }
+
+  // ── Platform (admin-only, install-wide; only present when scope_kind === 'platform') ──
+  function renderPlatformSections(report) {
+    var platform = report.platform;
+    var waterfallSection = document.getElementById('platform-waterfall-section');
+    var capacitySection = document.getElementById('platform-capacity-section');
+    var row2 = document.getElementById('platform-row2');
+    var nodesSection = document.getElementById('platform-nodes-section');
+    if (!platform) {
+      waterfallSection.hidden = true; capacitySection.hidden = true; row2.hidden = true; nodesSection.hidden = true;
+      return;
+    }
+    renderPlatformWaterfall(platform.reconciliation, waterfallSection);
+    renderPlatformCapacity(report, platform.capacity_series, capacitySection);
+    // row2 must be unhidden BEFORE constructing the top-orgs uPlot chart — uPlot sizes itself
+    // from el.clientWidth/Height at construction time, which read 0 while an ancestor is
+    // `hidden` (not yet laid out), producing an invisible 0x0 canvas.
+    row2.hidden = false;
+    var hasTopOrgs = renderPlatformTopOrgs(report, platform.top_orgs_series);
+    var hasUnallocated = renderPlatformUnallocated(platform.unallocated, platform.reconciliation);
+    row2.hidden = !(hasTopOrgs || hasUnallocated);
+    renderPlatformNodes(platform.nodes, nodesSection);
+  }
+  function renderPlatformWaterfall(reconciliation, section) {
+    var el = document.getElementById('platform-waterfall');
+    if (!reconciliation) { section.hidden = true; return; }
+    section.hidden = false;
+    var total = reconciliation.total != null ? reconciliation.total : ((reconciliation.cluster_compute || 0) + (reconciliation.fixed_overhead || 0));
+    var max = Math.max(total, 1);
+    // Input side (what the cluster costs) uses neutral tones; output side (where it went) uses
+    // semantic colors — tenant direct is the "productive" primary accent, overhead allocated
+    // reuses the overhead gray, idle is a warning tone (not error red).
+    var sourceSegs = [
+      { label: 'Cluster compute', value: reconciliation.cluster_compute || 0, color: 'color-mix(in oklab, var(--text-bright) 55%, var(--surface-inset))' },
+      { label: 'Fixed overhead', value: reconciliation.fixed_overhead || 0, color: 'color-mix(in oklab, var(--text-bright) 22%, var(--surface-inset))' }
+    ];
+    var allocSegs = [
+      { label: 'Tenant direct', value: reconciliation.tenant_direct || 0, color: 'var(--color-primary)' },
+      { label: 'Overhead allocated', value: reconciliation.overhead_allocated || 0, color: 'var(--cost-overhead)' },
+      { label: 'Unallocated idle', value: reconciliation.unallocated_idle || 0, color: 'var(--color-warning, oklch(0.8 0.15 85))' }
+    ];
+    // Only call out a reconciliation gap when it's materially large (>1% of total); this is a
+    // data-quality signal, not an error, so it gets the same warning hue (striped, not solid)
+    // rather than error red.
+    var residual = reconciliation.residual;
+    var hasResidual = residual != null && Math.abs(residual) > 0.01 * max;
+    if (hasResidual) {
+      allocSegs.push({ label: 'Unreconciled', value: residual, color: 'var(--color-warning, oklch(0.8 0.15 85))', isResidual: true });
+    }
+    function barRow(title, segs, rowKey) {
+      var segsHtml = segs.map(function(s) {
+        var pct = (s.value / max) * 100;
+        var widthPct = Math.max(0, pct);
+        return '<span class="cost-waterfall-seg' + (s.isResidual ? ' is-residual' : '') + '" style="width:' + widthPct.toFixed(2) + '%;background:' + s.color + '" ' +
+          'title="' + esc(s.label) + ': ' + fmtMoney(s.value) + ' (' + pct.toFixed(1) + '%)"></span>';
+      }).join('');
+      var labelsHtml = segs.map(function(s, i) {
+        var pct = (s.value / max) * 100;
+        var widthPct = Math.max(0, pct);
+        return '<div class="cost-waterfall-seg-label' + (s.isResidual ? ' is-residual' : '') + '" data-row="' + rowKey + '" data-i="' + i + '" style="width:' + widthPct.toFixed(2) + '%">' +
+          '<span class="cost-swatch" style="background:' + s.color + '"></span>' +
+          '<span class="cost-waterfall-seg-name">' + esc(s.label) + '</span>' +
+          '<span class="cost-waterfall-seg-value num">' + fmtMoney(s.value) + ' &middot; ' + pct.toFixed(1) + '%</span></div>';
+      }).join('');
+      return '<div class="cost-waterfall-row"><div class="cost-waterfall-row-label">' + esc(title) + '</div>' +
+        '<div class="cost-waterfall-row-main"><div class="cost-waterfall-bar">' + segsHtml + '</div>' +
+        '<div class="cost-waterfall-labels">' + labelsHtml + '</div></div></div>';
+    }
+    el.innerHTML = barRow('Cluster spend', sourceSegs, 'source') + barRow('Where it went', allocSegs, 'alloc') +
+      '<div class="cost-waterfall-legend" data-spillover></div>';
+    // Segments whose rendered label box is too narrow to hold a full "$X · Y%" figure would
+    // otherwise clip (ellipsis mid-number); demote those to a legend row below the bars instead
+    // of ever truncating a dollar amount.
+    var bySeg = { source: sourceSegs, alloc: allocSegs };
+    var spillover = [];
+    el.querySelectorAll('.cost-waterfall-seg-label').forEach(function(labelEl) {
+      if (labelEl.offsetWidth < 140) {
+        labelEl.style.display = 'none';
+        spillover.push(bySeg[labelEl.dataset.row][+labelEl.dataset.i]);
+      }
+    });
+    var spilloverEl = el.querySelector('[data-spillover]');
+    spilloverEl.innerHTML = spillover.map(function(s) {
+      var pct = (s.value / max) * 100;
+      return '<div class="cost-waterfall-legend-item' + (s.isResidual ? ' is-residual' : '') + '">' +
+        '<span class="cost-swatch" style="background:' + s.color + '"></span>' +
+        '<span>' + esc(s.label) + '</span>' +
+        '<span class="num">' + fmtMoney(s.value) + ' &middot; ' + pct.toFixed(1) + '%</span></div>';
+    }).join('');
+  }
+  function renderPlatformCapacity(report, series, section) {
+    var el = document.querySelector('[data-chart="platform-capacity"]');
+    if (!series || !report.series || !report.series.timestamps) { section.hidden = true; el.innerHTML = ''; return; }
+    section.hidden = false;
+    var xs = report.series.timestamps;
+    var isHour = report.range && report.range.interval === 'hour';
+    // Capacity is the headline reference line, so it's solid and the brightest neutral (dashed
+    // would read as the "previous/ghost" convention used elsewhere on this dashboard); requested
+    // takes the dashed secondary-reference role instead.
+    var capColor = palette.css(palette.text, 0.8), reqColor = palette.css(palette.text, 0.4), usedColor = palette.css(palette.colors.compute);
+    var idleBandColor = palette.css(palette.text, 0.07), reservedBandColor = palette.css(palette.colors.egress, 0.16);
+    var capVals = series.capacity_cost || [], reqVals = series.requested_cost || [], usedVals = series.used_cost || [];
+    var bucketSpan = isHour ? 3600 : 86400;
+    var partialIdx = partialBucketIdx(xs, bucketSpan, report.freshness && report.freshness.data_through);
+    // The in-progress bucket (today so far) has an artificially low value next to full prior
+    // buckets; render its closing segment dashed (like the existing "projected" convention on
+    // the pace chart) instead of letting the solid line imply a real drop. Needs a previous
+    // point to draw a segment *to*, so this only applies once there are 2+ buckets.
+    function withTailNulled(vals) {
+      var out = vals.slice();
+      if (partialIdx > 0) out[partialIdx] = null;
+      return out;
+    }
+    function tailOnly(vals) {
+      var out = vals.map(function() { return null; });
+      out[partialIdx - 1] = vals[partialIdx - 1];
+      out[partialIdx] = vals[partialIdx];
+      return out;
+    }
+    var hasTail = partialIdx > 0;
+    var capMain = hasTail ? withTailNulled(capVals) : capVals;
+    var reqMain = hasTail ? withTailNulled(reqVals) : reqVals;
+    var usedMain = hasTail ? withTailNulled(usedVals) : usedVals;
+    var defs = [
+      { key: 'capacity', label: 'Capacity', stroke: capColor, width: 2, values: capVals, _swatch: capColor },
+      { key: 'requested', label: 'Requested', stroke: reqColor, width: 1.5, dash: [4, 3], values: reqVals, _swatch: reqColor },
+      { key: 'used', label: 'Used', stroke: usedColor, width: 2, values: usedVals, _swatch: usedColor }
+    ];
+    el.innerHTML = '';
+    var font = '10px ' + getComputedStyle(root).getPropertyValue('--cost-mono');
+    var axis = { stroke: palette.axis, font: font, grid: { stroke: palette.grid, width: 1 }, ticks: { show: false } };
+    var tickStride = Math.max(1, Math.ceil(xs.length / Math.max(1, Math.floor(el.clientWidth / 56))));
+    var xSplits = xs.filter(function(_, i) { return i % tickStride === 0; });
+    function bandPlugin() {
+      function drawBand(u, topVals, bottomVals, color) {
+        var n = topVals.length;
+        var ctx = u.ctx;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(u.bbox.left, u.bbox.top, u.bbox.width, u.bbox.height);
+        ctx.clip();
+        ctx.beginPath();
+        var started = false;
+        for (var i = 0; i < n; i++) {
+          if (topVals[i] == null) continue;
+          var x = u.valToPos(xs[i], 'x', true), y = u.valToPos(topVals[i], 'y', true);
+          if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+        }
+        for (var j = n - 1; j >= 0; j--) {
+          if (bottomVals[j] == null) continue;
+          var x2 = u.valToPos(xs[j], 'x', true), y2 = u.valToPos(bottomVals[j], 'y', true);
+          ctx.lineTo(x2, y2);
+        }
+        ctx.closePath();
+        ctx.fillStyle = color;
+        ctx.fill();
+        ctx.restore();
+      }
+      return { hooks: { drawClear: [function(u) {
+        drawBand(u, capVals, reqVals, idleBandColor);
+        drawBand(u, reqVals, usedVals, reservedBandColor);
+      }] } };
+    }
+    function tipHtml(idx) {
+      var when = new Date(xs[idx] * 1000).toLocaleDateString(undefined, isHour
+        ? { month: 'short', day: 'numeric', hour: 'numeric', timeZone: 'UTC' }
+        : { month: 'short', day: 'numeric', timeZone: 'UTC' }) + (idx === partialIdx ? ' · today so far' : '');
+      var rows = defs.map(function(d) {
+        var v = d.values[idx];
+        if (v == null) return '';
+        return '<div class="cost-tip-row"><span class="cost-swatch" style="background:' + d._swatch + '"></span>' + esc(d.label) +
+          '<span class="num">' + fmtMoney(v) + '</span></div>';
+      }).join('');
+      var cap = capVals[idx], req = reqVals[idx], used = usedVals[idx];
+      if (cap != null && req != null) rows += '<div class="cost-tip-row"><span>Idle capacity</span><span class="num">' + fmtMoney(Math.max(0, cap - req)) + '</span></div>';
+      if (req != null && used != null) rows += '<div class="cost-tip-row"><span>Reserved, unused</span><span class="num">' + fmtMoney(Math.max(0, req - used)) + '</span></div>';
+      return '<div class="cost-tip-time">' + esc(when) + '</div>' + rows;
+    }
+    var tailSeriesDefs = hasTail ? [
+      { key: 'capacityTail', stroke: capColor, width: 2, dash: [4, 3], points: { show: false } },
+      { key: 'requestedTail', stroke: reqColor, width: 1.5, dash: [4, 3], points: { show: false } },
+      { key: 'usedTail', stroke: usedColor, width: 2, dash: [4, 3], points: { show: false } }
+    ] : [];
+    new uPlot({
+      width: el.clientWidth, height: el.clientHeight,
+      series: [{}, { key: 'capacity', label: 'Capacity', stroke: capColor, width: 2, points: { show: false } },
+        { key: 'requested', label: 'Requested', stroke: reqColor, width: 1.5, dash: [4, 3], points: { show: false } },
+        { key: 'used', label: 'Used', stroke: usedColor, width: 2, points: { show: false } }
+      ].concat(tailSeriesDefs),
+      legend: { show: false },
+      cursor: {},
+      plugins: [bandPlugin()],
+      hooks: { setCursor: [function(u) {
+        var idx = u.cursor.idx;
+        if (idx == null) { sharedTip.hide(); return; }
+        var rect = u.over.getBoundingClientRect();
+        sharedTip.show(tipHtml(idx), rect.left + u.cursor.left, rect.top + u.cursor.top);
+      }] },
+      axes: [Object.assign({}, axis, { splits: function() { return xSplits; }, values: function(u, vals) { return vals.map(function(ts) { return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' }); }); } }),
+        Object.assign({}, axis, { label: isHour ? '$ / hr' : '$ / day', labelFont: font, values: function(u, vals) { return vals.map(function(v) { return fmtMoney(v); }); } })],
+      scales: { x: { time: true }, y: { range: function(u, min, max) { return [0, max * 1.08 || 1]; } } }
+    }, [xs, capMain, reqMain, usedMain].concat(hasTail ? [tailOnly(capVals), tailOnly(reqVals), tailOnly(usedVals)] : []), el);
+    var legendDefs = defs.concat([
+      { label: 'Idle', _swatch: idleBandColor },
+      { label: 'Reserved, unused', _swatch: reservedBandColor }
+    ]);
+    document.getElementById('platform-capacity-legend').innerHTML = legendDefs.map(function(d) {
+      return '<span class="cost-legend-item"><span class="cost-swatch" style="background:' + d._swatch + '"></span>' + esc(d.label) + '</span>';
+    }).join('');
+  }
+  function renderPlatformTopOrgs(report, topOrgsSeries) {
+    var el = document.querySelector('[data-chart="platform-top-orgs"]');
+    var series = topOrgsSeries || (report.series && report.series.breakdowns && report.series.breakdowns.organizations);
+    var legendEl = document.getElementById('platform-top-orgs-legend');
+    if (!series || !report.series || !report.series.timestamps) { el.innerHTML = ''; if (legendEl) legendEl.innerHTML = ''; return false; }
+    var xs = report.series.timestamps;
+    var keys = series.keys || [];
+    var stackSeries = keys.map(function(key, i) {
+      var color = extraColor(i);
+      return { key: key, label: (series.names || {})[key] || key, values: series.values[key] || [], _swatch: color, _fill: color };
+    });
+    if (series.other && series.other.some(function(v) { return v > 0; })) {
+      stackSeries.push({ key: '__other', label: 'Other', values: series.other, _swatch: palette.css(palette.text, 0.3), _fill: palette.css(palette.text, 0.3) });
+    }
+    // No artificial bar-width cap here — the main chart's default maxBarWidth (40px) was
+    // starving bars in this narrower card, leaving them thin with oversized gaps.
+    var topOrgsBucketSpan = (report.range && report.range.interval === 'hour') ? 3600 : 86400;
+    makeStackedChart(el, xs, stackSeries, {
+      barFactor: 0.6, maxBarWidth: 999,
+      interval: report.range && report.range.interval,
+      partialIdx: partialBucketIdx(xs, topOrgsBucketSpan, report.freshness && report.freshness.data_through)
+    });
+    if (legendEl) {
+      legendEl.innerHTML = stackSeries.map(function(s) {
+        return '<span class="cost-legend-item"><span class="cost-swatch" style="background:' + s._swatch + '"></span>' + esc(s.label) + '</span>';
+      }).join('');
+    }
+    return true;
+  }
+  function renderPlatformUnallocated(unallocated, reconciliation) {
+    // A pod-attribution view (how many pods the collector couldn't tie to any org), not a
+    // dollar figure — distinct from reconciliation.unallocated_idle ($ of idle cluster capacity).
+    var el = document.getElementById('platform-unallocated');
+    if (!unallocated) { el.innerHTML = ''; return false; }
+    var seen = unallocated.pods_seen || 0;
+    var unattributed = unallocated.pods_unallocated || 0;
+    var share = unallocated.share;
+    var idleCost = reconciliation ? reconciliation.unallocated_idle : null;
+    var sharePct = share != null ? Math.round(share * 100) : null;
+    var avgSeen = Math.max(1, Math.round(seen));
+    var avgUnattributed = Math.round(unattributed);
+    el.innerHTML = '<div class="cost-platform-unallocated-stat">' +
+      '<span class="cost-platform-unallocated-amount num">' + (sharePct != null ? sharePct + '%' : '—') + '</span>' +
+      '<span class="cost-platform-unallocated-share">of pods unattributed &middot; avg ' + avgUnattributed + ' of ' + avgSeen + ' pods/hr</span>' +
+      (idleCost != null ? '<span class="cost-platform-unallocated-share">' + fmtMoney(idleCost) + ' in unallocated idle capacity</span>' : '') +
+      '</div>';
+    return true;
+  }
+  function renderPlatformNodes(nodes, section) {
+    var body = document.getElementById('platform-nodes-body');
+    if (!nodes || !nodes.length) { section.hidden = true; body.innerHTML = ''; return; }
+    section.hidden = false;
+    body.innerHTML = nodes.map(function(n) {
+      return '<tr><td>' + esc(n.instance_type || '—') + (n.capacity_type ? ' <span class="cost-label">' + esc(n.capacity_type) + '</span>' : '') + '</td>' +
+        '<td class="num">' + (n.count != null ? n.count : '—') + '</td>' +
+        '<td class="num">' + (n.node_hours != null ? fmtQty(n.node_hours) : '—') + '</td>' +
+        '<td class="num">' + (n.hourly != null ? fmtRate(n.hourly, 'node-hr') : '—') + '</td>' +
+        '<td class="num">' + fmtMoney(n.cost) + '</td></tr>';
+    }).join('');
+  }
+
+  // ── Meters ──
+  function meterRowHtml(m) {
+    return '<tr><td>' + esc(m.label) + '</td><td class="num">' + fmtQty(m.quantity) + ' ' + esc(m.unit || '') +
+      '</td><td class="num">' + fmtRate(m.rate, m.unit) + '</td><td class="num">' + fmtMoney(m.cost) + '</td></tr>';
+  }
+  function renderMeters(meters) {
+    var body = document.getElementById('meters-body');
+    if (!meters || !meters.length) {
+      body.innerHTML = '<tr><td colspan="4" class="text-center" style="color:var(--text-faint)">No meters recorded for this range.</td></tr>';
+      return;
+    }
+    body.innerHTML = meters.map(meterRowHtml).join('');
+  }
+
+  // ── Rates panel ──
+  function renderRates(report) {
+    var panel = document.getElementById('rates-panel');
+    var rates = report.rates;
+    if (!rates || !Object.keys(rates).length) {
+      panel.innerHTML = '<p class="cost-rates-note">No rate information available.</p>';
+      return;
+    }
+    var html = '';
+    if (rates.line_items) {
+      html += '<div class="cost-rates-section"><table class="cost-rates-table"><thead><tr><th>Rate</th><th class="num">Price</th><th>Note</th></tr></thead><tbody>' +
+        rates.line_items.map(function(li) {
+          return '<tr><td>' + esc(li.label) + '</td><td class="num">' + fmtRate(li.value, li.unit) + '</td><td>' + esc(li.note || '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      if (rates.nodes && rates.nodes.length) {
+        html += '<div class="cost-rates-section"><table class="cost-rates-table"><thead><tr><th>Node type</th><th class="num">Hourly</th></tr></thead><tbody>' +
+          rates.nodes.map(function(n) { return '<tr><td>' + esc(n.instance_type) + '</td><td class="num">' + fmtMoney(n.hourly) + '</td></tr>'; }).join('') +
+          '</tbody></table></div>';
+      }
+      var source = report.rates_source;
+      if (source) {
+        html += '<p class="cost-rates-note">Region ' + esc(source.region || '—') + ', checked ' + esc(source.checked || '—') +
+          '. ' + esc(source.basis || '') + '</p>';
+      }
+    }
+    html += '<p class="cost-rates-note">For each hour, CPU and memory costs use whichever is higher: the capacity reserved for your workload or what it actually used. Cluster overhead ' +
+      '(control plane, NAT, load balancers, and compute not directly attributable to a workload) is split across organizations, projects, ' +
+      'environments and applications in proportion to their direct compute cost. These are estimates, not an invoice.</p>';
+    panel.innerHTML = html;
+  }
+
+  // ── Freshness ──
+  function renderFreshness(freshness) {
+    var pill = document.getElementById('freshness-pill');
+    if (!freshness || !freshness.collection_enabled) { pill.hidden = true; return; }
+    var warn = !!freshness.stale || !!freshness.missing_hours || (freshness.failed_hours && freshness.failed_hours.length);
+    var bits = ['Updated ' + relTime(freshness.last_run_at)];
+    if (freshness.missing_hours) bits.push(freshness.missing_hours + ' missing');
+    if (freshness.failed_hours && freshness.failed_hours.length) bits.push(freshness.failed_hours.length + ' failed');
+    pill.textContent = bits.join(' · ');
+    pill.title = 'Data through ' + fmtClock(freshness.data_through);
+    pill.className = 'cost-pill' + (warn ? ' is-stale' : '');
+    pill.hidden = false;
+  }
+
+  // ── Hero ──
+  function renderHero(report) {
+    setText('[data-range-label]', (report.range && report.range.label) || 'Range total');
+    setText('[data-hero="total"]', fmtMoney(report.totals ? report.totals.cost : null));
+    var pct = report.totals ? report.totals.change_pct : null;
+    var chip = document.getElementById('hero-delta');
+    if (pct == null) { chip.hidden = true; }
+    else {
+      chip.hidden = false;
+      var up = pct > 0;
+      chip.className = 'cost-delta-chip ' + (Math.abs(pct) < 0.05 ? 'is-flat' : (up ? 'is-up' : 'is-down'));
+      chip.textContent = (Math.abs(pct) < 0.05 ? '' : (up ? '▲ ' : '▼ ')) + Math.abs(pct).toFixed(1) + '%';
+    }
+    document.getElementById('hero-sub').textContent = 'vs previous period (' + fmtMoney(report.totals ? report.totals.previous_cost : null) + ')';
+    var kpis = report.kpis || {};
+    setText('[data-chip="mtd"]', fmtMoney(kpis.month_to_date));
+    setText('[data-chip="projected"]', fmtMoney(kpis.projected_month));
+    setText('[data-chip="runrate"]', fmtMoney(kpis.run_rate_monthly));
+    setText('[data-chip="efficiency"]', kpis.efficiency == null ? '—' : fmtPct(kpis.efficiency));
+  }
+
+  // ── Range nav / URL state ──
+  function updateRangeLabel() {
+    var range = state.report && state.report.range;
+    document.getElementById('range-label-btn').innerHTML = esc(fmtRangeLabel(range)) + ' <span style="opacity:.5">▾</span>';
+    document.getElementById('range-prev').disabled = !range;
+    document.getElementById('range-next').disabled = !range;
+    document.querySelectorAll('#range-presets [data-range]').forEach(function(b) {
+      b.classList.toggle('is-active', !state.customStart && b.dataset.range === state.rangeKey);
+    });
+  }
+  function syncUrl() {
+    var url = new URL(location.href);
+    if (state.customStart && state.customEnd) {
+      url.searchParams.set('start', state.customStart);
+      url.searchParams.set('end', state.customEnd);
+      url.searchParams.delete('range');
+    } else {
+      url.searchParams.set('range', state.rangeKey);
+      url.searchParams.delete('start');
+      url.searchParams.delete('end');
+    }
+    if (state.envSlug) url.searchParams.set('env', state.envSlug);
+    else url.searchParams.delete('env');
+    history.replaceState(null, '', url);
+  }
+  function initStateFromUrl() {
+    var params = new URLSearchParams(location.search);
+    var start = params.get('start'), end = params.get('end');
+    if (start && end) { state.customStart = start; state.customEnd = end; }
+    else {
+      var r = params.get('range');
+      if (r && ['24h', '7d', '30d', 'mtd', '90d'].indexOf(r) !== -1) state.rangeKey = r;
+    }
+    var env = params.get('env');
+    if (env && envOptions.some(function(e) { return e.slug === env; })) state.envSlug = env;
+  }
+  function renderEnvToggle() {
+    var el = document.getElementById('env-toggle');
+    if (!envOptions.length) { el.hidden = true; return; }
+    el.hidden = false;
+    var buttons = ['<button type="button" data-env="" aria-pressed="' + (!state.envSlug) + '">All</button>']
+      .concat(envOptions.map(function(e) {
+        return '<button type="button" data-env="' + esc(e.slug) + '" aria-pressed="' + (state.envSlug === e.slug) + '">' + esc(e.name) + '</button>';
+      }));
+    el.innerHTML = buttons.join('');
+  }
+  document.getElementById('env-toggle').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-env]');
+    if (!btn) return;
+    var val = btn.dataset.env || null;
+    if (val === state.envSlug) return;
+    state.envSlug = val;
+    renderEnvToggle();
+    loadMain();
+  });
+  function shiftRange(dir) {
+    var range = state.report && state.report.range;
+    if (!range) return;
+    var start = new Date(range.start), end = new Date(range.end);
+    var span = end.getTime() - start.getTime();
+    state.customStart = new Date(start.getTime() + dir * span).toISOString();
+    state.customEnd = new Date(end.getTime() + dir * span).toISOString();
+    loadMain();
+  }
+  document.getElementById('range-label-btn').addEventListener('click', function(e) {
+    e.stopPropagation();
+    document.getElementById('range-pop').classList.toggle('is-open');
+  });
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.cost-rangenav')) document.getElementById('range-pop').classList.remove('is-open');
+  });
+  document.getElementById('range-presets').addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-range]');
+    if (!btn) return;
+    state.rangeKey = btn.dataset.range;
+    state.customStart = null; state.customEnd = null;
+    document.getElementById('range-pop').classList.remove('is-open');
+    loadMain();
+  });
+  document.getElementById('custom-apply').addEventListener('click', function() {
+    var s = document.getElementById('custom-start').value;
+    var e = document.getElementById('custom-end').value;
+    if (!s || !e) return;
+    state.customStart = s + 'T00:00:00.000Z';
+    state.customEnd = e + 'T23:59:59.000Z';
+    document.getElementById('range-pop').classList.remove('is-open');
+    loadMain();
+  });
+  document.getElementById('range-prev').addEventListener('click', function() { shiftRange(-1); });
+  document.getElementById('range-next').addEventListener('click', function() { shiftRange(1); });
+
+  // ── Data loading ──
+  function buildQuery() {
+    var params = new URLSearchParams();
+    if (state.customStart && state.customEnd) { params.set('start', state.customStart); params.set('end', state.customEnd); }
+    else { params.set('range', state.rangeKey); }
+    if (state.envSlug) params.set('env', state.envSlug);
+    return params.toString();
+  }
+  function sleep(ms) { return new Promise(function(resolve) { setTimeout(resolve, ms); }); }
+  function fetchReportOnce(query) {
+    return fetch(dataUrl + '?' + query).then(function(r) {
+      if (!r.ok) { var err = new Error('HTTP ' + r.status); err.status = r.status; throw err; }
+      return r.json();
+    });
+  }
+  function isRetryableError(err) {
+    // A network failure surfaces as a TypeError with no status; a 5xx is a transient
+    // server problem. Both are worth a quiet retry; 4xx (permission/not-found) is not.
+    if (err && typeof err.status === 'number') return err.status >= 500;
+    return true;
+  }
+  function fetchReport(query) {
+    var retryDelaysMs = [1000, 3000];
+    function attempt(i) {
+      return fetchReportOnce(query).catch(function(err) {
+        if (i < retryDelaysMs.length && isRetryableError(err)) {
+          return sleep(retryDelaysMs[i]).then(function() { return attempt(i + 1); });
+        }
+        throw err;
+      });
+    }
+    return attempt(0);
+  }
+  function isEmpty(report) {
+    if (report.freshness && report.freshness.collection_enabled === false) return 'cost collection is not enabled yet';
+    var hasSeries = report.series && report.series.timestamps && report.series.timestamps.length;
+    var hasCost = report.totals && report.totals.cost;
+    if (!hasSeries && !hasCost) return 'no cost data has been collected for this range yet';
+    return null;
+  }
+  function renderAll() {
+    var report = state.report;
+    var extent = report.extent_series;
+    renderFreshness(report.freshness);
+    renderHero(report);
+    setupChartModeToggle(report);
+    renderLegend(report);
+    renderMainChart(report);
+    renderPace(report);
+    if (extent) renderExplorer(extent);
+    renderCalendar(report.calendar);
+    renderHourHeatmap(report.heatmap);
+    renderDonut(report);
+    var moverRows = renderMovers(report);
+    renderDonutTeaser(report, moverRows);
+    renderPlatformSections(report);
+    renderBreakdownAccordions(report);
+    renderMeters(report.meters || []);
+    renderRates(report);
+  }
+  var loadSeq = 0;
+  function loadMain() {
+    var seq = ++loadSeq;
+    document.getElementById('cost-error').hidden = true;
+    return fetchReport(buildQuery()).then(function(report) {
+      if (seq !== loadSeq) return;
+      state.report = report;
+      syncUrl();
+      updateRangeLabel();
+      var emptyReason = isEmpty(report);
+      document.getElementById('cost-empty').hidden = !emptyReason;
+      document.getElementById('cost-body').hidden = !!emptyReason;
+      if (emptyReason) {
+        document.getElementById('cost-empty-text').textContent = 'No cost data: ' + emptyReason + '.';
+        renderFreshness(report.freshness);
+        return;
+      }
+      if (!palette) resolvePalette();
+      renderAll();
+    }).catch(function(err) {
+      if (seq !== loadSeq) return;
+      console.error('cost dashboard render failed', err && err.message, err && err.stack);
+      document.getElementById('cost-error').hidden = false;
+      document.getElementById('cost-body').hidden = true;
+      document.getElementById('cost-empty').hidden = true;
+    });
+  }
+  document.getElementById('cost-error').querySelector('[data-retry]').addEventListener('click', loadMain);
+
+  var resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() {
+      if (!state.report) return;
+      renderMainChart(state.report);
+      renderPace(state.report);
+      var extent = state.report.extent_series;
+      if (extent) renderExplorer(extent);
+    }, 150);
+  });
+  var themeRedrawTimer;
+  new MutationObserver(function() {
+    // Accent changes set inline `style` properties on <html> (applyAccent in _base.html);
+    // theme switches set `data-theme`/`data-accent`. Watch all three so every palette source
+    // (category hues, --color-primary, text/surface mixes) gets re-read and every canvas/SVG
+    // surface (which bakes resolved RGB at draw time, unlike plain CSS) gets redrawn live.
+    clearTimeout(themeRedrawTimer);
+    themeRedrawTimer = setTimeout(function() {
+      palette = null;
+      if (state.report) { resolvePalette(); renderAll(); }
+    }, 30);
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-accent', 'style'] });
+
+  initStateFromUrl();
+  renderEnvToggle();
+  updateRangeLabel();
+  loadMain();
+})();
+</script>

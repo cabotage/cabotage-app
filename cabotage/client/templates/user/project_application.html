@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, app_tab_nav, app_resource_path, info_popup, info_popup_row %}
 
 {% block css %}
 <style>
@@ -819,33 +819,12 @@
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Processes</h2>
             <div class="info-popup-anchor">
               {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
-              <div class="info-popup">
-                <div class="info-popup-header">
-                  {{ icon('terminal', 'w-3 h-3 info-popup-header-icon') }}
-                  <span class="info-popup-header-text">Procfile Processes</span>
-                </div>
-                <div class="info-popup-body">
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">web</code>
-                    <span class="info-popup-desc">Receives HTTP traffic from the load balancer. Scalable.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">worker</code>
-                    <span class="info-popup-desc">Runs background jobs and queue consumers. Scalable.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">release</code>
-                    <span class="info-popup-desc">Runs once per release build. Use for DB migrations.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">postdeploy</code>
-                    <span class="info-popup-desc">Runs once after each deploy. For cache warming, etc.</span>
-                  </div>
-                </div>
-                <div class="info-popup-footer">
-                  <a href="{{ url_for('user.guide') }}#processes" class="info-popup-link">Learn more in the Guide →</a>
-                </div>
-              </div>
+              {% call info_popup('Procfile Processes', 'terminal', link=url_for('user.guide') ~ '#processes') %}
+                {% call info_popup_row('web') %}Receives HTTP traffic from the load balancer. Scalable.{% endcall %}
+                {% call info_popup_row('worker') %}Runs background jobs and queue consumers. Scalable.{% endcall %}
+                {% call info_popup_row('release') %}Runs once per release build. Use for DB migrations.{% endcall %}
+                {% call info_popup_row('postdeploy') %}Runs once after each deploy. For cache warming, etc.{% endcall %}
+              {% endcall %}
             </div>
           </div>
           <div class="dropdown dropdown-end dropdown-hover">
@@ -934,29 +913,11 @@
             <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">Jobs</h2>
             <div class="info-popup-anchor">
               {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
-              <div class="info-popup">
-                <div class="info-popup-header">
-                  {{ icon('clock', 'w-3 h-3 info-popup-header-icon') }}
-                  <span class="info-popup-header-text">Scheduled Jobs</span>
-                </div>
-                <div class="info-popup-body">
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">job-*</code>
-                    <span class="info-popup-desc">Runs on a cron schedule as a Kubernetes CronJob. Define with a <code>job-</code> prefix in your Procfile.</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">SCHEDULE</code>
-                    <span class="info-popup-desc">Required per-process env var, set inline in the Procfile (e.g. <code>env SCHEDULE="0 */6 * * *"</code>).</span>
-                  </div>
-                  <div class="info-popup-row">
-                    <code class="info-popup-type">Controls</code>
-                    <span class="info-popup-desc">Use the toggle to suspend/resume and the dropdown to change pod size. Overlapping runs are forbidden; no retries on failure; 1-hour timeout.</span>
-                  </div>
-                </div>
-                <div class="info-popup-footer">
-                  <a href="{{ url_for('user.guide') }}#jobs" class="info-popup-link">Learn more in the Guide →</a>
-                </div>
-              </div>
+              {% call info_popup('Scheduled Jobs', 'clock', link=url_for('user.guide') ~ '#jobs') %}
+                {% call info_popup_row('job-*') %}Runs on a cron schedule as a Kubernetes CronJob. Define with a <code>job-</code> prefix in your Procfile.{% endcall %}
+                {% call info_popup_row('SCHEDULE') %}Required per-process env var, set inline in the Procfile (e.g. <code>env SCHEDULE="0 */6 * * *"</code>).{% endcall %}
+                {% call info_popup_row('Controls') %}Use the toggle to suspend/resume and the dropdown to change pod size. Overlapping runs are forbidden; no retries on failure; 1-hour timeout.{% endcall %}
+              {% endcall %}
             </div>
           </div>
           <div class="process-grid">

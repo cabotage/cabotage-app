@@ -1,11 +1,14 @@
 """Tests for config template resolution."""
 
+from unittest.mock import patch
+
 import pytest
 
 from cabotage.utils.config_templates import (
     TemplateResolutionError,
     _resolve_ingress,
     _resolve_tcp_service,
+    resolve_template_variables,
 )
 
 # ---------------------------------------------------------------------------
@@ -42,9 +45,17 @@ class FakeOrganization:
 
 
 class FakeProject:
-    def __init__(self, organization=None, k8s_identifier="test-project"):
+    def __init__(
+        self,
+        organization=None,
+        k8s_identifier="test-project",
+        slug="test-project",
+        branch_deploy_fallback_to_base=False,
+    ):
         self.organization = organization or FakeOrganization()
         self.k8s_identifier = k8s_identifier
+        self.slug = slug
+        self.branch_deploy_fallback_to_base = branch_deploy_fallback_to_base
 
 
 class FakeApplication:
@@ -275,3 +286,58 @@ class TestResolveTCPService:
         fqdn = _resolve_tcp_service(app_env, "worker", "myapp", "hostname")
 
         assert fqdn == "test-project-test-app-worker.test-org.svc.cluster.local"
+
+
+# ---------------------------------------------------------------------------
+# Branch deploys: references to apps that were not cloned into the PR env
+# ---------------------------------------------------------------------------
+
+
+@patch("cabotage.utils.config_templates._get_sibling_app_envs", return_value={})
+class TestBranchDeployFallback:
+    def _base_oauth_app_env(self):
+        return FakeAppEnv(
+            ingresses=[FakeIngress(hosts=[FakeHost("oauth.example.com")])]
+        )
+
+    @staticmethod
+    def _preview_app_env(fallback_to_base):
+        project = FakeProject(branch_deploy_fallback_to_base=fallback_to_base)
+        return FakeAppEnv(application=FakeApplication(project=project))
+
+    @patch("cabotage.utils.config_templates._base_environment_app_env")
+    def test_ingress_ref_resolves_from_base_env(self, mock_base, mock_siblings):
+        mock_base.return_value = self._base_oauth_app_env()
+
+        value = resolve_template_variables(
+            "${oauth.url}", self._preview_app_env(fallback_to_base=True)
+        )
+
+        assert value == "https://oauth.example.com"
+        mock_base.assert_called_once()
+        assert mock_base.call_args.args[1] == "oauth"
+
+    @patch("cabotage.utils.config_templates._base_environment_app_env")
+    def test_fallback_disabled_raises(self, mock_base, mock_siblings):
+        mock_base.return_value = self._base_oauth_app_env()
+
+        with pytest.raises(
+            TemplateResolutionError, match="does not allow previews to fall back"
+        ):
+            resolve_template_variables(
+                "${oauth.url}", self._preview_app_env(fallback_to_base=False)
+            )
+
+    @patch("cabotage.utils.config_templates._base_environment_app_env")
+    def test_service_ref_to_uncloned_app_raises(self, mock_base, mock_siblings):
+        mock_base.return_value = self._base_oauth_app_env()
+
+        with pytest.raises(TemplateResolutionError, match="cannot cross namespaces"):
+            resolve_template_variables("${oauth.web.svc}", FakeAppEnv())
+
+    @patch("cabotage.utils.config_templates._base_environment_app_env")
+    def test_ref_in_neither_env_raises_not_found(self, mock_base, mock_siblings):
+        mock_base.return_value = None
+
+        with pytest.raises(TemplateResolutionError, match="not found in project"):
+            resolve_template_variables("${oauth.url}", FakeAppEnv())

@@ -52,6 +52,7 @@ from cabotage.celery.tasks import (
     teardown_tailscale_operator,
 )
 from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.github import discover_check_names
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
     config_writer,
@@ -158,7 +159,7 @@ from cabotage.server.user.forms import (
     TailscaleIntegrationForm,
 )
 from cabotage.server.websocket import close_on_abort
-from cabotage.utils import oidc
+from cabotage.utils import mimir, oidc
 from cabotage.utils.build_log_stream import (
     get_redis_client,
     read_log_stream,
@@ -1672,6 +1673,7 @@ def project_settings(org_slug, project_slug):
             form.branch_deploy_base_environment_id.data = ""
         if not form.branch_deploys_enabled.data:
             form.branch_deploy_base_environment_id.data = ""
+            form.branch_deploy_fallback_to_base.data = False
 
         # Convert empty string to None for the UUID FK
         if not form.branch_deploy_base_environment_id.data:
@@ -3496,12 +3498,12 @@ def project_application_shell(org_slug, project_slug, app_slug, env_slug=None):
     #  this should be removed when we start a shell pod instead of attaching          #
     # =============================================================================== #
     try:
-        [
+        next(
             k
             for k, v in app_env.process_counts.items()
             if (k.startswith(("web", "worker"))) and v > 0
-        ][0]
-    except IndexError:
+        )
+    except StopIteration:
         abort(404)
 
     return render_template(
@@ -3564,12 +3566,12 @@ def _shell_socket(
     #  everything below should be replaced with the creation/monitoring of a new pod  #
     # =============================================================================== #
     try:
-        process_name = [
+        process_name = next(
             k
             for k, v in process_counts.items()
             if (k.startswith(("web", "worker"))) and v > 0
-        ][0]
-    except IndexError:
+        )
+    except StopIteration:
         abort(404)
     labels = {
         "organization": org_slug,
@@ -4505,6 +4507,10 @@ def project_application_environment_settings(
     if form.validate_on_submit():
         app_env.auto_deploy_branch = form.auto_deploy_branch.data or None
         app_env.auto_deploy_wait_for_ci = form.auto_deploy_wait_for_ci.data
+        app_env.deployment_checks = (
+            sorted({c.strip() for c in form.deployment_checks.data or [] if c.strip()})
+            or None
+        )
         app_env.github_environment_name = form.github_environment_name.data or None
         app_env.deployment_timeout = form.deployment_timeout.data
         app_env.health_check_path = form.health_check_path.data or None
@@ -4541,6 +4547,7 @@ def project_application_environment_settings(
             ("ingress domains", _ingress_hostnames([app_env])),
         ],
     )
+    branch = app_env.effective_auto_deploy_branch
     return render_template(
         "user/project_application_environment_settings.html",
         application=application,
@@ -4549,7 +4556,45 @@ def project_application_environment_settings(
         form=form,
         unenroll_form=unenroll_form,
         unenroll_impact=unenroll_impact,
+        can_discover_checks=bool(
+            application.github_app_installation_id
+            and application.github_repository
+            and branch
+        ),
+        selected_checks=sorted(form.deployment_checks.data or [], key=str.lower),
     )
+
+
+@user_blueprint.route(
+    "/projects/<org_slug>/<project_slug>/env/<env_slug>/applications/<app_slug>/settings/checks",
+)
+@login_required
+def project_application_environment_checks(org_slug, project_slug, env_slug, app_slug):
+    _org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=True
+    )
+    environment = Environment.query.filter_by(
+        project_id=project.id, slug=env_slug
+    ).first_or_404()
+    app_env = ApplicationEnvironment.query.filter_by(
+        application_id=application.id, environment_id=environment.id
+    ).first_or_404()
+
+    branch = app_env.effective_auto_deploy_branch
+    if not (
+        application.github_app_installation_id
+        and application.github_repository
+        and branch
+    ):
+        return jsonify({"error": "not configured"}), 404
+    checks = discover_check_names(
+        application.github_app_installation_id,
+        application.github_repository,
+        branch,
+    )
+    if checks is None:
+        return jsonify({"error": "discovery failed"}), 502
+    return jsonify({"checks": checks})
 
 
 @user_blueprint.route(
@@ -6784,26 +6829,22 @@ def _project_tenant_ids(organization, project):
 def _mimir_connection(tenant_id=None):
     """Return (mimir_url, verify, headers) tuple, or (None, None, {}) if not configured.
 
-    If *tenant_id* is given it overrides the default tenant header.
+    If *tenant_id* is given it overrides the default tenant header. Delegates
+    to the strict client in cabotage.utils.mimir; the many callers below treat
+    "not configured" as "no data available".
     """
-    mimir_url = current_app.config.get("MIMIR_URL")
-    if not mimir_url:
-        return None, None, {}
-    verify = current_app.config.get("MIMIR_VERIFY")
-    if verify is not None:
-        if isinstance(verify, str) and verify.lower() == "false":
-            verify = False
-    else:
-        verify = True
-    headers = {}
     # TODO: Include anonymous until migration to multi-tenant is completed
     effective_tenant = (
         tenant_id
         if tenant_id is not None
         else str(current_app.config.get("MIMIR_TENANT_ID")) + "|anonymous"
     )
-    if effective_tenant:
-        headers["X-Scope-OrgID"] = effective_tenant
+    try:
+        mimir_url, verify, headers, _timeout = mimir.mimir_connection(
+            tenant_id=effective_tenant
+        )
+    except mimir.MimirNotConfiguredError:
+        return None, None, {}
     return mimir_url, verify, headers
 
 
