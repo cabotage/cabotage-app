@@ -1,4 +1,4 @@
-"""Periodic hourly cost collection task."""
+"""Periodic cost tasks: hourly collection and daily AWS price refresh."""
 
 import datetime
 import logging
@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from cabotage.server import db
 from cabotage.server.models.cost import CostCollectionRun
+from cabotage.utils.cost.aws_pricing import refresh_prices
 from cabotage.utils.cost.collector import collect_hour
 
 log = logging.getLogger(__name__)
@@ -86,3 +87,13 @@ def collect_costs() -> None:
                 stats.get("last_attempt_error") or run.error,
                 suffix,
             )
+
+
+@shared_task()
+def refresh_aws_prices() -> None:
+    snapshot = refresh_prices()
+    log.info(
+        "Refreshed AWS prices for %s: %d instance types",
+        snapshot.region,
+        len(snapshot.rates.get("node_instance_hourly", {})),
+    )

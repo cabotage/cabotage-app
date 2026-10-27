@@ -10,7 +10,7 @@ import bisect
 import datetime
 import uuid
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, cast
 
@@ -28,7 +28,13 @@ from cabotage.server.models.cost import (
 )
 from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.models.resources import Resource
-from cabotage.utils.cost.rates import CostRates, effective_rates, node_hourly_price
+from cabotage.utils.cost.rates import (
+    DEFAULT_RATES,
+    CostRates,
+    PriceTier,
+    effective_rates,
+    node_hourly_price,
+)
 
 type Interval = Literal["hour", "day", "week"]
 
@@ -268,6 +274,31 @@ def _rate_for_meter_optional(rates: CostRates, meter: str) -> float | None:
     return _simple_rates(rates).get(rate_key) if rate_key else None
 
 
+def _meter_rows(
+    rates: CostRates, totals: Mapping[str, tuple[float, float]]
+) -> list[MeterRow]:
+    rows: list[MeterRow] = []
+    for meter in METER_ORDER:
+        quantity, cost = totals.get(meter, (0.0, 0.0))
+        # Storage cost includes IOPS and throughput, so show cost per GiB-mo.
+        rate = (
+            cost / quantity
+            if meter == "storage" and quantity
+            else _rate_for_meter_optional(rates, meter)
+        )
+        rows.append(
+            {
+                "key": meter,
+                "label": METER_LABELS[meter],
+                "unit": METER_UNITS[meter],
+                "quantity": quantity,
+                "rate": rate,
+                "cost": cost,
+            }
+        )
+    return rows
+
+
 class _RangeConfig(TypedDict):
     duration: datetime.timedelta
     interval: Interval
@@ -320,7 +351,7 @@ TOP_N_BREAKDOWN_SERIES = 7
 RATE_LINE_ITEMS: list[tuple[str, str, str, str, str | None]] = [
     ("vcpu", "vCPU", "vcpu_hour", "USD/vCPU-hr", None),
     ("memory", "Memory", "memory_gib_hour", "USD/GiB-hr", None),
-    ("storage", "Storage (gp3)", "storage_gib_month", "USD/GiB-mo", None),
+    ("storage", "Storage", "storage_gib_month", "USD/GiB-mo", None),
     ("egress", "Egress", "egress_gb", "USD/GB", None),
 ]
 FIXED_RATE_ITEMS: list[tuple[str, str]] = [
@@ -328,11 +359,6 @@ FIXED_RATE_ITEMS: list[tuple[str, str]] = [
     ("nat_gateway", "NAT gateway"),
     ("load_balancer", "Load balancer"),
 ]
-RATES_SOURCE = {
-    "region": "us-east-2",
-    "checked": "2026-10-11",
-    "basis": "AWS on-demand list price",
-}
 
 WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 # Postgres EXTRACT(dow ...) is 0=Sunday..6=Saturday; map Mon..Sun display
@@ -523,22 +549,12 @@ def build_report(
             }
             for category in CATEGORY_ORDER
         ],
-        "meters": [
-            {
-                "key": meter,
-                "label": METER_LABELS[meter],
-                "unit": METER_UNITS[meter],
-                "quantity": meters.get(meter, (0.0, 0.0))[0],
-                "rate": _rate_for_meter_optional(rates, meter),
-                "cost": meters.get(meter, (0.0, 0.0))[1],
-            }
-            for meter in METER_ORDER
-        ],
+        "meters": _meter_rows(rates, meters),
         "series": series,
         "breakdowns": breakdowns,
         "freshness": freshness,
         "rates": rates_display,
-        "rates_source": RATES_SOURCE,
+        "rates_source": rates.get("source", DEFAULT_RATES.get("source")),
         "extent_series": extent_series,
         "calendar": calendar,
         "heatmap": heatmap,
@@ -901,17 +917,7 @@ def _breakdown_detail(
 
     meters_by_key: dict[BreakdownKey, list[MeterRow]] = {}
     for key in keys:
-        meters_by_key[key] = [
-            {
-                "key": meter,
-                "label": METER_LABELS[meter],
-                "unit": METER_UNITS[meter],
-                "quantity": totals_by_key[key].get(meter, (0.0, 0.0))[0],
-                "rate": _rate_for_meter_optional(rates, meter),
-                "cost": totals_by_key[key].get(meter, (0.0, 0.0))[1],
-            }
-            for meter in METER_ORDER
-        ]
+        meters_by_key[key] = _meter_rows(rates, totals_by_key[key])
 
     return meters_by_key
 
@@ -1797,16 +1803,35 @@ def _platform_unallocated(
 def _rates_display(
     rates: CostRates, start: datetime.datetime, platform: bool
 ) -> RatesDisplay:
+    volume_type = (
+        rates["storage_volume"]["volume_type"] if "storage_volume" in rates else "gp3"
+    )
     line_items: list[RateLineItem] = [
         {
             "key": key,
-            "label": label,
+            "label": f"{label} ({volume_type})" if key == "storage" else label,
             "value": _simple_rates(rates).get(rate_key),
             "unit": unit,
             "note": note,
         }
         for key, label, rate_key, unit, note in RATE_LINE_ITEMS
     ]
+    line_items.extend(
+        _tier_line_items(
+            "storage_iops",
+            "Storage IOPS",
+            "USD/IOPS-mo",
+            rates.get("storage_iops_tiers", []),
+        )
+    )
+    line_items.extend(
+        _tier_line_items(
+            "storage_throughput",
+            "Storage throughput",
+            "USD/MiBps-mo",
+            rates.get("storage_throughput_tiers", []),
+        )
+    )
     for key, label in FIXED_RATE_ITEMS:
         line_items.append(
             {
@@ -1853,6 +1878,31 @@ def _rates_display(
     nodes.sort(key=lambda node: node["instance_type"])
 
     return {"line_items": line_items, "nodes": nodes}
+
+
+def _tier_line_items(
+    key: str, label: str, unit: str, tiers: list[PriceTier]
+) -> list[RateLineItem]:
+    items: list[RateLineItem] = []
+    floor = 0.0
+    for tier in tiers:
+        up_to = tier["up_to"]
+        if tier["usd_month"]:
+            span = (
+                f"above {floor:,.0f}" if up_to is None else f"{floor:,.0f}–{up_to:,.0f}"
+            )
+            items.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "value": tier["usd_month"],
+                    "unit": unit,
+                    "note": f"per volume, {span}",
+                }
+            )
+        if up_to is not None:
+            floor = up_to
+    return items
 
 
 # ---------------------------------------------------------------------------

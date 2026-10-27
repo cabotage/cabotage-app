@@ -43,7 +43,12 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.resources import PostgresResource, RedisResource, Resource
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.utils import mimir
-from cabotage.utils.cost.rates import CostRates, effective_rates, node_hourly_price
+from cabotage.utils.cost.rates import (
+    CostRates,
+    effective_rates,
+    node_hourly_price,
+    volume_monthly_cost,
+)
 from cabotage.utils.mimir import MimirSeries
 
 GIB = 1024.0**3
@@ -816,9 +821,8 @@ def _collect_storage(
     period_start: datetime.datetime, period_end: datetime.datetime, rates: CostRates
 ) -> list[CostLineItem]:
     items: list[CostLineItem] = []
-    # gp3 bills per GiB-month, so each hour is recorded as GiB-mo (1/730 of a
+    # EBS bills per GiB-month, so each hour is recorded as GiB-mo (1/730 of a
     # month); summed over a month the quantity reads as provisioned GiB.
-    rate = rates["storage_gib_month"]
 
     # Resource.created/deleted_at are stored as naive UTC datetimes (no
     # tzinfo), while period_start/period_end are timezone-aware UTC; strip
@@ -840,7 +844,7 @@ def _collect_storage(
             continue
         instances = 2 if pg_resource.ha_enabled else 1
         quantity = (pg_resource.storage_size * instances) / 730.0
-        cost = quantity * rate
+        cost = volume_monthly_cost(pg_resource.storage_size, rates) * instances / 730.0
         env = pg_resource.environment
         items.append(
             CostLineItem(
@@ -871,7 +875,9 @@ def _collect_storage(
             else 1
         )
         quantity = (redis_resource.storage_size * instances) / 730.0
-        cost = quantity * rate
+        cost = (
+            volume_monthly_cost(redis_resource.storage_size, rates) * instances / 730.0
+        )
         env = redis_resource.environment
         items.append(
             CostLineItem(

@@ -228,3 +228,7 @@ class Config(metaclass=MetaFlaskEnv):
     ALERTMANAGER_VERIFY = None
     PROXY_FIX_NUM_PROXIES = 1
     SHOW_COST_ESTIMATES = False
+    COST_AWS_PRICING_ENABLED = False
+    COST_AWS_REGION = "us-east-2"
+    COST_AWS_PRICING_API_REGION = "us-east-1"
+    COST_STORAGE_CLASS = None

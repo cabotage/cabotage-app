@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cabotage.server import Model
-from cabotage.utils.cost.rates import CostRates
+from cabotage.utils.cost.rates import CostRates, SnapshotRates
 
 
 class CostRunStats(TypedDict, total=False):
@@ -156,3 +156,30 @@ class CostNode(Model):
     cpu_capacity: Mapped[float | None] = mapped_column(Float())
     memory_gib: Mapped[float | None] = mapped_column(Float())
     last_seen: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CostPriceSnapshot(Model):
+    """Rates fetched from the AWS Price List API, layered over the built-in
+    defaults by :func:`cabotage.utils.cost.rates.effective_rates`. ``rates``
+    holds only the keys that were fetched (a partial ``CostRates``).
+    """
+
+    __tablename__ = "cost_price_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    fetched_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    region: Mapped[str] = mapped_column(String(32), nullable=False)
+    rates: Mapped[SnapshotRates] = mapped_column(postgresql.JSONB(), nullable=False)
+
+    @classmethod
+    def latest(cls) -> CostPriceSnapshot | None:
+        snapshot: CostPriceSnapshot | None = cls.query.order_by(
+            cls.fetched_at.desc()
+        ).first()
+        return snapshot

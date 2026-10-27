@@ -4,7 +4,7 @@ from .build import (
     run_omnibus_build,
     run_release_build,
 )
-from .cost import collect_costs
+from .cost import collect_costs, refresh_aws_prices
 from .deploy import (
     cleanup_app_env_k8s,
     run_deploy,
@@ -51,6 +51,7 @@ __all__ = (
     "reconcile_backing_services",
     "reconcile_notifications",
     "reconcile_tailscale_integration_states",
+    "refresh_aws_prices",
     "refresh_tailscale_oidc_tokens",
     "run_deploy",
     "run_image_build",
