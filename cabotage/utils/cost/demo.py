@@ -46,7 +46,12 @@ from cabotage.server.models.projects import (
     Application,
     pod_classes,
 )
-from cabotage.server.models.resources import RedisResource
+from cabotage.server.models.resources import (
+    RedisResource,
+    Resource,
+    postgres_size_classes,
+    redis_size_classes,
+)
 from cabotage.utils.cost.collector import (
     ScopeKey,
     _parse_cpu_quantity,
@@ -549,14 +554,20 @@ def _collect_resources(organization: Organization) -> list[ResourceEntry]:
     for project in organization.active_projects:
         for environment in project.active_environments:
             for resource in environment.active_resources:
+                # Same instance counts as the collector's storage pricing.
                 if resource.type == "postgres":
                     instances = 2 if resource.ha_enabled else 1
-                elif resource.type == "redis" and isinstance(resource, RedisResource):
+                elif (
+                    resource.type == "redis"
+                    and isinstance(resource, RedisResource)
+                    and resource.ha_enabled
+                ):
                     instances = (resource.leader_replicas or 0) + (
                         resource.follower_replicas or 0
                     )
                 else:
                     instances = 1
+                cpu_request, mem_request = _resource_requests(resource)
                 entries.append(
                     {
                         "organization_id": organization.id,
@@ -565,31 +576,29 @@ def _collect_resources(organization: Organization) -> list[ResourceEntry]:
                         "resource_id": resource.id,
                         "slug": resource.slug,
                         "storage_gib": resource.storage_size * instances,
-                        "cpu_request": _resource_compute_request(
-                            resource.size_class, "cpu"
-                        ),
-                        "mem_request": _resource_compute_request(
-                            resource.size_class, "memory"
-                        ),
+                        "cpu_request": cpu_request * instances,
+                        "mem_request": mem_request * instances,
                         "instances": instances,
                     }
                 )
     return entries
 
 
-def _resource_compute_request(size_class: str | None, resource: str) -> float:
-    """Rough vCPU/GiB request for a backing-service size class, for demo realism."""
-    # Backing service size classes aren't priced the same way as pod_classes;
-    # approximate with a modest fixed footprint scaled by size-class ordinal.
-    tiers = ["small", "medium", "large", "xlarge", "2xlarge"]
-    ordinal = 1
-    for i, tier in enumerate(tiers):
-        if size_class and size_class.endswith(tier):
-            ordinal = i + 1
-            break
-    if resource == "cpu":
-        return 0.25 * ordinal
-    return 0.5 * ordinal
+_RESOURCE_SIZE_CLASSES = {
+    "postgres": postgres_size_classes,
+    "redis": redis_size_classes,
+}
+
+
+def _resource_requests(resource: Resource) -> tuple[float, float]:
+    """Per-instance vCPU/GiB requests for a backing service's size class."""
+    classes = _RESOURCE_SIZE_CLASSES.get(resource.type or "", {})
+    size = classes.get(resource.size_class)
+    if size is None:
+        return 0.0, 0.0
+    cpu = _parse_cpu_quantity(size["cpu"]["requests"]) or 0.0
+    memory = _parse_memory_quantity_gib(size["memory"]["requests"]) or 0.0
+    return cpu, memory
 
 
 # ---------------------------------------------------------------------------
