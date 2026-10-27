@@ -97,6 +97,11 @@ a.pipe-row:focus-visible { outline: 2px solid var(--color-primary); outline-offs
 .pipe-dot-ok { background: var(--pipe-ok); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-ok) 40%, transparent); }
 .pipe-dot-fail { background: var(--pipe-fail); box-shadow: 0 0 8px color-mix(in srgb, var(--pipe-fail) 40%, transparent); }
 .pipe-dot-run { background: var(--pipe-run); animation: pulse-dot 2s ease-in-out infinite; }
+.pipe-dot-stalled { background: var(--text-muted); }
+/* A first run in flight has no finished history yet: show only its live row. */
+#pipe-body[data-live-only] > :not([data-runs]),
+#pipe-body[data-live-only] #runs,
+#pipe-body[data-live-only] #runs-pager { display: none; }
 .pipe-fall { display: flex; gap: 2px; height: 0.5rem; }
 .pipe-fall > span { border-radius: 0.25rem; min-width: 2px; }
 .seg-image { background: var(--pipe-image); }
@@ -106,6 +111,18 @@ a.pipe-row:focus-visible { outline: 2px solid var(--color-primary); outline-offs
 .seg-run { background: var(--pipe-run); opacity: 0.7; }
 .pipe-foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem;
   padding: 0.5rem 1rem; border-top: 1px solid var(--border-color); font-size: 0.75rem; color: var(--text-muted); }
+.pipe-row[hidden] { display: none; }
+
+/* ── Live run: the in-flight run grows in place above the finished ones ── */
+.pipe-live { height: 2.5rem; font-size: 0.875rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color-subtle); }
+.pipe-live a { color: inherit; text-decoration: none; border-radius: 0.25rem; }
+.pipe-live a:hover { color: var(--text-bright); text-decoration: underline; text-underline-offset: 3px; }
+.pipe-live a:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.pipe-live .pipe-fall > span { transition: background-color 300ms ease-out; }
+.pipe-live .seg-run { position: relative; opacity: 1; background: color-mix(in srgb, var(--pipe-run) 45%, transparent); }
+.pipe-live .seg-run::after { content: ''; position: absolute; top: 0; right: 0; bottom: 0; width: 3px;
+  border-radius: 0.25rem; background: var(--pipe-run); animation: pipe-edge 1.2s ease-in-out infinite; }
+@keyframes pipe-edge { 50% { opacity: 0.3; } }
 
 /* ── Slowest ── */
 .pipe-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 0.5rem; background: var(--surface-inset);
@@ -135,8 +152,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   background-size: 200% 100%; animation: pipe-shimmer 1.4s ease-in-out infinite; }
 @keyframes pipe-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .pipe-skel, .pipe-dot-run { animation: none; }
-  .pipe-split-bar > span, .pipe-scrubbable a { transition: none; }
+  .pipe-skel, .pipe-dot-run, .pipe-live .seg-run::after { animation: none; }
+  .pipe-split-bar > span, .pipe-scrubbable a, .pipe-live .pipe-fall > span { transition: none; }
 }
 
 /* ── Scrubbing: hover a day, drag (or click) to narrow the window ── */
@@ -238,7 +255,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         <section class="pipe-card pipe-chart-card" aria-label="{{ name }} duration">
           <div class="pipe-chart-head">
             <span class="pipe-stage-name"><span class="pipe-swatch seg-{{ stage }}"></span>{{ name }}</span>
-            <span class="pipe-stage-figs num" data-stage-figs="{{ stage }}">p50 <b>—</b> · p95 <b>—</b></span>
+            <span class="pipe-stage-figs num" data-stage-figs="{{ stage }}">p50 <b data-fig="p50">—</b> · p95 <b data-fig="p95">—</b></span>
           </div>
           <div class="pipe-plot" data-chart="stage-{{ stage }}" style="height:120px"><div class="pipe-skel h-full"></div></div>
         </section>
@@ -258,7 +275,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     </section>
 
     {# Recent runs #}
-    <div class="flex items-center justify-between mb-2">
+    <div class="flex items-center justify-between mb-2" data-runs>
       <h2 class="pipe-section-title">Recent runs</h2>
       <span class="pipe-legend pipe-legend-optional">
         <span><span class="pipe-swatch seg-image"></span>Image</span>
@@ -266,14 +283,16 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         <span><span class="pipe-swatch seg-deploy"></span>Deploy</span>
       </span>
     </div>
-    <section class="pipe-card mb-5" aria-label="Recent runs">
+    <section class="pipe-card mb-5" aria-label="Recent runs" data-runs>
       <div class="pipe-table">
         <div class="pipe-row pipe-row-head pipe-label" aria-hidden="true">
           <span>Status</span><span>Started</span><span>Commit</span><span>Trigger</span><span>Timeline</span>
           <span>Image</span><span>Release</span><span>Deploy</span><span>Total</span>
         </div>
+        <div class="pipe-row pipe-live" id="runs-live" hidden></div>
         <div id="runs" class="pipe-scrubbable"><div class="p-4 flex flex-col gap-3">{% for _ in range(4) %}<div class="pipe-skel h-4"></div>{% endfor %}</div></div>
       </div>
+      <span class="sr-only" id="runs-live-status" role="status"></span>
       <div class="pipe-foot" id="runs-pager" hidden>
         <span class="num" id="runs-range"></span>
         <span class="flex gap-1">
@@ -329,12 +348,15 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     stage: 'image',
     stats: null,     // trailing range: drives the charts
     scoped: null,    // brushed window: drives the summary
-    byDay: {}
+    byDay: {},
+    empty: false     // trailing range has no finished runs
   };
   var charts = [];
   var activePlot = null;
   var lastPayload = {};
   var requestSeq = { stats: 0, scoped: 0, runs: 0, slowest: 0 };
+  var morphFrom = null;   // x ranges of the outgoing charts, keyed by data-chart
+  var runsScale = 0;      // seconds spanned by the longest listed run's waterfall
 
   // Drop a response handler if a newer request for the same section has started since.
   function guarded(key, seq, handler) {
@@ -357,6 +379,68 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       lastPayload[key] = json;
       render(d);
     };
+  }
+
+  // ── Motion: morph between states; everything snaps under reduced motion ──
+  var MORPH_MS = 250;
+  var reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+  // Numbers count from what's on screen to the new value.
+  var shown = {}, tweens = {}, tweenFrame = 0;
+  function countTo(el, key, to, fmt, animate) {
+    var from = shown[key];
+    delete tweens[key];
+    if (!animate || reduceMotion.matches || from == null || to == null || from === to) {
+      shown[key] = to;
+      el.innerHTML = fmt(to);
+      return;
+    }
+    tweens[key] = { el: el, from: from, to: to, fmt: fmt, t0: performance.now() };
+    if (!tweenFrame) tweenFrame = requestAnimationFrame(stepTweens);
+  }
+  function stepTweens(now) {
+    tweenFrame = 0;
+    Object.keys(tweens).forEach(function(key) {
+      var tw = tweens[key], p = Math.min(1, Math.max(0, (now - tw.t0) / MORPH_MS));
+      shown[key] = p < 1 ? tw.from + (tw.to - tw.from) * easeOut(p) : tw.to;
+      tw.el.innerHTML = tw.fmt(shown[key]);
+      if (p === 1) delete tweens[key];
+    });
+    if (Object.keys(tweens).length) tweenFrame = requestAnimationFrame(stepTweens);
+  }
+
+  // Keyed rows: unchanged rows keep their node (and focus); new or changed ones fade in.
+  function patchRows(el, rows) {
+    var old = {};
+    el.querySelectorAll('[data-key]').forEach(function(n) { old[n.dataset.key] = n; });
+    var animate = el.dataset.painted && !reduceMotion.matches;
+    var focused = el.contains(document.activeElement) ? document.activeElement.getAttribute('href') : null;
+    var tpl = document.createElement('template'), frag = document.createDocumentFragment(), fresh = [];
+    rows.forEach(function(row) {
+      var n = old[row.key];
+      if (!n || n.dataset.sig !== row.html) {
+        tpl.innerHTML = row.html;
+        n = tpl.content.firstElementChild;
+        n.dataset.key = row.key;
+        n.dataset.sig = row.html;
+        fresh.push(n);
+      }
+      frag.appendChild(n);
+    });
+    el.textContent = '';
+    el.appendChild(frag);
+    el.dataset.painted = '1';
+    el.querySelectorAll('[data-rel]').forEach(function(n) { n.textContent = relTime(n.dataset.rel); });
+    if (animate) fresh.forEach(function(n) { n.animate({ opacity: [0, 1] }, { duration: 200, easing: 'ease-out' }); });
+    if (focused) {
+      var target = el.querySelector('[href="' + CSS.escape(focused) + '"]');
+      if (target) target.focus({ preventScroll: true });
+    }
+  }
+  function paintNote(el, html) {
+    el.innerHTML = html;
+    el.dataset.painted = '1';
   }
 
   // ── Formatting ──
@@ -535,8 +619,30 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       }
     }, [xs].concat(cols), el);
     charts.push(u);
+    u._key = el.dataset.chart;
+    // uPlot commits scales on a microtask, so the target window comes from the range rule itself.
+    if (morphFrom && morphFrom[u._key]) morphX(u, morphFrom[u._key], [xs[0] - pad, xs[xs.length - 1] + pad]);
     // Scales settle after the first layout pass.
     requestAnimationFrame(function() { if (charts.indexOf(u) !== -1) drawBrush(u); });
+  }
+
+  // Open the new chart on the outgoing chart's window, then ease to its own.
+  function morphX(u, from, to) {
+    if (reduceMotion.matches || (from[0] === to[0] && from[1] === to[1])) return;
+    u.setScale('x', { min: from[0], max: from[1] });
+    var t0 = performance.now();
+    requestAnimationFrame(function step(now) {
+      if (charts.indexOf(u) === -1) return;
+      var e = easeOut(Math.min(1, Math.max(0, (now - t0) / MORPH_MS)));
+      u.setScale('x', { min: from[0] + (to[0] - from[0]) * e, max: from[1] + (to[1] - from[1]) * e });
+      drawBrush(u);
+      if (e < 1) requestAnimationFrame(step);
+    });
+  }
+  function chartWindows() {
+    var windows = {};
+    charts.forEach(function(u) { windows[u._key] = [u.scales.x.min, u.scales.x.max]; });
+    return windows;
   }
 
   function line(label, color, dashed) {
@@ -562,7 +668,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       return;
     }
     var d = state.stats;
-    if (!d) return;
+    if (!d) { morphFrom = null; return; }
     var trendXs = d.duration_trend.map(function(r) { return keyTs(r.date.slice(0, 10)); });
     STAGES.forEach(function(stage) {
       var color = palette.c[stage];
@@ -576,6 +682,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       [d.throughput.map(function(r) { return r.success; }), d.throughput.map(function(r) { return r.failure; })],
       [bar('Succeeded', palette.c.ok, -1), bar('Failed', palette.c.fail, 1)],
       { bars: true, fmt: String, axisFmt: fmtCount });
+    morphFrom = null;
   }
 
   // ── Summary ──
@@ -598,38 +705,53 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     if (state.brush && state.scoped) return summaryOf(brushWords(), state.scoped.summary, state.scoped.stages, false);
     return summaryOf('Last ' + parseInt(state.range, 10) + ' days', state.stats.summary, state.stats.stages, false);
   }
-  function setStat(name, html) { root.querySelector('[data-stat="' + name + '"]').innerHTML = html; }
+  function fmtCountUp(v) { return v == null ? '—' : String(Math.round(v)); }
+  function fmtPct(v) { return v == null ? '—' : (+v).toFixed(1) + '%'; }
+  function fmtShare(v) { return v == null ? '—' : Math.round(v) + '%'; }
 
-  function renderSummary() {
+  // Data changes (range, brush, refresh) count to the new values; hover previews snap.
+  function renderSummary(animate) {
     if (!state.stats) return;
     var s = currentSummary();
     var scope = document.getElementById('pm-scope');
     scope.textContent = s.label;
     scope.classList.toggle('is-preview', !!s.preview);
-    setStat('runs', String(s.runs));
-    setStat('failed', s.failed
-      ? '<span class="inline-flex items-center gap-1.5"><span class="pipe-dot pipe-dot-fail"></span>' + s.failed + ' failed</span>'
-      : (s.runs ? 'None failed' : 'No runs'));
-    setStat('success', s.success_rate == null ? '—' : (+s.success_rate).toFixed(1) + '%');
-    setStat('p50', fmtDur(s.run_p50));
-    setStat('p95', fmtDur(s.run_p95));
+    function stat(name, value, fmt) { countTo(root.querySelector('[data-stat="' + name + '"]'), name, value, fmt, animate); }
+    stat('runs', s.runs, fmtCountUp);
+    stat('failed', s.failed, function(v) {
+      return Math.round(v)
+        ? '<span class="inline-flex items-center gap-1.5"><span class="pipe-dot pipe-dot-fail"></span>' + Math.round(v) + ' failed</span>'
+        : (s.runs ? 'None failed' : 'No runs');
+    });
+    stat('success', s.success_rate, fmtPct);
+    stat('p50', s.run_p50, fmtDur);
+    stat('p95', s.run_p95, fmtDur);
 
     var total = STAGES.reduce(function(sum, st) { return sum + (s.stages[st].p50 || 0); }, 0);
     var segs = document.getElementById('pm-split').children;
     STAGES.forEach(function(stage, i) {
       var p50 = s.stages[stage].p50;
       segs[i].style.flexGrow = total ? (p50 || 0) / total : 1;
-      root.querySelector('[data-share="' + stage + '"]').textContent = total && p50 != null ? Math.round(p50 / total * 100) + '%' : '—';
-      root.querySelector('[data-stage-figs="' + stage + '"]').innerHTML =
-        'p50 <b>' + fmtDur(p50) + '</b> · p95 <b>' + fmtDur(s.stages[stage].p95) + '</b>';
+      countTo(root.querySelector('[data-share="' + stage + '"]'), 'share-' + stage,
+        total && p50 != null ? p50 / total * 100 : null, fmtShare, animate);
+      var figs = root.querySelector('[data-stage-figs="' + stage + '"]');
+      countTo(figs.querySelector('[data-fig="p50"]'), 'p50-' + stage, p50, fmtDur, animate);
+      countTo(figs.querySelector('[data-fig="p95"]'), 'p95-' + stage, s.stages[stage].p95, fmtDur, animate);
     });
+  }
+
+  function syncBody() {
+    var liveOnly = state.empty && !lane.hidden;
+    var body = document.getElementById('pipe-body');
+    document.getElementById('pipe-empty').hidden = !state.empty || liveOnly;
+    body.hidden = state.empty && !liveOnly;
+    body.toggleAttribute('data-live-only', liveOnly);
   }
 
   function renderStats() {
     var d = state.stats;
-    var empty = !d.summary.runs && !d.duration_trend.length;
-    document.getElementById('pipe-empty').hidden = !empty;
-    document.getElementById('pipe-body').hidden = empty;
+    var empty = state.empty = !d.summary.runs && !d.duration_trend.length;
+    syncBody();
     root.querySelectorAll('[data-range-label]').forEach(function(el) { el.textContent = parseInt(state.range, 10) + ' days'; });
     if (empty) return;
     state.byDay = {};
@@ -637,7 +759,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
       var key = r.date.slice(0, 10);
       state.byDay[key] = Object.assign(state.byDay[key] || {}, r);
     });
-    renderSummary();
+    renderSummary(true);
     renderCharts();
   }
 
@@ -669,7 +791,8 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     chip.hidden = !brush;
     if (brush) document.getElementById('brush-label').textContent = brushWords();
     charts.forEach(drawBrush);
-    renderSummary();
+    // A new window's summary counts over from the old one once its numbers land.
+    if (!brush) renderSummary(true);
     loadScoped();
     loadRuns();
     loadSlowest();
@@ -703,14 +826,17 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     var el = document.getElementById('runs');
     var pager = document.getElementById('runs-pager');
     if (!d.runs.length) {
-      el.innerHTML = '<div class="pipe-note">No runs ' + esc(scopeWords()) + '.</div>';
+      runsScale = 0;
+      paintNote(el, '<div class="pipe-note">No runs ' + esc(scopeWords()) + '.</div>');
       pager.hidden = true;
+      renderLive();
       return;
     }
     var maxTotal = Math.max.apply(null, d.runs.map(function(r) {
       return (r.image_duration || 0) + (r.release_duration || 0) + (r.deploy_duration || 0);
     })) || 1;
-    el.innerHTML = d.runs.map(function(r) {
+    runsScale = maxTotal;
+    patchRows(el, d.runs.map(function(r) {
       var st = statusOf(r);
       var fall = STAGES.map(function(stage) {
         var dur = r[stage + '_duration'];
@@ -718,10 +844,11 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         return '<span class="' + segClass(stage, r[stage + '_status']) + '" style="flex:0 0 ' + (dur / maxTotal * 100).toFixed(2) + '%"></span>';
       }).join('');
       var day = (r.finished || r.started || '').slice(0, 10);
-      return '<a class="pipe-row" data-day="' + day + '" href="' + detailUrls.deploy.replace('__ID__', r.id) + '" aria-label="' +
-          esc(st[1] + ', started ' + relTime(r.started) + ', total ' + fmtDur(r.total_duration)) + '">' +
+      return { key: r.id, html: '<a class="pipe-row" data-id="' + r.id + '" data-status="' + st[0] + '" data-day="' + day + '" href="' +
+          detailUrls.deploy.replace('__ID__', r.id) + '" aria-label="' +
+          esc(st[1] + ', started ' + absTime(r.started) + ', total ' + fmtDur(r.total_duration)) + '">' +
         '<span class="pipe-status"><span class="pipe-dot pipe-dot-' + st[0] + '"></span>' + st[1] + '</span>' +
-        '<span title="' + esc(absTime(r.started)) + '">' + relTime(r.started) + '</span>' +
+        '<span title="' + esc(absTime(r.started)) + '" data-rel="' + esc(r.started || '') + '"></span>' +
         '<span class="num sha">' + shortSha(r.sha) + '</span>' +
         '<span><span class="dpl-badge dpl-badge-' + r.trigger_type + '">' + triggerIcons[r.trigger_type] + ' ' +
           (r.trigger_type === 'auto' ? 'Auto' : 'Manual') + '</span></span>' +
@@ -729,34 +856,171 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
         '<span class="num dur">' + fmtDur(r.image_duration) + '</span>' +
         '<span class="num dur">' + fmtDur(r.release_duration) + '</span>' +
         '<span class="num dur">' + fmtDur(r.deploy_duration) + '</span>' +
-        '<span class="num total">' + fmtDur(r.total_duration) + '</span></a>';
-    }).join('');
+        '<span class="num total">' + fmtDur(r.total_duration) + '</span></a>' };
+    }));
     document.getElementById('runs-range').textContent =
       (state.offset + 1) + '–' + (state.offset + d.runs.length) + ' of ' + d.total;
     document.getElementById('runs-newer').disabled = state.offset === 0;
     document.getElementById('runs-older').disabled = state.offset + PER_PAGE >= d.total;
     pager.hidden = d.total <= PER_PAGE;
     markRows();
+    renderLive();
   }
 
   // ── Slowest ──
   function renderSlowest(d) {
     var el = document.getElementById('slowest');
     if (!d.items.length) {
-      el.innerHTML = '<div class="pipe-note">No finished ' + STAGE_NAMES[d.stage] + ' ' + esc(scopeWords()) + '.</div>';
+      paintNote(el, '<div class="pipe-note">No finished ' + STAGE_NAMES[d.stage] + ' ' + esc(scopeWords()) + '.</div>');
       return;
     }
     var max = d.items[0].duration || 1;
     var color = 'var(--pipe-' + d.stage + ')';
-    el.innerHTML = d.items.map(function(item, i) {
-      return '<a class="pipe-slow" data-day="' + (item.finished || '').slice(0, 10) + '" href="' + detailUrls[d.stage].replace('__ID__', item.id) + '">' +
+    patchRows(el, d.items.map(function(item, i) {
+      return { key: d.stage + item.id, html: '<a class="pipe-slow" data-day="' + (item.finished || '').slice(0, 10) + '" href="' + detailUrls[d.stage].replace('__ID__', item.id) + '">' +
         '<span class="num" style="color:var(--text-faint)">' + (i + 1) + '</span>' +
         '<span class="num sha">' + shortSha(item.sha) + '</span>' +
         '<span><span class="pipe-slow-bar block" style="width:' + Math.max(2, item.duration / max * 100).toFixed(1) + '%;background:' + color + '"></span></span>' +
         '<span class="num total">' + fmtDur(item.duration) + '</span>' +
-        '<span class="when" title="' + esc(absTime(item.created)) + '">' + relTime(item.created) + '</span></a>';
-    }).join('');
+        '<span class="when" title="' + esc(absTime(item.created)) + '" data-rel="' + esc(item.created || '') + '"></span></a>' };
+    }));
     markRows();
+  }
+
+  // ── Live run ──
+  // Polled fast while a run is in flight; durations tick on the server's clock.
+  var LIVE_POLL = 5000, IDLE_POLL = 60000, LIVE_LINGER = 600;
+  var STAGE_ACTIVE = { image: 'Building', release: 'Releasing', deploy: 'Deploying' };
+  var STAGE_DONE = { image: 'Built', release: 'Released', deploy: 'Deployed' };
+  var STAGE_FAILED = { image: 'Build failed', release: 'Release failed', deploy: 'Deploy failed' };
+  var lane = document.getElementById('runs-live');
+  var live = { run: null, skew: 0, sig: null, inFlight: false, timer: 0, tick: 0, frame: 0, els: null };
+
+  function serverNow() { return Date.now() + live.skew; }
+  function fmtTick(v, running) { return running && v < 60 ? Math.floor(v) + 's' : fmtDur(v); }
+
+  // [dot, words, stage whose page explains the state]
+  function liveStatus(run) {
+    var present = STAGES.filter(function(st) { return run[st]; });
+    var last = present[present.length - 1];
+    if (run.status === 'error') {
+      var failed = present.filter(function(st) { return run[st].status === 'error'; })[0] || last;
+      return ['fail', STAGE_FAILED[failed], failed];
+    }
+    if (run.status === 'stalled') {
+      var stalled = present.filter(function(st) { return run[st].status === 'stalled'; })[0] || last;
+      return ['stalled', 'Stalled', stalled];
+    }
+    if (run.status === 'success') return ['ok', STAGE_DONE[last], last];
+    // Between stages the next one is about to start; name what's coming.
+    var active = run[last].status === 'running' ? last : STAGES[STAGES.indexOf(last) + 1] || last;
+    return ['run', STAGE_ACTIVE[active], last];
+  }
+
+  function laneWanted(run) {
+    if (!run || state.offset) return false;
+    var now = serverNow();
+    if (state.brush && state.brush.until < new Date(now).toISOString().slice(0, 10)) return false;
+    if (run.status === 'running' || run.status === 'stalled') return true;
+    return (now - Date.parse(run.finished)) / 1000 < LIVE_LINGER;
+  }
+
+  function renderLive() {
+    var run = live.run;
+    // Once the list carries the finished run, the lane hands its place to that row.
+    var row = run && run.deploy ? document.querySelector('#runs a[data-id="' + run.deploy.id + '"]') : null;
+    var show = laneWanted(run) && !(row && row.dataset.status !== 'run');
+    document.querySelectorAll('#runs a[data-id]').forEach(function(a) { a.hidden = show && a === row; });
+    lane.hidden = !show;
+    syncBody();
+    if (!show) { live.sig = null; tickLive(); return; }
+
+    var sig = JSON.stringify(run);
+    if (sig !== live.sig) {
+      live.sig = sig;
+      var st = liveStatus(run);
+      var focused = lane.contains(document.activeElement) ? document.activeElement.getAttribute('href') : null;
+      lane.innerHTML =
+        '<span class="pipe-status"><span class="pipe-dot pipe-dot-' + st[0] + '"></span>' +
+          '<a href="' + esc(run[st[2]].url) + '">' + st[1] + '</a></span>' +
+        '<span title="' + esc(absTime(run.started)) + '" data-live="rel"></span>' +
+        '<span class="num sha">' + shortSha(run.sha) + '</span>' +
+        '<span></span>' +
+        '<span class="pipe-fall">' + STAGES.map(function(stage) {
+          var s = run[stage];
+          return s ? '<span class="' + segClass(stage, s.status === 'running' ? 'pending' : s.status) + '" data-live="seg-' + stage + '"></span>' : '';
+        }).join('') + '</span>' +
+        STAGES.map(function(stage) {
+          var s = run[stage];
+          return s ? '<a class="num dur" href="' + esc(s.url) + '" title="' + esc(s.label) + '" data-live="dur-' + stage + '"></a>'
+            : '<span class="num dur">—</span>';
+        }).join('') +
+        '<span class="num total" data-live="total"></span>';
+      live.els = {};
+      lane.querySelectorAll('[data-live]').forEach(function(n) { live.els[n.dataset.live] = n; });
+      if (focused) {
+        var target = lane.querySelector('[href="' + CSS.escape(focused) + '"]');
+        if (target) target.focus({ preventScroll: true });
+      }
+      var words = st[1] + (run.sha ? ' ' + run.sha : '');
+      var status = document.getElementById('runs-live-status');
+      if (status.textContent !== words) status.textContent = words;
+    }
+    tickLive();
+  }
+
+  function setText(el, text) { if (el.textContent !== text) el.textContent = text; }
+  function tickLive() {
+    cancelAnimationFrame(live.frame);
+    clearTimeout(live.tick);
+    var run = live.run;
+    if (lane.hidden || !run) return;
+    var now = serverNow(), secs = {}, spans = {}, total = 0;
+    STAGES.forEach(function(stage) {
+      var s = run[stage];
+      if (!s) return;
+      // Reused images aren't part of this run; a stalled stage has no meaningful end.
+      if (s.reused || s.status === 'stalled') {
+        live.els['seg-' + stage].style.flex = '0 0 0%';
+        setText(live.els['dur-' + stage], '\u2014');
+        return;
+      }
+      spans[stage] = [Date.parse(s.started), s.finished ? Date.parse(s.finished) : now];
+      secs[stage] = Math.max(0, (spans[stage][1] - spans[stage][0]) / 1000);
+      total += secs[stage];
+    });
+    // Image and release builds can overlap; count shared time once, as finished runs do.
+    if (spans.image && spans.release) {
+      total -= Math.max(0, (Math.min(spans.image[1], spans.release[1]) - Math.max(spans.image[0], spans.release[0])) / 1000);
+    }
+    // Share the listed runs' scale so the lane reads against them; outgrow it if slower.
+    var scale = Math.max(runsScale || (state.stats && state.stats.summary.run_p95) || 0, total) || 1;
+    var running = run.status === 'running';
+    Object.keys(secs).forEach(function(stage) {
+      live.els['seg-' + stage].style.flex = '0 0 ' + (secs[stage] / scale * 100).toFixed(2) + '%';
+      setText(live.els['dur-' + stage], fmtTick(secs[stage], run[stage].status === 'running'));
+    });
+    setText(live.els.total, run.status === 'stalled' ? '\u2014' : fmtTick(total, running));
+    setText(live.els.rel, relTime(run.started));
+    if (!running) return;
+    if (reduceMotion.matches) live.tick = setTimeout(tickLive, 1000);
+    else live.frame = requestAnimationFrame(tickLive);
+  }
+
+  function pollLive() {
+    clearTimeout(live.timer);
+    if (document.hidden) { live.timer = setTimeout(pollLive, IDLE_POLL); return; }
+    getJSON('/live').then(function(d) {
+      live.skew = Date.parse(d.server_time) - Date.now();
+      live.run = d.run;
+      var inFlight = !!d.run && d.run.status === 'running';
+      // The run just landed: refresh once so stats and the list pick it up.
+      if (live.inFlight && !inFlight) loadAll();
+      live.inFlight = inFlight;
+      renderLive();
+    }, function() {}).then(function() {
+      live.timer = setTimeout(pollLive, live.inFlight ? LIVE_POLL : IDLE_POLL);
+    });
   }
 
   // ── Data ──
@@ -787,7 +1051,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     var seq = ++requestSeq.scoped;
     if (!state.brush) return Promise.resolve();
     return getJSON('/stats' + windowQuery()).then(
-      guarded('scoped', seq, whenChanged('scoped', function(d) { state.scoped = d; renderSummary(); })),
+      guarded('scoped', seq, whenChanged('scoped', function(d) { state.scoped = d; renderSummary(true); })),
       guarded('scoped', seq, fail('scoped'))
     );
   }
@@ -830,6 +1094,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     document.getElementById('brush-chip').hidden = true;
     press(rangeGroup, 'range', state.range);
     syncUrl();
+    morphFrom = chartWindows();
     loadAll();
   });
   var stageGroup = document.getElementById('slowest-selector');
@@ -860,7 +1125,9 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
   }
   if (HAS_UPLOT) resolvePalette();
   loadAll();
+  pollLive();
   setInterval(function() { if (!document.hidden) loadAll(); }, 60000);
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) pollLive(); });
 
   var resizeTimer;
   window.addEventListener('resize', function() {
