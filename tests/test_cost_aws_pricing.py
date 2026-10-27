@@ -111,7 +111,6 @@ class FakePricing:
 
     def __init__(self, items):
         self.items = items
-        self.requests = []
 
     def get_paginator(self, name):
         assert name == "get_products"
@@ -119,7 +118,6 @@ class FakePricing:
 
     def paginate(self, *, ServiceCode, FormatVersion, Filters):
         assert (ServiceCode, FormatVersion) == ("AmazonEC2", "aws_v1")
-        self.requests.append({f["Field"]: f["Value"] for f in Filters})
         matches = [
             item
             for item in self.items
