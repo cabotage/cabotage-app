@@ -14,6 +14,7 @@ import yaml
 from celery import shared_task
 from flask import current_app
 from kubernetes.client.exceptions import ApiException
+from sqlalchemy import or_
 from sqlalchemy.orm.attributes import flag_modified
 
 from cabotage._types import assume_not_none
@@ -2731,6 +2732,24 @@ def _run_job_streaming(
             pass
 
 
+def _newer_deployment(deployment: Deployment) -> Deployment | None:
+    """A later deployment of the same environment that has already started.
+
+    Queued later deployments don't count, so deploys still run in order; a
+    started one means this deployment is a stale redelivery."""
+    newer: Deployment | None = (
+        Deployment.query.filter(
+            Deployment.application_environment_id
+            == deployment.application_environment_id,
+            Deployment.created > deployment.created,
+            or_(Deployment.complete.is_(True), Deployment.job_id.is_not(None)),
+        )
+        .order_by(Deployment.created.desc())
+        .first()
+    )
+    return newer
+
+
 def deploy_release(deployment: Deployment):
     job_id = secrets.token_hex(4)
     deployment.job_id = job_id
@@ -2791,6 +2810,10 @@ def deploy_release(deployment: Deployment):
     )
 
     try:
+        newer = _newer_deployment(deployment)
+        if newer is not None:
+            # A redelivered task must not roll back a newer deployment.
+            raise DeployError(f"Superseded by deployment {newer.id}")
         log("Constructing API Clients")
         api_client = kubernetes_ext.kubernetes_client
         core_api_instance = kubernetes.client.CoreV1Api(api_client)
