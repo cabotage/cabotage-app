@@ -14,10 +14,12 @@ import hashlib
 import struct
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 import kubernetes.client
 import sqlalchemy as sa
 from flask import current_app
+from kubernetes.client.exceptions import ApiException
 from sqlalchemy.orm import joinedload, selectinload
 
 from cabotage.server import db
@@ -31,7 +33,6 @@ from cabotage.server.applets.cost.constants import (
     HOURS_PER_MONTH,
     MEM_REQUEST_QUERY,
     MEM_USAGE_QUERY,
-    NODE_PRESENCE_QUERY,
     POD_LABELS_QUERY,
     STEP_HOURS,
     STEP_SECONDS,
@@ -60,6 +61,7 @@ from cabotage.server.models.cost import (
     CostCollectionRun,
     CostLineItem,
     CostNode,
+    CostNodeHour,
     CostRunStats,
 )
 from cabotage.server.models.projects import (
@@ -101,7 +103,7 @@ def collect_hour(period_start: datetime.datetime) -> CostCollectionRun:
     rates = effective_rates()
 
     try:
-        line_items, stats = _collect(period_start, period_end, rates)
+        line_items, node_hours, stats = _collect(period_start, period_end, rates)
     except Exception as exc:
         existing: CostCollectionRun | None = CostCollectionRun.query.filter_by(
             period_start=period_start
@@ -116,6 +118,7 @@ def collect_hour(period_start: datetime.datetime) -> CostCollectionRun:
             error=str(exc),
             stats={},
             line_items=[],
+            node_hours=[],
         )
 
     return _write_run(
@@ -126,6 +129,7 @@ def collect_hour(period_start: datetime.datetime) -> CostCollectionRun:
         error=None,
         stats=stats,
         line_items=line_items,
+        node_hours=node_hours,
     )
 
 
@@ -158,6 +162,7 @@ def _write_run(
     error: str | None,
     stats: CostRunStats,
     line_items: list[CostLineItem],
+    node_hours: list[CostNodeHour],
 ) -> CostCollectionRun:
     # Beat and "Collect now" can both rewrite the same hour; serialize them so
     # the second waits instead of losing its insert to the unique constraint.
@@ -170,6 +175,7 @@ def _write_run(
     )
 
     CostLineItem.query.filter_by(period_start=period_start).delete()
+    CostNodeHour.query.filter_by(period_start=period_start).delete()
     CostCollectionRun.query.filter_by(period_start=period_start).delete()
     db.session.flush()
 
@@ -197,6 +203,10 @@ def _write_run(
         item.run_id = run.id
         item.period_start = period_start
         db.session.add(item)
+    for node_hour in node_hours:
+        node_hour.run_id = run.id
+        node_hour.period_start = period_start
+        db.session.add(node_hour)
     db.session.commit()
     return run
 
@@ -208,7 +218,7 @@ def _write_run(
 
 def _collect(
     period_start: datetime.datetime, period_end: datetime.datetime, rates: CostRates
-) -> tuple[list[CostLineItem], CostRunStats]:
+) -> tuple[list[CostLineItem], list[CostNodeHour], CostRunStats]:
     # TODO: Include anonymous until migration to multi-tenant is completed
     # (mirrors _mimir_connection in cabotage.server.user.views).
     base_tenant = current_app.config.get("MIMIR_TENANT_ID")
@@ -217,38 +227,26 @@ def _collect(
     range_end = int((period_start + datetime.timedelta(minutes=55)).timestamp())
     instant_time = int(period_end.timestamp())
 
-    cpu_usage = _series_by_pod(
-        mimir.query_range(
-            CPU_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
-        )
+    cpu_usage_result = mimir.query_range(
+        CPU_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
     )
-    mem_usage = _series_by_pod_scaled(
-        mimir.query_range(
-            MEM_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
-        ),
-        1.0 / GIB,
+    mem_usage_result = mimir.query_range(
+        MEM_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
     )
-    cpu_request = _series_by_pod(
-        mimir.query_range(
-            CPU_REQUEST_QUERY,
-            range_start,
-            range_end,
-            STEP_SECONDS,
-            tenant_id=tenant_id,
-        )
+    cpu_request_result = mimir.query_range(
+        CPU_REQUEST_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
     )
-    mem_request = _series_by_pod_scaled(
-        mimir.query_range(
-            MEM_REQUEST_QUERY,
-            range_start,
-            range_end,
-            STEP_SECONDS,
-            tenant_id=tenant_id,
-        ),
-        1.0 / GIB,
+    mem_request_result = mimir.query_range(
+        MEM_REQUEST_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
     )
-    node_presence_result = mimir.query_range(
-        NODE_PRESENCE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
+    cpu_usage = _series_by_pod(cpu_usage_result)
+    mem_usage = _series_by_pod_scaled(mem_usage_result, 1.0 / GIB)
+    cpu_request = _series_by_pod(cpu_request_result)
+    mem_request = _series_by_pod_scaled(mem_request_result, 1.0 / GIB)
+    # kube-state-metrics names a pod's node authoritatively, so requests go
+    # first; cAdvisor's node label covers best-effort pods with no requests.
+    node_by_pod_step = _node_by_pod_step(
+        cpu_request_result, mem_request_result, cpu_usage_result, mem_usage_result
     )
     pod_labels_result = mimir.query_instant(
         POD_LABELS_QUERY, tenant_id=tenant_id, time=instant_time
@@ -286,6 +284,8 @@ def _collect(
         }
     )
 
+    node_load: defaultdict[str, _NodeLoad] = defaultdict(_NodeLoad)
+
     all_pod_keys: set[PodKey] = (
         set(cpu_usage) | set(mem_usage) | set(cpu_request) | set(mem_request)
     )
@@ -300,6 +300,16 @@ def _collect(
         if not namespace or not pod_name:
             continue
         pods_seen += 1
+        # Every pod occupies its node, attributed or not, so node load is
+        # tallied before classification can skip it.
+        _add_node_load(
+            node_load,
+            node_by_pod_step.get(pod_key, {}),
+            cpu_usage.get(pod_key, {}),
+            cpu_request.get(pod_key, {}),
+            mem_usage.get(pod_key, {}),
+            mem_request.get(pod_key, {}),
+        )
         labels = pod_labels.get(pod_key)
         if labels is None:
             pods_unallocated += 1
@@ -406,8 +416,9 @@ def _collect(
     line_items.extend(egress_items)
 
     # --- Overhead --------------------------------------------------------
-    node_hours, cluster_compute_cost, nodes_unpriced, node_data_available = (
-        _collect_overhead_nodes(node_presence_result, rates)
+    node_hours, node_inventory_error = _collect_nodes(node_load, rates)
+    cluster_compute_cost = sum(
+        float(row.cost_usd) for row in node_hours if row.cost_usd is not None
     )
     fixed_overhead = sum(rates.get("fixed_hourly", {}).values())
     overhead_pool = (
@@ -444,9 +455,10 @@ def _collect(
     stats: CostRunStats = {
         "pods_seen": pods_seen,
         "pods_unallocated": pods_unallocated,
-        "node_hours": node_hours,
-        "nodes_unpriced": nodes_unpriced,
-        "node_data_available": node_data_available,
+        "node_hours": sum(row.node_hours for row in node_hours),
+        "nodes_unpriced": sum(1 for row in node_hours if row.cost_usd is None),
+        "node_data_available": bool(node_hours),
+        "node_inventory_error": node_inventory_error,
         "cluster_compute_cost": cluster_compute_cost,
         "tenant_compute_cost": direct_compute_total,
         "overhead_pool": overhead_pool,
@@ -454,7 +466,7 @@ def _collect(
         "fixed_overhead": fixed_overhead,
     }
 
-    return line_items, stats
+    return line_items, node_hours, stats
 
 
 # ---------------------------------------------------------------------------
@@ -465,19 +477,25 @@ def _collect(
 def _series_by_pod(
     result: list[MimirSeries] | None,
 ) -> dict[PodKey, dict[float, float]]:
-    """Map a Mimir range-query result (summed by namespace,pod) to
-    ``{(namespace, pod): {timestamp: value}}``."""
+    """Map a Mimir range-query result (summed by namespace,pod,node) to
+    ``{(namespace, pod): {timestamp: value}}``.
+
+    A pod splits into several series when its node label changes (a
+    fixed-name pod rescheduled mid-hour, or cAdvisor series from before and
+    after Alloy started labelling them). Both describe the same pod, so a
+    step present in more than one keeps the larger value instead of adding.
+    """
     out: dict[PodKey, dict[float, float]] = {}
     for series in result or []:
         metric = series.get("metric", {})
         key = (metric.get("namespace"), metric.get("pod"))
-        points: dict[float, float] = {}
+        points = out.setdefault(key, {})
         for ts, val in series.get("values", []):
             try:
-                points[float(ts)] = float(val)
+                ts_f, val_f = float(ts), float(val)
             except TypeError, ValueError:
                 continue
-        out[key] = points
+            points[ts_f] = max(points.get(ts_f, val_f), val_f)
     return out
 
 
@@ -507,6 +525,67 @@ def _billed_hours(
         usage_sum += u * STEP_HOURS
         request_sum += r * STEP_HOURS
     return billed, usage_sum, request_sum
+
+
+def _node_by_pod_step(
+    *results: list[MimirSeries] | None,
+) -> dict[PodKey, dict[float, str]]:
+    """``{(namespace, pod): {timestamp: node}}`` from each series' ``node``
+    label; earlier results win, so pass the most authoritative first."""
+    out: dict[PodKey, dict[float, str]] = {}
+    for result in results:
+        for series in result or []:
+            metric = series.get("metric", {})
+            node = metric.get("node")
+            if not node:
+                continue
+            steps = out.setdefault((metric.get("namespace"), metric.get("pod")), {})
+            for ts, _ in series.get("values", []):
+                try:
+                    _ = steps.setdefault(float(ts), node)
+                except TypeError, ValueError:
+                    continue
+    return out
+
+
+@dataclass(slots=True)
+class _NodeLoad:
+    """One node's pod load over an hour, in vCPU-hr / GiB-hr."""
+
+    steps: set[float] = field(default_factory=set)
+    cpu_usage: float = 0.0
+    cpu_request: float = 0.0
+    cpu_billed: float = 0.0
+    mem_usage: float = 0.0
+    mem_request: float = 0.0
+    mem_billed: float = 0.0
+
+
+def _add_node_load(
+    node_load: defaultdict[str, _NodeLoad],
+    node_by_step: dict[float, str],
+    cpu_usage: dict[float, float],
+    cpu_request: dict[float, float],
+    mem_usage: dict[float, float],
+    mem_request: dict[float, float],
+) -> None:
+    """Add one pod's per-step usage/request to the node it ran on at that
+    step, billing each step at max(usage, request) like `_billed_hours`.
+    Steps with no known node (unscheduled, or unlabelled metrics) are
+    skipped."""
+    for ts, node in node_by_step.items():
+        load = node_load[node]
+        load.steps.add(ts)
+        cpu_u = cpu_usage.get(ts, 0.0)
+        cpu_r = cpu_request.get(ts, 0.0)
+        mem_u = mem_usage.get(ts, 0.0)
+        mem_r = mem_request.get(ts, 0.0)
+        load.cpu_usage += cpu_u * STEP_HOURS
+        load.cpu_request += cpu_r * STEP_HOURS
+        load.cpu_billed += max(cpu_u, cpu_r) * STEP_HOURS
+        load.mem_usage += mem_u * STEP_HOURS
+        load.mem_request += mem_r * STEP_HOURS
+        load.mem_billed += max(mem_u, mem_r) * STEP_HOURS
 
 
 # ---------------------------------------------------------------------------
@@ -971,55 +1050,88 @@ def _collect_egress(
 # ---------------------------------------------------------------------------
 
 
-def _collect_overhead_nodes(
-    node_presence_result: list[MimirSeries], rates: CostRates
-) -> tuple[float, float, int, bool]:
-    _refresh_nodes()
-
-    present_steps: defaultdict[str, int] = defaultdict(int)
-    for series in node_presence_result or []:
-        instance = series.get("metric", {}).get("instance")
-        if not instance:
-            continue
-        node_name = instance.rsplit(":", 1)[0] if ":" in instance else instance
-        timestamps = {ts for ts, _ in series.get("values", [])}
-        present_steps[node_name] += len(timestamps)
-
-    if not present_steps:
-        return 0.0, 0.0, 0, False
-
-    cost_nodes: list[CostNode] = CostNode.query.all()
-    nodes = {node.name: node for node in cost_nodes}
-    node_hours = 0.0
-    cluster_compute_cost = 0.0
-    nodes_unpriced = 0
-    for node_name, steps in present_steps.items():
-        fraction = min(steps, STEPS_PER_HOUR) / STEPS_PER_HOUR
-        node_hours += fraction
+def _collect_nodes(
+    node_load: dict[str, _NodeLoad], rates: CostRates
+) -> tuple[list[CostNodeHour], str | None]:
+    """Price every node that ran pods this hour and split its cost into
+    requested / used / idle. Returns the rows plus why the node inventory
+    couldn't be refreshed, if it couldn't (nodes it has never seen stay
+    unpriced)."""
+    inventory_error = _refresh_nodes()
+    nodes: dict[str, CostNode] = {
+        node.name: node
+        for node in CostNode.query.filter(CostNode.name.in_(list(node_load))).all()
+    }
+    rows: list[CostNodeHour] = []
+    for node_name, load in sorted(node_load.items()):
         node = nodes.get(node_name)
-        if node is None or node.instance_type is None:
-            nodes_unpriced += 1
-            continue
-        price = node_hourly_price(
-            node.instance_type,
-            rates,
-            cpu_capacity=node.cpu_capacity,
-            memory_gib=node.memory_gib,
+        row = CostNodeHour(
+            node_name=node_name,
+            instance_type=node.instance_type if node is not None else None,
+            capacity_type=node.capacity_type if node is not None else None,
+            cpu_capacity=node.cpu_capacity if node is not None else None,
+            memory_gib=node.memory_gib if node is not None else None,
+            node_hours=min(len(load.steps), STEPS_PER_HOUR) / STEPS_PER_HOUR,
+            cpu_request_hours=load.cpu_request,
+            cpu_usage_hours=load.cpu_usage,
+            cpu_billed_hours=load.cpu_billed,
+            memory_request_gib_hours=load.mem_request,
+            memory_usage_gib_hours=load.mem_usage,
+            memory_billed_gib_hours=load.mem_billed,
         )
-        cluster_compute_cost += fraction * price
+        if node is not None and node.instance_type is not None:
+            _price_node_hour(row, node.instance_type, load, rates)
+        rows.append(row)
+    return rows, inventory_error
 
-    return node_hours, cluster_compute_cost, nodes_unpriced, True
 
-
-def _refresh_nodes() -> None:
-    if not current_app.config.get("KUBERNETES_ENABLED"):
+def _price_node_hour(
+    row: CostNodeHour, instance_type: str, load: _NodeLoad, rates: CostRates
+) -> None:
+    """Set the row's dollar columns. The node's price is split across its
+    vCPU and memory in proportion to the list rates, so a requested vCPU on
+    this node costs its share of what the node actually costs; idle is
+    whatever no pod was billed for. Without known capacity only the total
+    can be priced."""
+    hourly = node_hourly_price(
+        instance_type,
+        rates,
+        cpu_capacity=row.cpu_capacity,
+        memory_gib=row.memory_gib,
+    )
+    cost = row.node_hours * hourly
+    row.cost_usd = cost
+    capacity_value = (row.cpu_capacity or 0.0) * rates["vcpu_hour"] + (
+        row.memory_gib or 0.0
+    ) * rates["memory_gib_hour"]
+    if capacity_value <= 0:
         return
+    scale = hourly / capacity_value
+
+    def _value(cpu_hours: float, mem_gib_hours: float) -> float:
+        value = scale * (
+            cpu_hours * rates["vcpu_hour"] + mem_gib_hours * rates["memory_gib_hour"]
+        )
+        return min(max(value, 0.0), cost)
+
+    row.requested_cost_usd = _value(load.cpu_request, load.mem_request)
+    row.used_cost_usd = _value(load.cpu_usage, load.mem_usage)
+    row.idle_cost_usd = cost - _value(load.cpu_billed, load.mem_billed)
+
+
+def _refresh_nodes() -> str | None:
+    """Upsert `CostNode` from the Kubernetes node list; returns why it
+    couldn't, or None on success or when Kubernetes is disabled."""
+    if not current_app.config.get("KUBERNETES_ENABLED"):
+        return None
     try:
         api_client = kubernetes_ext.kubernetes_client
         core_api = kubernetes.client.CoreV1Api(api_client)
         nodes = core_api.list_node()
-    except Exception:
-        return
+    except ApiException as exc:
+        return f"listing nodes failed: {exc.status} {exc.reason}"
+    except Exception as exc:
+        return f"listing nodes failed: {type(exc).__name__}: {exc}"
 
     now = datetime.datetime.now(datetime.UTC)
     existing_by_name: dict[str, CostNode] = {
@@ -1047,3 +1159,4 @@ def _refresh_nodes() -> None:
         record.last_seen = now
         db.session.add(record)
     db.session.flush()
+    return None
