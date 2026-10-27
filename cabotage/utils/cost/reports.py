@@ -15,9 +15,9 @@ from dataclasses import dataclass
 from typing import Literal, NotRequired, TypedDict, cast
 
 from flask import current_app
-from sqlalchemy import ColumnElement, Float, Integer, case, func
+from sqlalchemy import ColumnElement, Float, Integer, Row, case, func
 from sqlalchemy import cast as sa_cast
-from sqlalchemy.orm import InstrumentedAttribute, Query
+from sqlalchemy.orm import InstrumentedAttribute, Query, joinedload
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization
@@ -162,11 +162,15 @@ class FreshnessStats(TypedDict):
 type BreakdownKey = uuid.UUID | str
 
 #: What a breakdown's name-resolver callback returns for one raw group-by
-#: key: (display name, context line, link slugs, soft-deleted?); ``None``
-#: lets a resolver skip a key entirely (no current resolver does, but
-#: ``_build_rows`` handles it defensively).
+#: key: (display name, context line, link slugs, soft-deleted?). A key
+#: missing from the returned dict (no current resolver omits one, but
+#: ``_build_rows`` handles it defensively) is skipped.
 type ResolvedName = tuple[str, str | None, BreakdownSlugs, bool]
-type NameResolver = Callable[[BreakdownKey], ResolvedName | None]
+
+#: Resolves every raw group-by key for a breakdown in one batch (one
+#: ``Model.query.filter(Model.id.in_(keys))`` call) rather than one query
+#: per key.
+type NameResolver = Callable[[list[BreakdownKey]], dict[BreakdownKey, ResolvedName]]
 
 #: (aggregation column, optional category filter) per breakdown name.
 type BreakdownDimension = tuple[
@@ -1059,9 +1063,10 @@ def _build_rows(
     keys = list(totals_by_key) + [
         key for key in previous_by_key if key not in totals_by_key
     ]
+    resolved_by_key = name_resolver(keys)
     for key in keys:
         cost = totals_by_key.get(key, 0.0)
-        resolved = name_resolver(key)
+        resolved = resolved_by_key.get(key)
         if resolved is None:
             continue
         name, context, slugs, deleted = resolved
@@ -1112,31 +1117,39 @@ def _breakdown_organizations(
         rates,
     )
 
-    def resolver(key: BreakdownKey) -> ResolvedName:
-        organization: Organization | None = Organization.query.get(key)
-        if organization is None:
-            return (
-                "(deleted organization)",
+    def resolver(keys: list[BreakdownKey]) -> dict[BreakdownKey, ResolvedName]:
+        organizations = {
+            org.id: org
+            for org in Organization.query.filter(Organization.id.in_(keys)).all()
+        }
+        resolved: dict[BreakdownKey, ResolvedName] = {}
+        for key in keys:
+            organization = organizations.get(key)
+            if organization is None:
+                resolved[key] = (
+                    "(deleted organization)",
+                    None,
+                    {
+                        "organization": None,
+                        "project": None,
+                        "environment": None,
+                        "application": None,
+                    },
+                    True,
+                )
+                continue
+            resolved[key] = (
+                organization.name,
                 None,
                 {
-                    "organization": None,
+                    "organization": organization.slug,
                     "project": None,
                     "environment": None,
                     "application": None,
                 },
-                True,
+                organization.deleted_at is not None,
             )
-        return (
-            organization.name,
-            None,
-            {
-                "organization": organization.slug,
-                "project": None,
-                "environment": None,
-                "application": None,
-            },
-            organization.deleted_at is not None,
-        )
+        return resolved
 
     return _build_rows(*aggregates, name_resolver=resolver)
 
@@ -1153,26 +1166,43 @@ def _breakdown_projects(
         scope, CostLineItem.project_id, start, end, previous_start, previous_end, rates
     )
 
-    def resolver(key: BreakdownKey) -> ResolvedName:
-        project: Project | None = Project.query.get(key)
-        if project is None:
-            return (
-                "(deleted project)",
-                None,
-                {"project": None, "environment": None, "application": None},
-                True,
-            )
-        # Platform scope spans every organization, so the context line and
-        # link need to identify which org this project belongs to.
-        context = project.organization.name if scope.kind == "platform" else None
-        slugs: BreakdownSlugs = {
-            "project": project.slug,
-            "environment": None,
-            "application": None,
+    def resolver(keys: list[BreakdownKey]) -> dict[BreakdownKey, ResolvedName]:
+        found: list[Project] = (
+            Project.query.filter(Project.id.in_(keys))
+            .options(joinedload(Project.organization))
+            .all()
+        )
+        projects: dict[BreakdownKey, Project] = {
+            project.id: project for project in found
         }
-        if scope.kind == "platform":
-            slugs["organization"] = project.organization.slug
-        return (project.name, context, slugs, project.deleted_at is not None)
+        resolved: dict[BreakdownKey, ResolvedName] = {}
+        for key in keys:
+            project = projects.get(key)
+            if project is None:
+                resolved[key] = (
+                    "(deleted project)",
+                    None,
+                    {"project": None, "environment": None, "application": None},
+                    True,
+                )
+                continue
+            # Platform scope spans every organization, so the context line
+            # and link need to identify which org this project belongs to.
+            context = project.organization.name if scope.kind == "platform" else None
+            slugs: BreakdownSlugs = {
+                "project": project.slug,
+                "environment": None,
+                "application": None,
+            }
+            if scope.kind == "platform":
+                slugs["organization"] = project.organization.slug
+            resolved[key] = (
+                project.name,
+                context,
+                slugs,
+                project.deleted_at is not None,
+            )
+        return resolved
 
     return _build_rows(*aggregates, name_resolver=resolver)
 
@@ -1195,26 +1225,38 @@ def _breakdown_environments(
         rates,
     )
 
-    def resolver(key: BreakdownKey) -> ResolvedName:
-        environment: Environment | None = Environment.query.get(key)
-        if environment is None:
-            return (
-                "(deleted environment)",
-                None,
-                {"project": None, "environment": None, "application": None},
-                True,
-            )
-        project = environment.project
-        return (
-            environment.name,
-            project.name if project is not None else None,
-            {
-                "project": project.slug if project is not None else None,
-                "environment": environment.slug,
-                "application": None,
-            },
-            environment.deleted_at is not None,
+    def resolver(keys: list[BreakdownKey]) -> dict[BreakdownKey, ResolvedName]:
+        found: list[Environment] = (
+            Environment.query.filter(Environment.id.in_(keys))
+            .options(joinedload(Environment.project))
+            .all()
         )
+        environments: dict[BreakdownKey, Environment] = {
+            environment.id: environment for environment in found
+        }
+        resolved: dict[BreakdownKey, ResolvedName] = {}
+        for key in keys:
+            environment = environments.get(key)
+            if environment is None:
+                resolved[key] = (
+                    "(deleted environment)",
+                    None,
+                    {"project": None, "environment": None, "application": None},
+                    True,
+                )
+                continue
+            project = environment.project
+            resolved[key] = (
+                environment.name,
+                project.name if project is not None else None,
+                {
+                    "project": project.slug if project is not None else None,
+                    "environment": environment.slug,
+                    "application": None,
+                },
+                environment.deleted_at is not None,
+            )
+        return resolved
 
     return _build_rows(*aggregates, name_resolver=resolver)
 
@@ -1237,28 +1279,45 @@ def _breakdown_applications(
         rates,
     )
 
-    def resolver(key: BreakdownKey) -> ResolvedName:
-        application: Application | None = Application.query.get(key)
-        if application is None:
-            return (
-                "(deleted application)",
-                None,
-                {"project": None, "environment": None, "application": None},
-                True,
-            )
-        project = application.project
-        if scope.kind == "platform" and project is not None:
-            context = f"{project.organization.name} / {project.name}"
-        else:
-            context = project.name if project is not None else None
-        slugs: BreakdownSlugs = {
-            "project": project.slug if project is not None else None,
-            "environment": None,
-            "application": application.slug,
+    def resolver(keys: list[BreakdownKey]) -> dict[BreakdownKey, ResolvedName]:
+        found: list[Application] = (
+            Application.query.filter(Application.id.in_(keys))
+            .options(joinedload(Application.project).joinedload(Project.organization))
+            .all()
+        )
+        applications: dict[BreakdownKey, Application] = {
+            application.id: application for application in found
         }
-        if scope.kind == "platform" and project is not None:
-            slugs["organization"] = project.organization.slug
-        return (application.name, context, slugs, application.deleted_at is not None)
+        resolved: dict[BreakdownKey, ResolvedName] = {}
+        for key in keys:
+            application = applications.get(key)
+            if application is None:
+                resolved[key] = (
+                    "(deleted application)",
+                    None,
+                    {"project": None, "environment": None, "application": None},
+                    True,
+                )
+                continue
+            project = application.project
+            if scope.kind == "platform" and project is not None:
+                context = f"{project.organization.name} / {project.name}"
+            else:
+                context = project.name if project is not None else None
+            slugs: BreakdownSlugs = {
+                "project": project.slug if project is not None else None,
+                "environment": None,
+                "application": application.slug,
+            }
+            if scope.kind == "platform" and project is not None:
+                slugs["organization"] = project.organization.slug
+            resolved[key] = (
+                application.name,
+                context,
+                slugs,
+                application.deleted_at is not None,
+            )
+        return resolved
 
     return _build_rows(*aggregates, name_resolver=resolver)
 
@@ -1282,27 +1341,41 @@ def _breakdown_backing_services(
         category_filter=["backing_service", "storage"],
     )
 
-    def resolver(key: BreakdownKey) -> ResolvedName:
-        resource: Resource | None = Resource.query.get(key)
-        if resource is None:
-            return (
-                "(deleted resource)",
-                None,
-                {"project": None, "environment": None, "application": None},
-                True,
-            )
-        environment = resource.environment
-        project = environment.project if environment is not None else None
-        return (
-            resource.name,
-            resource.type,
-            {
-                "project": project.slug if project is not None else None,
-                "environment": environment.slug if environment is not None else None,
-                "application": None,
-            },
-            resource.deleted_at is not None,
+    def resolver(keys: list[BreakdownKey]) -> dict[BreakdownKey, ResolvedName]:
+        found: list[Resource] = (
+            Resource.query.filter(Resource.id.in_(keys))
+            .options(joinedload(Resource.environment).joinedload(Environment.project))
+            .all()
         )
+        resources: dict[BreakdownKey, Resource] = {
+            resource.id: resource for resource in found
+        }
+        resolved: dict[BreakdownKey, ResolvedName] = {}
+        for key in keys:
+            resource = resources.get(key)
+            if resource is None:
+                resolved[key] = (
+                    "(deleted resource)",
+                    None,
+                    {"project": None, "environment": None, "application": None},
+                    True,
+                )
+                continue
+            environment = resource.environment
+            project = environment.project if environment is not None else None
+            resolved[key] = (
+                resource.name,
+                resource.type,
+                {
+                    "project": project.slug if project is not None else None,
+                    "environment": environment.slug
+                    if environment is not None
+                    else None,
+                    "application": None,
+                },
+                resource.deleted_at is not None,
+            )
+        return resolved
 
     return _build_rows(*aggregates, name_resolver=resolver)
 
@@ -1333,17 +1406,20 @@ def _breakdown_processes(
         else None
     )
 
-    def resolver(key: BreakdownKey) -> ResolvedName:
-        return (
-            str(key),
-            None,
-            {
-                "project": project_slug,
-                "environment": None,
-                "application": application_slug,
-            },
-            False,
-        )
+    def resolver(keys: list[BreakdownKey]) -> dict[BreakdownKey, ResolvedName]:
+        return {
+            key: (
+                str(key),
+                None,
+                {
+                    "project": project_slug,
+                    "environment": None,
+                    "application": application_slug,
+                },
+                False,
+            )
+            for key in keys
+        }
 
     return _build_rows(*aggregates, name_resolver=resolver)
 
@@ -1789,13 +1865,22 @@ def _freshness(
         expected_hours.append(cursor)
         cursor += datetime.timedelta(hours=1)
 
-    runs_in_range: dict[datetime.datetime, CostCollectionRun] = {
-        run.period_start: run
-        for run in CostCollectionRun.query.filter(
+    # Only the columns needed here, not the rates/stats JSONB of every run.
+    run_rows: list[Row[tuple[datetime.datetime, str, str | None]]] = (
+        db.session.query(
+            CostCollectionRun.period_start,
+            CostCollectionRun.status,
+            func.jsonb_extract_path_text(
+                CostCollectionRun.stats, "last_attempt_status"
+            ).label("last_attempt_status"),
+        )
+        .filter(
             CostCollectionRun.period_start >= range_start_hour,
             CostCollectionRun.period_start < range_end_hour,
-        ).all()
-    }
+        )
+        .all()
+    )
+    runs_in_range = {row.period_start: row for row in run_rows}
     missing_hours = [hour for hour in expected_hours if hour not in runs_in_range]
     # A run's own `status` only describes the data it currently holds, which
     # may be older data preserved from a prior successful attempt (see
@@ -1805,9 +1890,8 @@ def _freshness(
     # succeeded.
     failed_hours = sorted(
         hour
-        for hour, run in runs_in_range.items()
-        if run.status == "failed"
-        or (run.stats or {}).get("last_attempt_status") == "failed"
+        for hour, row in runs_in_range.items()
+        if row.status == "failed" or row.last_attempt_status == "failed"
     )
 
     return {
