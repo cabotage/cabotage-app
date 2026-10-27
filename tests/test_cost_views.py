@@ -215,7 +215,8 @@ class TestCostPermissions:
         _login(client, member_user)
         org = cost_context["org"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ):
             resp = client.get(f"/organizations/{org.slug}/cost/data")
         assert resp.status_code == 200
@@ -253,7 +254,8 @@ class TestCostPermissions:
         org = cost_context["org"]
         project = cost_context["project"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ):
             resp = client.get(f"/projects/{org.slug}/{project.slug}/cost/data")
         assert resp.status_code == 200
@@ -279,7 +281,8 @@ class TestCostPermissions:
         project = cost_context["project"]
         environment = cost_context["environment"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ):
             resp = client.get(
                 f"/projects/{org.slug}/{project.slug}/environments/{environment.slug}/cost/data"
@@ -307,7 +310,8 @@ class TestCostPermissions:
         project = cost_context["project"]
         application = cost_context["application"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ):
             resp = client.get(
                 f"/projects/{org.slug}/{project.slug}/applications/{application.slug}/cost/data"
@@ -340,7 +344,8 @@ class TestCostPermissions:
     def test_platform_cost_data_admin_gets_report(self, client, admin_user):
         _login(client, admin_user)
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ):
             resp = client.get("/infra/cost/data")
         assert resp.status_code == 200
@@ -349,7 +354,8 @@ class TestCostPermissions:
     def test_platform_cost_admin_gets_page(self, client, admin_user):
         _login(client, admin_user)
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ):
             resp = client.get("/infra/cost")
         assert resp.status_code == 200
@@ -358,7 +364,7 @@ class TestCostPermissions:
 
 class TestCostCollection:
     def test_collection_requires_login(self, client):
-        with patch("cabotage.server.cost.views.collect_costs.delay") as queue:
+        with patch("cabotage.server.applets.cost.views.collect_costs.delay") as queue:
             resp = client.post("/infra/cost/collect")
         assert resp.status_code == 302
         assert "/login" in resp.headers["Location"]
@@ -366,7 +372,7 @@ class TestCostCollection:
 
     def test_collection_requires_platform_admin(self, client, member_user):
         _login(client, member_user)
-        with patch("cabotage.server.cost.views.collect_costs.delay") as queue:
+        with patch("cabotage.server.applets.cost.views.collect_costs.delay") as queue:
             resp = client.post("/infra/cost/collect")
         assert resp.status_code == 403
         queue.assert_not_called()
@@ -376,7 +382,7 @@ class TestCostCollection:
     ):
         _login(client, admin_user)
         monkeypatch.setitem(app.config, "SHOW_COST_ESTIMATES", False)
-        with patch("cabotage.server.cost.views.collect_costs.delay") as queue:
+        with patch("cabotage.server.applets.cost.views.collect_costs.delay") as queue:
             resp = client.post("/infra/cost/collect")
         assert resp.status_code == 404
         queue.assert_not_called()
@@ -384,7 +390,7 @@ class TestCostCollection:
     def test_collection_requires_csrf(self, app, client, admin_user, monkeypatch):
         _login(client, admin_user)
         monkeypatch.setitem(app.config, "WTF_CSRF_ENABLED", True)
-        with patch("cabotage.server.cost.views.collect_costs.delay") as queue:
+        with patch("cabotage.server.applets.cost.views.collect_costs.delay") as queue:
             resp = client.post("/infra/cost/collect")
         assert resp.status_code == 400
         queue.assert_not_called()
@@ -392,7 +398,7 @@ class TestCostCollection:
     def test_queue_failure_is_reported_without_success(self, client, admin_user):
         _login(client, admin_user)
         with patch(
-            "cabotage.server.cost.views.collect_costs.delay",
+            "cabotage.server.applets.cost.views.collect_costs.delay",
             side_effect=OperationalError("broker unavailable"),
         ):
             resp = client.post("/infra/cost/collect?range=7d")
@@ -409,7 +415,8 @@ class TestCostRangeValidation:
         _login(client, member_user)
         org = cost_context["org"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ) as mock_build:
             resp = client.get(f"/organizations/{org.slug}/cost/data?range=not-a-range")
         assert resp.status_code == 200
@@ -480,7 +487,8 @@ class TestCostScopeSelection:
         _enroll(application, environment)
         base = f"/projects/{org.slug}/{project.slug}/env/{environment.slug}/applications/{application.slug}/cost/data"
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ) as build:
             assert client.get(base).status_code == 200
             assert client.get(f"{base}?env={environment.slug}").status_code == 200
@@ -492,7 +500,8 @@ class TestCostScopeSelection:
         org, project = cost_context["org"], cost_context["project"]
         application = cost_context["application"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ):
             app_resp = client.get(
                 f"/projects/{org.slug}/{project.slug}/applications/{application.slug}/cost/data?env=nope"
@@ -521,7 +530,8 @@ class TestCostScopeSelection:
         _login(client, member_user)
         org = cost_context["org"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ) as build:
             resp = client.get(
                 f"/organizations/{org.slug}/cost/data"
@@ -536,7 +546,8 @@ class TestCostScopeSelection:
         _login(client, member_user)
         org = cost_context["org"]
         with patch(
-            "cabotage.server.cost.views.build_report", return_value=_fake_report()
+            "cabotage.server.applets.cost.services.build_report",
+            return_value=_fake_report(),
         ) as build:
             resp = client.get(
                 f"/organizations/{org.slug}/cost/data"
@@ -555,7 +566,9 @@ class TestCostRowLinks:
         report = _fake_report()
         report["breakdowns"]["projects"][0]["deleted"] = True
         report["movers"] = [{"key": "p1"}]
-        with patch("cabotage.server.cost.views.build_report", return_value=report):
+        with patch(
+            "cabotage.server.applets.cost.services.build_report", return_value=report
+        ):
             data = client.get(f"/organizations/{org.slug}/cost/data").get_json()
         assert data["breakdowns"]["projects"][0]["url"] is None
         assert data["movers"][0]["url"] is None
@@ -575,7 +588,9 @@ class TestCostRowLinks:
                 }
             ]
         }
-        with patch("cabotage.server.cost.views.build_report", return_value=report):
+        with patch(
+            "cabotage.server.applets.cost.services.build_report", return_value=report
+        ):
             data = client.get("/infra/cost/data").get_json()
         assert data["breakdowns"]["organizations"][0]["url"] is None
 
@@ -583,7 +598,9 @@ class TestCostRowLinks:
             OrganizationMember(organization_id=org.id, user_id=admin_user.id)
         )
         db.session.commit()
-        with patch("cabotage.server.cost.views.build_report", return_value=report):
+        with patch(
+            "cabotage.server.applets.cost.services.build_report", return_value=report
+        ):
             data = client.get("/infra/cost/data").get_json()
         assert data["breakdowns"]["organizations"][0]["url"] == (
             f"/organizations/{org.slug}/cost"

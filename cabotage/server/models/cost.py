@@ -17,7 +17,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cabotage.server import Model
-from cabotage.utils.cost.rates import CostRates, SnapshotRates
+from cabotage.server.applets.cost.types import CostRates, SnapshotRates
 
 
 class CostRunStats(TypedDict, total=False):
@@ -160,8 +160,8 @@ class CostNode(Model):
 
 class CostPriceSnapshot(Model):
     """Rates fetched from the AWS Price List API, layered over the built-in
-    defaults by :func:`cabotage.utils.cost.rates.effective_rates`. ``rates``
-    holds only the keys that were fetched (a partial ``CostRates``).
+    defaults by :func:`cabotage.server.applets.cost.rates.effective_rates`.
+    ``rates`` holds only the keys that were fetched (a partial ``CostRates``).
     """
 
     __tablename__ = "cost_price_snapshots"

@@ -1,6 +1,6 @@
 import pytest
 
-from cabotage.utils.cost.rates import effective_rates
+from cabotage.server.applets.cost.rates import effective_rates
 
 
 @pytest.mark.parametrize(

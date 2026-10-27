@@ -4,18 +4,16 @@
 requests, pod labels, traefik response bytes) and the Kubernetes API (node
 inventory), classifies every pod into an organization/project/environment
 /application/resource scope, prices it at the rates in
-``cabotage.utils.cost.rates``, and writes one ``CostCollectionRun`` plus a
+``cabotage.server.applets.cost.rates``, and writes one ``CostCollectionRun`` plus a
 set of ``CostLineItem`` rows for that UTC hour. Collection is idempotent:
 re-running for an hour that was already collected replaces its rows.
 """
 
 import datetime
 import hashlib
-import re
 import struct
 import uuid
 from collections import defaultdict
-from typing import TypedDict
 
 import kubernetes.client
 import sqlalchemy as sa
@@ -24,6 +22,39 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from cabotage.server import db
 from cabotage.server import kubernetes as kubernetes_ext
+from cabotage.server.applets.cost.constants import (
+    BUILD_POD_RE,
+    COMPONENT_MAX_LEN,
+    CPU_REQUEST_QUERY,
+    CPU_USAGE_QUERY,
+    GIB,
+    HOURS_PER_MONTH,
+    MEM_REQUEST_QUERY,
+    MEM_USAGE_QUERY,
+    NODE_PRESENCE_QUERY,
+    POD_LABELS_QUERY,
+    STEP_HOURS,
+    STEP_SECONDS,
+    STEPS_PER_HOUR,
+    TRAEFIK_QUERY,
+)
+from cabotage.server.applets.cost.helpers import (
+    floor_hour,
+    parse_cpu_quantity,
+    parse_memory_quantity_gib,
+)
+from cabotage.server.applets.cost.rates import (
+    effective_rates,
+    node_hourly_price,
+    volume_monthly_cost,
+)
+from cabotage.server.applets.cost.types import (
+    CostRates,
+    GroupKey,
+    PodClassification,
+    PodKey,
+    ScopeKey,
+)
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.cost import (
     CostCollectionRun,
@@ -43,72 +74,7 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.resources import PostgresResource, RedisResource, Resource
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.utils import mimir
-from cabotage.utils.cost.rates import (
-    CostRates,
-    effective_rates,
-    node_hourly_price,
-    volume_monthly_cost,
-)
 from cabotage.utils.mimir import MimirSeries
-
-GIB = 1024.0**3
-STEP_SECONDS = 300
-STEP_HOURS = STEP_SECONDS / 3600.0
-STEPS_PER_HOUR = 12
-# CostLineItem.component is String(64); resource slugs are unbounded.
-_COMPONENT_MAX_LEN = 64
-
-_BUILD_POD_RE = re.compile(r"^(?:image|release|omnibus)build-([0-9a-f]{8})-")
-
-_CPU_USAGE_QUERY = (
-    "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total"
-    '{container!="",container!="POD"}[5m]))'
-)
-_MEM_USAGE_QUERY = (
-    "sum by (namespace, pod) (container_memory_working_set_bytes"
-    '{container!="",container!="POD"})'
-)
-_CPU_REQUEST_QUERY = (
-    'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="cpu"})'
-)
-_MEM_REQUEST_QUERY = (
-    'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="memory"})'
-)
-_NODE_PRESENCE_QUERY = "count by (instance) (container_memory_working_set_bytes)"
-# Range lookback at period_end so pods that terminated mid-hour (builds,
-# replaced replicas) still have labels to attribute their usage samples.
-_POD_LABELS_QUERY = "last_over_time(kube_pod_labels[1h])"
-_TRAEFIK_QUERY = (
-    "sum by (service) (increase(traefik_service_responses_bytes_total[1h]))"
-)
-
-type PodKey = tuple[str | None, str | None]
-type ScopeKey = tuple[
-    uuid.UUID | None,
-    uuid.UUID | None,
-    uuid.UUID | None,
-    uuid.UUID | None,
-    uuid.UUID | None,
-]
-type GroupKey = tuple[
-    str,
-    uuid.UUID | None,
-    uuid.UUID | None,
-    uuid.UUID | None,
-    uuid.UUID | None,
-    uuid.UUID | None,
-    str,
-]
-
-
-class PodClassification(TypedDict):
-    category: str
-    organization_id: uuid.UUID
-    project_id: uuid.UUID | None
-    environment_id: uuid.UUID | None
-    application_id: uuid.UUID | None
-    resource_id: uuid.UUID | None
-    component: str
 
 
 def collect_hour(period_start: datetime.datetime) -> CostCollectionRun:
@@ -129,7 +95,7 @@ def collect_hour(period_start: datetime.datetime) -> CostCollectionRun:
     ``["last_attempt_at"]``, which are always updated to reflect this
     specific attempt regardless of which branch handled it.
     """
-    period_start = _floor_hour(period_start)
+    period_start = floor_hour(period_start)
     period_end = period_start + datetime.timedelta(hours=1)
     started_at = datetime.datetime.now(datetime.UTC)
     rates = effective_rates()
@@ -235,12 +201,6 @@ def _write_run(
     return run
 
 
-def _floor_hour(dt: datetime.datetime) -> datetime.datetime:
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=datetime.UTC)
-    return dt.astimezone(datetime.UTC).replace(minute=0, second=0, microsecond=0)
-
-
 # ---------------------------------------------------------------------------
 # Collection
 # ---------------------------------------------------------------------------
@@ -259,18 +219,18 @@ def _collect(
 
     cpu_usage = _series_by_pod(
         mimir.query_range(
-            _CPU_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
+            CPU_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
         )
     )
     mem_usage = _series_by_pod_scaled(
         mimir.query_range(
-            _MEM_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
+            MEM_USAGE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
         ),
         1.0 / GIB,
     )
     cpu_request = _series_by_pod(
         mimir.query_range(
-            _CPU_REQUEST_QUERY,
+            CPU_REQUEST_QUERY,
             range_start,
             range_end,
             STEP_SECONDS,
@@ -279,7 +239,7 @@ def _collect(
     )
     mem_request = _series_by_pod_scaled(
         mimir.query_range(
-            _MEM_REQUEST_QUERY,
+            MEM_REQUEST_QUERY,
             range_start,
             range_end,
             STEP_SECONDS,
@@ -288,13 +248,13 @@ def _collect(
         1.0 / GIB,
     )
     node_presence_result = mimir.query_range(
-        _NODE_PRESENCE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
+        NODE_PRESENCE_QUERY, range_start, range_end, STEP_SECONDS, tenant_id=tenant_id
     )
     pod_labels_result = mimir.query_instant(
-        _POD_LABELS_QUERY, tenant_id=tenant_id, time=instant_time
+        POD_LABELS_QUERY, tenant_id=tenant_id, time=instant_time
     )
     traefik_result = mimir.query_instant(
-        _TRAEFIK_QUERY, tenant_id=tenant_id, time=instant_time
+        TRAEFIK_QUERY, tenant_id=tenant_id, time=instant_time
     )
 
     pod_labels: dict[PodKey, dict[str, str]] = {}
@@ -305,7 +265,7 @@ def _collect(
     build_job_ids: set[str] = set()
     for (_, pod_name), labels in pod_labels.items():
         if pod_name and labels.get("label_process") == "build":
-            match = _BUILD_POD_RE.match(pod_name)
+            match = BUILD_POD_RE.match(pod_name)
             if match:
                 build_job_ids.add(match.group(1))
     build_environment_by_job = _resolve_build_app_envs(build_job_ids)
@@ -709,7 +669,7 @@ def _classify_build_pod(
 
     environment_id = None
     if application is not None:
-        match = _BUILD_POD_RE.match(pod_name)
+        match = BUILD_POD_RE.match(pod_name)
         if match:
             environment_id = build_environment_by_job.get(match.group(1))
         if environment_id is None:
@@ -796,7 +756,7 @@ def _classify_backing_pod(
             break
 
     component = (
-        matched_resource.slug[:_COMPONENT_MAX_LEN]
+        matched_resource.slug[:COMPONENT_MAX_LEN]
         if matched_resource is not None
         else "other"
     )
@@ -821,8 +781,6 @@ def _collect_storage(
     period_start: datetime.datetime, period_end: datetime.datetime, rates: CostRates
 ) -> list[CostLineItem]:
     items: list[CostLineItem] = []
-    # EBS bills per GiB-month, so each hour is recorded as GiB-mo (1/730 of a
-    # month); summed over a month the quantity reads as provisioned GiB.
 
     # Resource.created/deleted_at are stored as naive UTC datetimes (no
     # tzinfo), while period_start/period_end are timezone-aware UTC; strip
@@ -843,8 +801,12 @@ def _collect_storage(
         if not _existed_during_hour(pg_resource):
             continue
         instances = 2 if pg_resource.ha_enabled else 1
-        quantity = (pg_resource.storage_size * instances) / 730.0
-        cost = volume_monthly_cost(pg_resource.storage_size, rates) * instances / 730.0
+        quantity = (pg_resource.storage_size * instances) / HOURS_PER_MONTH
+        cost = (
+            volume_monthly_cost(pg_resource.storage_size, rates)
+            * instances
+            / HOURS_PER_MONTH
+        )
         env = pg_resource.environment
         items.append(
             CostLineItem(
@@ -855,7 +817,7 @@ def _collect_storage(
                 resource_id=pg_resource.id,
                 category="storage",
                 meter="storage",
-                component=pg_resource.slug[:_COMPONENT_MAX_LEN],
+                component=pg_resource.slug[:COMPONENT_MAX_LEN],
                 quantity=quantity,
                 unit="GiB-mo",
                 usage_quantity=None,
@@ -874,9 +836,11 @@ def _collect_storage(
             if redis_resource.ha_enabled
             else 1
         )
-        quantity = (redis_resource.storage_size * instances) / 730.0
+        quantity = (redis_resource.storage_size * instances) / HOURS_PER_MONTH
         cost = (
-            volume_monthly_cost(redis_resource.storage_size, rates) * instances / 730.0
+            volume_monthly_cost(redis_resource.storage_size, rates)
+            * instances
+            / HOURS_PER_MONTH
         )
         env = redis_resource.environment
         items.append(
@@ -888,7 +852,7 @@ def _collect_storage(
                 resource_id=redis_resource.id,
                 category="storage",
                 meter="storage",
-                component=redis_resource.slug[:_COMPONENT_MAX_LEN],
+                component=redis_resource.slug[:COMPONENT_MAX_LEN],
                 quantity=quantity,
                 unit="GiB-mo",
                 usage_quantity=None,
@@ -1064,8 +1028,8 @@ def _refresh_nodes() -> None:
         instance_type = labels.get("node.kubernetes.io/instance-type")
         capacity_type = labels.get("karpenter.sh/capacity-type")
         capacity = (node.status.capacity or {}) if node.status is not None else {}
-        cpu_capacity = _parse_cpu_quantity(capacity.get("cpu"))
-        memory_gib = _parse_memory_quantity_gib(capacity.get("memory"))
+        cpu_capacity = parse_cpu_quantity(capacity.get("cpu"))
+        memory_gib = parse_memory_quantity_gib(capacity.get("memory"))
 
         record = existing_by_name.get(name)
         if record is None:
@@ -1078,32 +1042,3 @@ def _refresh_nodes() -> None:
         record.last_seen = now
         db.session.add(record)
     db.session.flush()
-
-
-_MEM_SUFFIXES: dict[str, float] = {
-    "Ki": 1024.0,
-    "Mi": 1024.0**2,
-    "Gi": 1024.0**3,
-    "Ti": 1024.0**4,
-    "K": 1000.0,
-    "M": 1000.0**2,
-    "G": 1000.0**3,
-    "T": 1000.0**4,
-}
-
-
-def _parse_cpu_quantity(value: str | None) -> float | None:
-    if value is None:
-        return None
-    if value.endswith("m"):
-        return float(value[:-1]) / 1000.0
-    return float(value)
-
-
-def _parse_memory_quantity_gib(value: str | None) -> float | None:
-    if value is None:
-        return None
-    for suffix, multiplier in _MEM_SUFFIXES.items():
-        if value.endswith(suffix):
-            return float(value[: -len(suffix)]) * multiplier / GIB
-    return float(value) / GIB

@@ -1,4 +1,4 @@
-"""Tests for cost report assembly (cabotage.utils.cost.reports)."""
+"""Tests for cost report assembly (cabotage.server.applets.cost.reports)."""
 
 import datetime
 import itertools
@@ -9,6 +9,7 @@ import pytest
 from flask_security import hash_password
 
 from cabotage.server import db
+from cabotage.server.applets.cost.reports import CostScope, build_report
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
@@ -20,7 +21,6 @@ from cabotage.server.models.projects import (
 )
 from cabotage.server.models.resources import PostgresResource, Resource
 from cabotage.server.wsgi import app as _app
-from cabotage.utils.cost.reports import CostScope, build_report
 
 NOW = datetime.datetime(2026, 10, 15, 10, 30, 0, tzinfo=datetime.UTC)
 

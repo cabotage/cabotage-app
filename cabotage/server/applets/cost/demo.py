@@ -26,7 +26,7 @@ import datetime
 import math
 import random
 import uuid
-from typing import TypedDict, cast
+from typing import cast
 
 import psycopg
 from psycopg import sql as pg_sql
@@ -34,6 +34,28 @@ from psycopg.types.json import Json
 from sqlalchemy import func, select
 
 from cabotage.server import db
+from cabotage.server.applets.cost.constants import (
+    DEMO_BUILD_CPU_REQUEST,
+    DEMO_BUILD_HOUR_PROBABILITY,
+    DEMO_BUILD_HOURS,
+    DEMO_BUILD_MEM_REQUEST,
+    HOURS_PER_MONTH,
+    LINE_ITEM_COLUMNS,
+    RUN_COLUMNS,
+)
+from cabotage.server.applets.cost.helpers import (
+    as_utc,
+    parse_cpu_quantity,
+    parse_memory_quantity_gib,
+)
+from cabotage.server.applets.cost.rates import effective_rates
+from cabotage.server.applets.cost.types import (
+    CostRates,
+    Events,
+    ProcessEntry,
+    ResourceEntry,
+    ScopeKey,
+)
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.cost import (
     CostCollectionRun,
@@ -52,71 +74,6 @@ from cabotage.server.models.resources import (
     postgres_size_classes,
     redis_size_classes,
 )
-from cabotage.utils.cost.collector import (
-    ScopeKey,
-    _parse_cpu_quantity,
-    _parse_memory_quantity_gib,
-)
-from cabotage.utils.cost.rates import CostRates, effective_rates
-
-_RUN_COLUMNS = (
-    "id",
-    "period_start",
-    "status",
-    "started_at",
-    "finished_at",
-    "error",
-    "rates",
-    "stats",
-)
-_LINE_ITEM_COLUMNS = (
-    "id",
-    "run_id",
-    "period_start",
-    "organization_id",
-    "project_id",
-    "environment_id",
-    "application_id",
-    "resource_id",
-    "category",
-    "meter",
-    "component",
-    "quantity",
-    "unit",
-    "usage_quantity",
-    "request_quantity",
-    "cost_usd",
-)
-
-
-class ProcessEntry(TypedDict):
-    organization_id: uuid.UUID
-    project_id: uuid.UUID
-    environment_id: uuid.UUID
-    application_id: uuid.UUID
-    component: str
-    cpu_request: float
-    mem_request: float
-    is_web: bool
-    appears_after: datetime.datetime | None
-    gone_after: datetime.datetime | None
-
-
-class ResourceEntry(TypedDict):
-    organization_id: uuid.UUID
-    project_id: uuid.UUID
-    environment_id: uuid.UUID
-    resource_id: uuid.UUID
-    slug: str
-    storage_gib: float
-    cpu_request: float
-    mem_request: float
-    instances: int
-
-
-class Events(TypedDict):
-    spike_date: datetime.date
-    scale_up_cutoff: datetime.datetime
 
 
 def _copy_rows(
@@ -344,8 +301,8 @@ def seed_cost_history(
     if raw_connection is None:
         raise RuntimeError("Demo cost seeding requires a database connection")
     cursor = cast(psycopg.Cursor, raw_connection.cursor())
-    _copy_rows(cursor, "cost_collection_runs", _RUN_COLUMNS, run_rows)
-    _copy_rows(cursor, "cost_line_items", _LINE_ITEM_COLUMNS, item_rows)
+    _copy_rows(cursor, "cost_collection_runs", RUN_COLUMNS, run_rows)
+    _copy_rows(cursor, "cost_line_items", LINE_ITEM_COLUMNS, item_rows)
     db.session.commit()
     return total_items
 
@@ -501,7 +458,7 @@ def _collect_processes(
                 applications.append(application)
             for app_env in application.application_environments:
                 deletions = [
-                    _as_utc(d)
+                    as_utc(d)
                     for d in (
                         project.deleted_at,
                         application.deleted_at,
@@ -523,8 +480,8 @@ def _collect_processes(
                     pod_class = pod_classes.get(
                         pod_class_name, pod_classes[DEFAULT_POD_CLASS]
                     )
-                    cpu_request_raw = _parse_cpu_quantity(pod_class["cpu"]["requests"])
-                    mem_request_raw = _parse_memory_quantity_gib(
+                    cpu_request_raw = parse_cpu_quantity(pod_class["cpu"]["requests"])
+                    mem_request_raw = parse_memory_quantity_gib(
                         pod_class["memory"]["requests"]
                     )
                     cpu_request = (cpu_request_raw or 0.0) * count
@@ -544,10 +501,6 @@ def _collect_processes(
                         }
                     )
     return entries, applications
-
-
-def _as_utc(value: datetime.datetime) -> datetime.datetime:
-    return value if value.tzinfo else value.replace(tzinfo=datetime.UTC)
 
 
 def _collect_resources(organization: Organization) -> list[ResourceEntry]:
@@ -597,22 +550,14 @@ def _resource_requests(resource: Resource) -> tuple[float, float]:
     size = classes.get(resource.size_class)
     if size is None:
         return 0.0, 0.0
-    cpu = _parse_cpu_quantity(size["cpu"]["requests"]) or 0.0
-    memory = _parse_memory_quantity_gib(size["memory"]["requests"]) or 0.0
+    cpu = parse_cpu_quantity(size["cpu"]["requests"]) or 0.0
+    memory = parse_memory_quantity_gib(size["memory"]["requests"]) or 0.0
     return cpu, memory
 
 
 # ---------------------------------------------------------------------------
 # Per-hour generation
 # ---------------------------------------------------------------------------
-
-
-# Candidate hours for a build to kick off, and the per-(app, hour) chance of
-# one happening — tuned so an active app sees roughly 3-5 builds/week.
-_BUILD_HOURS = (9, 10, 11, 13, 14, 16, 20)
-_BUILD_HOUR_PROBABILITY = 0.15
-_BUILD_CPU_REQUEST = 4.0  # vCPU, a realistic buildkit job size
-_BUILD_MEM_REQUEST = 6.0  # GiB
 
 
 def _distinct_app_scopes(processes: list[ProcessEntry]) -> list[ScopeKey]:
@@ -830,7 +775,7 @@ def _generate_hour(
         direct_compute_total += cpu_cost + mem_cost
         _track_direct(scope_key, cpu_cost + mem_cost)
 
-        storage_quantity = resource["storage_gib"] / 730.0
+        storage_quantity = resource["storage_gib"] / HOURS_PER_MONTH
         storage_cost = storage_quantity * rates["storage_gib_month"]
         items.append(
             CostLineItem(
@@ -853,15 +798,15 @@ def _generate_hour(
     # Build activity: each active app independently gets a chance of a
     # build during business hours, landing at roughly several builds/week
     # per app, 3-8 minutes each at a realistic buildkit job size.
-    if hour.hour in _BUILD_HOURS:
+    if hour.hour in DEMO_BUILD_HOURS:
         for scope_key in _distinct_app_scopes(live):
-            if rng.random() >= _BUILD_HOUR_PROBABILITY:
+            if rng.random() >= DEMO_BUILD_HOUR_PROBABILITY:
                 continue
             org_id, project_id, environment_id, application_id, _resource_id = scope_key
             build_minutes = rng.uniform(3.0, 8.0)
             build_hours = build_minutes / 60.0
-            cpu_billed = _BUILD_CPU_REQUEST * build_hours
-            mem_billed = _BUILD_MEM_REQUEST * build_hours
+            cpu_billed = DEMO_BUILD_CPU_REQUEST * build_hours
+            mem_billed = DEMO_BUILD_MEM_REQUEST * build_hours
             cpu_cost = cpu_billed * rates["vcpu_hour"]
             mem_cost = mem_billed * rates["memory_gib_hour"]
             items.append(

@@ -1,4 +1,4 @@
-"""Tests for the synthetic cost history seed (cabotage.utils.cost.demo)."""
+"""Tests for the synthetic cost history seed (cabotage.server.applets.cost.demo)."""
 
 import datetime
 import uuid
@@ -6,6 +6,7 @@ import uuid
 import pytest
 
 from cabotage.server import db
+from cabotage.server.applets.cost.demo import seed_cost_history
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.cost import CostCollectionRun, CostLineItem
 from cabotage.server.models.projects import (
@@ -16,7 +17,6 @@ from cabotage.server.models.projects import (
 )
 from cabotage.server.models.resources import PostgresResource, RedisResource, Resource
 from cabotage.server.wsgi import app as _app
-from cabotage.utils.cost.demo import seed_cost_history
 
 NOW = datetime.datetime(2025, 3, 10, 12, 0, tzinfo=datetime.UTC)
 DAYS = 4

@@ -8,11 +8,10 @@ this module never queries Mimir or Kubernetes.
 
 import bisect
 import datetime
-import uuid
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Literal, NotRequired, TypedDict, cast
+from typing import cast
 
 from flask import current_app
 from sqlalchemy import ColumnElement, Float, Integer, Row, case, func
@@ -20,6 +19,56 @@ from sqlalchemy import cast as sa_cast
 from sqlalchemy.orm import InstrumentedAttribute, Query, joinedload
 
 from cabotage.server import db
+from cabotage.server.applets.cost.constants import (
+    CALENDAR_SPAN,
+    CATEGORY_LABELS,
+    CATEGORY_ORDER,
+    COLLECTION_GRACE_MINUTES,
+    CUSTOM_HOURLY_SPAN,
+    DEFAULT_RATES,
+    FIXED_RATE_ITEMS,
+    MAX_EXTENT_BUCKETS,
+    METER_LABELS,
+    METER_ORDER,
+    METER_RATE_KEY,
+    METER_UNITS,
+    PRIMARY_BREAKDOWN,
+    RANGE_CONFIG,
+    RATE_LINE_ITEMS,
+    STALE_AFTER,
+    TOP_N_BREAKDOWN_SERIES,
+    WEEKDAY_DOW,
+    WEEKDAY_LABELS,
+)
+from cabotage.server.applets.cost.helpers import as_utc
+from cabotage.server.applets.cost.rates import effective_rates, node_hourly_price
+from cabotage.server.applets.cost.types import (
+    BreakdownAggregates,
+    BreakdownDimension,
+    BreakdownKey,
+    BreakdownRow,
+    BreakdownSlugs,
+    CapacitySeries,
+    CostRates,
+    EfficiencySeries,
+    FreshnessStats,
+    HeatmapPayload,
+    Interval,
+    MeterRow,
+    MoverRow,
+    NameResolver,
+    NodeRow,
+    PlatformBlock,
+    PriceTier,
+    RateLineItem,
+    RatesDisplay,
+    RatesNode,
+    ReconciliationStats,
+    ResolvedName,
+    SeriesBreakdownEntry,
+    SeriesPayload,
+    UnallocatedStats,
+)
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.cost import (
     CostCollectionRun,
@@ -28,173 +77,6 @@ from cabotage.server.models.cost import (
 )
 from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.models.resources import Resource
-from cabotage.utils.cost.rates import (
-    DEFAULT_RATES,
-    CostRates,
-    PriceTier,
-    effective_rates,
-    node_hourly_price,
-)
-
-type Interval = Literal["hour", "day", "week"]
-
-
-class MeterRow(TypedDict):
-    key: str
-    label: str
-    unit: str
-    quantity: float
-    rate: float | None
-    cost: float
-
-
-class BreakdownSlugs(TypedDict, total=False):
-    project: str | None
-    environment: str | None
-    application: str | None
-    organization: str | None
-
-
-class BreakdownRow(TypedDict):
-    key: str
-    name: str
-    context: str | None
-    cost: float
-    previous_cost: float
-    share: float
-    categories: dict[str, float]
-    efficiency: float | None
-    slugs: BreakdownSlugs
-    deleted: bool
-    meters: list[MeterRow] | None
-
-
-class MoverRow(TypedDict):
-    key: str
-    name: str
-    context: str | None
-    cost: float
-    change: float
-
-
-class SeriesBreakdownEntry(TypedDict):
-    keys: list[str]
-    names: dict[str, str]
-    values: dict[str, list[float]]
-    other: list[float]
-
-
-class EfficiencySeries(TypedDict):
-    usage: list[float]
-    request: list[float]
-    billed: list[float]
-
-
-class SeriesPayload(TypedDict):
-    timestamps: list[int]
-    categories: dict[str, list[float]]
-    previous: NotRequired[list[float]]
-    efficiency: NotRequired[EfficiencySeries]
-    breakdowns: NotRequired[dict[str, SeriesBreakdownEntry]]
-
-
-class CapacitySeries(TypedDict):
-    capacity_cost: list[float]
-    requested_cost: list[float]
-    used_cost: list[float]
-
-
-class ReconciliationStats(TypedDict):
-    cluster_compute: float
-    fixed_overhead: float
-    tenant_direct: float
-    overhead_allocated: float
-    unallocated_idle: float
-    total: float
-    residual: float
-
-
-class NodeRow(TypedDict):
-    instance_type: str | None
-    capacity_type: str | None
-    count: int
-    node_hours: float
-    hourly: float
-    cost: float
-
-
-class UnallocatedStats(TypedDict):
-    pods_seen: float
-    pods_unallocated: float
-    share: float | None
-
-
-class PlatformBlock(TypedDict):
-    reconciliation: ReconciliationStats
-    capacity_series: CapacitySeries
-    nodes: list[NodeRow]
-    unallocated: UnallocatedStats
-    top_orgs_series: SeriesBreakdownEntry
-
-
-class RateLineItem(TypedDict):
-    key: str
-    label: str
-    value: float | None
-    unit: str
-    note: str | None
-
-
-class RatesNode(TypedDict):
-    instance_type: str
-    hourly: float
-
-
-class RatesDisplay(TypedDict):
-    line_items: list[RateLineItem]
-    #: Cluster node instance types — platform scope only; a tenant report
-    #: would leak install-wide infrastructure detail.
-    nodes: NotRequired[list[RatesNode]]
-
-
-class FreshnessStats(TypedDict):
-    collection_enabled: bool
-    last_run_at: str | None
-    data_through: str | None
-    stale: bool
-    #: Platform scope only — counting/naming every missing or failed
-    #: collection hour exposes install-wide collector health to tenants.
-    missing_hours: NotRequired[int]
-    failed_hours: NotRequired[list[str]]
-
-
-#: A breakdown's raw group-by key: a scope id, or a component/process name.
-type BreakdownKey = uuid.UUID | str
-
-#: What a breakdown's name-resolver callback returns for one raw group-by
-#: key: (display name, context line, link slugs, soft-deleted?). A key
-#: missing from the returned dict (no current resolver omits one, but
-#: ``_build_rows`` handles it defensively) is skipped.
-type ResolvedName = tuple[str, str | None, BreakdownSlugs, bool]
-
-#: Resolves every raw group-by key for a breakdown in one batch (one
-#: ``Model.query.filter(Model.id.in_(keys))`` call) rather than one query
-#: per key.
-type NameResolver = Callable[[list[BreakdownKey]], dict[BreakdownKey, ResolvedName]]
-
-#: (aggregation column, optional category filter) per breakdown name.
-type BreakdownDimension = tuple[
-    InstrumentedAttribute[BreakdownKey | None], list[str] | None
-]
-
-#: The 5-tuple ``_aggregate_breakdown`` hands to ``_build_rows``.
-type BreakdownAggregates = tuple[
-    defaultdict[BreakdownKey, float],
-    defaultdict[BreakdownKey, defaultdict[str, float]],
-    dict[BreakdownKey, float],
-    defaultdict[BreakdownKey, float],
-    defaultdict[BreakdownKey, float],
-]
 
 type BreakdownFunc = Callable[
     [
@@ -207,44 +89,6 @@ type BreakdownFunc = Callable[
     ],
     tuple[list[BreakdownRow], list[BreakdownKey]],
 ]
-
-CATEGORY_ORDER = [
-    "compute",
-    "backing_service",
-    "storage",
-    "egress",
-    "build",
-    "overhead",
-]
-CATEGORY_LABELS = {
-    "compute": "Compute",
-    "backing_service": "Backing services",
-    "storage": "Storage",
-    "egress": "Egress",
-    "build": "Builds",
-    "overhead": "Shared overhead",
-}
-METER_ORDER = ["vcpu", "memory", "storage", "egress", "shared"]
-METER_LABELS = {
-    "vcpu": "vCPU",
-    "memory": "Memory",
-    "storage": "Storage",
-    "egress": "Egress",
-    "shared": "Shared",
-}
-METER_UNITS = {
-    "vcpu": "vCPU-hr",
-    "memory": "GiB-hr",
-    "storage": "GiB-mo",
-    "egress": "GB",
-    "shared": "USD",
-}
-METER_RATE_KEY = {
-    "vcpu": "vcpu_hour",
-    "memory": "memory_gib_hour",
-    "storage": "storage_gib_month",
-    "egress": "egress_gb",
-}
 
 
 def _simple_rates(rates: CostRates) -> dict[str, float]:
@@ -299,81 +143,6 @@ def _meter_rows(
     return rows
 
 
-class _RangeConfig(TypedDict):
-    duration: datetime.timedelta
-    interval: Interval
-    label: str
-
-
-# "24h" and "7d" chart hourly (matching the collector's native grain); "30d"
-# and "90d" chart daily to keep the series readable. "mtd" is handled
-# separately since its length changes through the month.
-RANGE_CONFIG: dict[str, _RangeConfig] = {
-    "24h": {
-        "duration": datetime.timedelta(hours=24),
-        "interval": "hour",
-        "label": "Last 24 hours",
-    },
-    "7d": {
-        "duration": datetime.timedelta(days=7),
-        "interval": "hour",
-        "label": "Last 7 days",
-    },
-    "30d": {
-        "duration": datetime.timedelta(days=30),
-        "interval": "day",
-        "label": "Last 30 days",
-    },
-    "90d": {
-        "duration": datetime.timedelta(days=90),
-        "interval": "day",
-        "label": "Last 90 days",
-    },
-}
-
-STALE_AFTER = datetime.timedelta(hours=2)
-
-# The beat task collects the previous hour at minute=7; give it a few extra
-# minutes to finish before treating that hour as "missing" in freshness
-# reporting.
-COLLECTION_GRACE_MINUTES = 10
-
-# A custom start/end range charts hourly up to this span, daily beyond it.
-CUSTOM_HOURLY_SPAN = datetime.timedelta(days=3)
-
-# Extent series are capped at roughly this many buckets.
-MAX_EXTENT_BUCKETS = 120
-
-CALENDAR_SPAN = datetime.timedelta(days=90)
-
-TOP_N_BREAKDOWN_SERIES = 7
-
-RATE_LINE_ITEMS: list[tuple[str, str, str, str, str | None]] = [
-    ("vcpu", "vCPU", "vcpu_hour", "USD/vCPU-hr", None),
-    ("memory", "Memory", "memory_gib_hour", "USD/GiB-hr", None),
-    ("storage", "Storage", "storage_gib_month", "USD/GiB-mo", None),
-    ("egress", "Egress", "egress_gb", "USD/GB", None),
-]
-FIXED_RATE_ITEMS: list[tuple[str, str]] = [
-    ("eks_control_plane", "EKS control plane"),
-    ("nat_gateway", "NAT gateway"),
-    ("load_balancer", "Load balancer"),
-]
-
-WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-# Postgres EXTRACT(dow ...) is 0=Sunday..6=Saturday; map Mon..Sun display
-# order to dow values.
-WEEKDAY_DOW = [1, 2, 3, 4, 5, 6, 0]
-
-PRIMARY_BREAKDOWN = {
-    "platform": "organizations",
-    "organization": "projects",
-    "project": "applications",
-    "environment": "applications",
-    "application": "processes",
-}
-
-
 @dataclass
 class CostScope:
     kind: str
@@ -392,7 +161,7 @@ def build_report(
     start: datetime.datetime | str | None = None,
     end: datetime.datetime | str | None = None,
 ) -> dict[str, object]:
-    now = _as_utc(now or datetime.datetime.now(datetime.UTC))
+    now = as_utc(now or datetime.datetime.now(datetime.UTC))
     rates = effective_rates()
 
     first_hour, last_hour = _extent()
@@ -568,12 +337,6 @@ def build_report(
 # ---------------------------------------------------------------------------
 
 
-def _as_utc(dt: datetime.datetime) -> datetime.datetime:
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=datetime.UTC)
-    return dt.astimezone(datetime.UTC)
-
-
 def _utc_trunc(
     interval: Interval, column: InstrumentedAttribute[datetime.datetime]
 ) -> ColumnElement[datetime.datetime]:
@@ -583,9 +346,9 @@ def _utc_trunc(
 
 def _parse_range_param(value: datetime.datetime | str) -> datetime.datetime:
     if isinstance(value, datetime.datetime):
-        return _as_utc(value)
+        return as_utc(value)
     parsed = datetime.datetime.fromisoformat(value)
-    return _as_utc(parsed)
+    return as_utc(parsed)
 
 
 def _resolve_range(
@@ -741,7 +504,7 @@ def _series(
         lambda: defaultdict(float)
     )
     for row in rows:
-        bucket_dt = _as_utc(row.bucket)
+        bucket_dt = as_utc(row.bucket)
         by_bucket[bucket_dt][row.category] += float(row.cost)
 
     timestamps = [int(bucket.timestamp()) for bucket in buckets]
@@ -774,7 +537,7 @@ def _series_previous(
         CostLineItem.period_start < previous_end,
     )
     for row in query.group_by(CostLineItem.period_start).all():
-        index = bisect.bisect_right(buckets, _as_utc(row.period_start) + shift) - 1
+        index = bisect.bisect_right(buckets, as_utc(row.period_start) + shift) - 1
         values[max(index, 0)] += float(row.cost)
     return values
 
@@ -807,7 +570,7 @@ def _series_efficiency(
     request_by_bucket: defaultdict[datetime.datetime, float] = defaultdict(float)
     billed_by_bucket: defaultdict[datetime.datetime, float] = defaultdict(float)
     for row in query.group_by("bucket", CostLineItem.meter).all():
-        bucket = _as_utc(row.bucket)
+        bucket = as_utc(row.bucket)
         rate = _rate_for_meter(rates, row.meter)
         usage_by_bucket[bucket] += float(row.usage or 0.0) * rate
         request_by_bucket[bucket] += float(row.request or 0.0) * rate
@@ -863,7 +626,7 @@ def _series_breakdowns(
         }
         other_by_bucket: defaultdict[datetime.datetime, float] = defaultdict(float)
         for row in query.group_by("bucket", "key").all():
-            bucket = _as_utc(row.bucket)
+            bucket = as_utc(row.bucket)
             if row.key in top_key_set:
                 values_by_key[row.key][bucket] += float(row.cost)
             else:
@@ -1548,12 +1311,6 @@ def _empty_series() -> SeriesPayload:
 # ---------------------------------------------------------------------------
 
 
-class HeatmapPayload(TypedDict):
-    days: list[str]
-    hours: list[int]
-    values: list[list[float]]
-
-
 def _heatmap(
     scope: CostScope, start: datetime.datetime, end: datetime.datetime
 ) -> HeatmapPayload:
@@ -1704,7 +1461,7 @@ def _platform_capacity_series(
         .group_by("bucket")
         .all()
     )
-    by_bucket = {_as_utc(row.bucket): float(row.cost or 0.0) for row in rows}
+    by_bucket = {as_utc(row.bucket): float(row.cost or 0.0) for row in rows}
     capacity_cost = [by_bucket.get(bucket, 0.0) for bucket in buckets]
     efficiency = _series_efficiency(scope, start, end, interval, buckets, rates)
     return {
