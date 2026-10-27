@@ -404,9 +404,6 @@ class TestCostCollector:
         # Unallocated: no cabotage.io/* labels at all.
         unalloc_pod = "coredns-7d8f9c-abcde"
 
-        def const(value):
-            return _series(namespace, None, _full_hour(value))
-
         def mk(pod, value):
             s = _series(namespace, pod, _full_hour(value))
             return s
@@ -546,9 +543,6 @@ class TestCostCollector:
         )
         db.session.add(node)
         db.session.flush()
-        node_presence = [
-            _series(None, None, [])  # placeholder replaced below
-        ]
         node_presence = [
             {
                 "metric": {"instance": "ip-10-0-0-1.us-east-2.compute.internal:10250"},

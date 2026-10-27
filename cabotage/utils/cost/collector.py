@@ -408,9 +408,7 @@ def _collect(
                 direct_weight_by_scope[scope_key] += cost
 
     # --- Storage -----------------------------------------------------
-    storage_items, _storage_resource_scopes = _collect_storage(
-        period_start, period_end, rates
-    )
+    storage_items = _collect_storage(period_start, period_end, rates)
     line_items.extend(storage_items)
 
     # --- Egress --------------------------------------------------------
@@ -579,11 +577,11 @@ def _classify_pod(
 ) -> PodClassification | None:
     process = labels.get("label_process")
     if process == "build":
-        return _classify_build_pod(namespace, pod_name, labels, caches)
+        return _classify_build_pod(pod_name, labels, caches)
 
     app_k8s = labels.get("label_cabotage_io_application")
     if app_k8s:
-        return _classify_app_pod(namespace, pod_name, labels, caches, process)
+        return _classify_app_pod(labels, caches, process)
 
     org_k8s = labels.get("label_cabotage_io_organization")
     project_k8s = labels.get("label_cabotage_io_project")
@@ -608,7 +606,6 @@ def _default_app_env(
 
 
 def _classify_build_pod(
-    namespace: str | None,
     pod_name: str,
     labels: dict[str, str],
     caches: _ScopeCaches,
@@ -661,8 +658,6 @@ def _classify_build_pod(
 
 
 def _classify_app_pod(
-    namespace: str | None,
-    pod_name: str,
     labels: dict[str, str],
     caches: _ScopeCaches,
     process: str | None,
@@ -753,9 +748,8 @@ def _classify_backing_pod(
 
 def _collect_storage(
     period_start: datetime.datetime, period_end: datetime.datetime, rates: CostRates
-) -> tuple[list[CostLineItem], set[uuid.UUID]]:
+) -> list[CostLineItem]:
     items: list[CostLineItem] = []
-    scopes: set[uuid.UUID] = set()
     # gp3 bills per GiB-month, so each hour is recorded as GiB-mo (1/730 of a
     # month); summed over a month the quantity reads as provisioned GiB.
     rate = rates["storage_gib_month"]
@@ -799,7 +793,6 @@ def _collect_storage(
                 cost_usd=cost,
             )
         )
-        scopes.add(pg_resource.id)
 
     redis_resources: list[RedisResource] = RedisResource.query.all()
     for redis_resource in redis_resources:
@@ -831,9 +824,8 @@ def _collect_storage(
                 cost_usd=cost,
             )
         )
-        scopes.add(redis_resource.id)
 
-    return items, scopes
+    return items
 
 
 # ---------------------------------------------------------------------------

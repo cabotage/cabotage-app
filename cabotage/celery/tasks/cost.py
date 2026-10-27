@@ -45,7 +45,7 @@ def collect_costs() -> None:
 
     to_collect = [
         hour for hour in window_hours if hour == last_hour or hour not in succeeded
-    ][:BACKFILL_HOURS]
+    ]
 
     for hour in to_collect:
         try:
