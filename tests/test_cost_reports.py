@@ -404,7 +404,8 @@ class TestBuildReportBasics:
         _add_run(failed_hour, status="failed", error="boom")
         db.session.commit()
 
-        scope = CostScope(kind="organization", organization=org)
+        # Platform scope: missing_hours/failed_hours are platform-only.
+        scope = CostScope(kind="platform")
         report = build_report(scope, "24h", now=NOW)
         freshness = report["freshness"]
 
@@ -479,7 +480,8 @@ class TestBuildReportBasics:
         )
         db.session.commit()
 
-        scope = CostScope(kind="organization", organization=org)
+        # Platform scope: missing_hours/failed_hours are platform-only.
+        scope = CostScope(kind="platform")
         report = build_report(scope, "24h", now=NOW)
         freshness = report["freshness"]
 
@@ -913,7 +915,7 @@ class TestBuildReportBasics:
         assert top["cost"] == 0.0
         assert top["change"] == pytest.approx(-500.0, rel=1e-6)
 
-    def test_freshness_ignores_partial_start_hour(self, app, org):
+    def test_freshness_ignores_partial_start_hour(self, app):
         range_start_floor = _floor_hour(NOW - datetime.timedelta(hours=24))
         _add_run(range_start_floor - datetime.timedelta(hours=2))
         hour = range_start_floor + datetime.timedelta(hours=1)
@@ -922,19 +924,15 @@ class TestBuildReportBasics:
             hour += datetime.timedelta(hours=1)
         db.session.commit()
 
-        report = build_report(
-            CostScope(kind="organization", organization=org), "24h", now=NOW
-        )
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
         assert report["freshness"]["missing_hours"] == 0
 
-    def test_freshness_ignores_hours_before_first_collection(self, app, org):
+    def test_freshness_ignores_hours_before_first_collection(self, app):
         for offset in range(1, 6):
             _add_run(_floor_hour(NOW) - datetime.timedelta(hours=offset))
         db.session.commit()
 
-        report = build_report(
-            CostScope(kind="organization", organization=org), "90d", now=NOW
-        )
+        report = build_report(CostScope(kind="platform"), "90d", now=NOW)
         assert report["freshness"]["missing_hours"] == 0
 
     def test_platform_nodes_and_rates_only_count_recent_nodes(self, app):
@@ -969,3 +967,45 @@ class TestBuildReportBasics:
         rate_nodes = {n["instance_type"]: n["hourly"] for n in report["rates"]["nodes"]}
         assert "r8g.xlarge" not in rate_nodes
         assert rate_nodes["m7i.large"] > 0
+
+    def test_tenant_scope_omits_install_wide_fields(
+        self, app, org, project, environment, application
+    ):
+        """Organization (tenant) scope must not leak install-wide data:
+        cluster node instance types in `rates.nodes`, or collector-health
+        detail in `freshness.missing_hours`/`failed_hours`. Platform scope
+        keeps all of it.
+        """
+        node = CostNode(
+            name=f"node-{uuid.uuid4().hex[:8]}",
+            instance_type="m7i.large",
+            capacity_type="on-demand",
+            cpu_capacity=2,
+            memory_gib=8,
+            last_seen=NOW - datetime.timedelta(hours=1),
+        )
+        db.session.add(node)
+        _add_run(
+            NOW.replace(minute=0, second=0, microsecond=0)
+            - datetime.timedelta(hours=3),
+            status="failed",
+            error="boom",
+        )
+        db.session.commit()
+        try:
+            tenant_scope = CostScope(kind="organization", organization=org)
+            tenant_report = build_report(tenant_scope, "24h", now=NOW)
+            platform_report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+        finally:
+            CostNode.query.filter_by(name=node.name).delete()
+            db.session.commit()
+
+        assert "nodes" not in tenant_report["rates"]
+        assert "missing_hours" not in tenant_report["freshness"]
+        assert "failed_hours" not in tenant_report["freshness"]
+        for key in ("collection_enabled", "stale", "last_run_at", "data_through"):
+            assert key in tenant_report["freshness"]
+
+        assert "nodes" in platform_report["rates"]
+        assert "missing_hours" in platform_report["freshness"]
+        assert "failed_hours" in platform_report["freshness"]

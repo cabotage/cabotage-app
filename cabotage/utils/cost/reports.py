@@ -146,7 +146,9 @@ class RatesNode(TypedDict):
 
 class RatesDisplay(TypedDict):
     line_items: list[RateLineItem]
-    nodes: list[RatesNode]
+    #: Cluster node instance types — platform scope only; a tenant report
+    #: would leak install-wide infrastructure detail.
+    nodes: NotRequired[list[RatesNode]]
 
 
 class FreshnessStats(TypedDict):
@@ -154,8 +156,10 @@ class FreshnessStats(TypedDict):
     last_run_at: str | None
     data_through: str | None
     stale: bool
-    missing_hours: int
-    failed_hours: list[str]
+    #: Platform scope only — counting/naming every missing or failed
+    #: collection hour exposes install-wide collector health to tenants.
+    missing_hours: NotRequired[int]
+    failed_hours: NotRequired[list[str]]
 
 
 #: A breakdown's raw group-by key: a scope id, or a component/process name.
@@ -461,10 +465,12 @@ def build_report(
     movers = _movers(breakdowns[primary_name])
 
     heatmap = _heatmap(scope, range_start, range_end)
-    freshness = _freshness(range_start, range_end, now, first_hour)
+    freshness = _freshness(
+        range_start, range_end, now, first_hour, scope.kind == "platform"
+    )
 
     extent_series = _extent_series(scope, first_hour, last_hour)
-    rates_display = _rates_display(rates, range_start)
+    rates_display = _rates_display(rates, range_start, scope.kind == "platform")
 
     platform: PlatformBlock | None = None
     if scope.kind == "platform":
@@ -1762,7 +1768,9 @@ def _platform_unallocated(
 # ---------------------------------------------------------------------------
 
 
-def _rates_display(rates: CostRates, start: datetime.datetime) -> RatesDisplay:
+def _rates_display(
+    rates: CostRates, start: datetime.datetime, platform: bool
+) -> RatesDisplay:
     line_items: list[RateLineItem] = [
         {
             "key": key,
@@ -1783,6 +1791,8 @@ def _rates_display(rates: CostRates, start: datetime.datetime) -> RatesDisplay:
                 "note": "fixed, shared across tenants on the cluster",
             }
         )
+    if not platform:
+        return {"line_items": line_items}
 
     node_types = (
         db.session.query(
@@ -1829,6 +1839,7 @@ def _freshness(
     end: datetime.datetime,
     now: datetime.datetime,
     first_hour: datetime.datetime | None,
+    platform: bool,
 ) -> FreshnessStats:
     collection_enabled = bool(current_app.config.get("SHOW_COST_ESTIMATES"))
 
@@ -1846,6 +1857,20 @@ def _freshness(
         else None
     )
     stale = data_through is None or (now - data_through) > STALE_AFTER
+
+    result: FreshnessStats = {
+        "collection_enabled": collection_enabled,
+        "last_run_at": last_run.started_at.isoformat()
+        if last_run is not None
+        else None,
+        "data_through": data_through.isoformat() if data_through is not None else None,
+        "stale": stale,
+    }
+    # Counting/naming every missing or failed collection hour exposes
+    # install-wide collector health, which tenant scopes shouldn't see --
+    # and skips the per-hour query below entirely for them.
+    if not platform:
+        return result
 
     current_hour = now.replace(minute=0, second=0, microsecond=0)
     if now.minute < COLLECTION_GRACE_MINUTES:
@@ -1893,14 +1918,6 @@ def _freshness(
         for hour, row in runs_in_range.items()
         if row.status == "failed" or row.last_attempt_status == "failed"
     )
-
-    return {
-        "collection_enabled": collection_enabled,
-        "last_run_at": last_run.started_at.isoformat()
-        if last_run is not None
-        else None,
-        "data_through": data_through.isoformat() if data_through is not None else None,
-        "stale": stale,
-        "missing_hours": len(missing_hours),
-        "failed_hours": [hour.isoformat() for hour in failed_hours],
-    }
+    result["missing_hours"] = len(missing_hours)
+    result["failed_hours"] = [hour.isoformat() for hour in failed_hours]
+    return result
