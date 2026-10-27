@@ -94,6 +94,7 @@ class ProcessEntry(TypedDict):
     mem_request: float
     is_web: bool
     appears_after: datetime.datetime | None
+    gone_after: datetime.datetime | None
 
 
 class ResourceEntry(TypedDict):
@@ -247,6 +248,9 @@ def seed_cost_history(
             decommissioned = rng.choice(candidates)
             decommissioned.deleted_at = now - datetime.timedelta(days=2)
             db.session.add(decommissioned)
+            for proc in processes:
+                if proc["application_id"] == decommissioned.id:
+                    proc["gone_after"] = decommissioned.deleted_at
 
     events: Events = {
         "spike_date": spike_date,
@@ -478,15 +482,28 @@ def _collect_processes(
 ) -> tuple[list[ProcessEntry], list[Application]]:
     """One entry per (app_env, process): request vCPU/GiB, scope ids.
 
-    Also returns the distinct Application rows seen, for picking one to
-    soft-delete as a demo narrative beat.
+    Soft-deleted projects, apps and environments are included with
+    ``gone_after`` set, so their history stays seeded up to deletion. Also
+    returns the active Application rows, for picking one to soft-delete as a
+    demo narrative beat.
     """
     entries: list[ProcessEntry] = []
     applications: list[Application] = []
-    for project in organization.active_projects:
-        for application in project.active_applications:
-            applications.append(application)
-            for app_env in application.active_application_environments:
+    for project in organization.projects:
+        for application in project.project_applications:
+            if project.deleted_at is None and application.deleted_at is None:
+                applications.append(application)
+            for app_env in application.application_environments:
+                deletions = [
+                    _as_utc(d)
+                    for d in (
+                        project.deleted_at,
+                        application.deleted_at,
+                        app_env.deleted_at,
+                        app_env.environment.deleted_at,
+                    )
+                    if d is not None
+                ]
                 counts: dict[str, int] = (
                     app_env.process_counts or application.process_counts or {}
                 )
@@ -517,9 +534,14 @@ def _collect_processes(
                             "mem_request": mem_request,
                             "is_web": process_name == "web",
                             "appears_after": None,
+                            "gone_after": min(deletions, default=None),
                         }
                     )
     return entries, applications
+
+
+def _as_utc(value: datetime.datetime) -> datetime.datetime:
+    return value if value.tzinfo else value.replace(tzinfo=datetime.UTC)
 
 
 def _collect_resources(organization: Organization) -> list[ResourceEntry]:
@@ -654,11 +676,13 @@ def _generate_hour(
             direct_weight_by_scope.get(scope_key, 0.0) + cost
         )
 
-    for proc in processes:
-        appears_after = proc["appears_after"]
-        if appears_after is not None and hour < appears_after:
-            continue
-
+    live = [
+        proc
+        for proc in processes
+        if (proc["appears_after"] is None or hour >= proc["appears_after"])
+        and (proc["gone_after"] is None or hour < proc["gone_after"])
+    ]
+    for proc in live:
         # Fleet-wide scale-up ~30 days ago: recent/current hours use the
         # organization's actual configured pod class/replica counts (no
         # multiplier) so they match what the real collector reads from the
@@ -820,7 +844,7 @@ def _generate_hour(
     # build during business hours, landing at roughly several builds/week
     # per app, 3-8 minutes each at a realistic buildkit job size.
     if hour.hour in _BUILD_HOURS:
-        for scope_key in _distinct_app_scopes(processes):
+        for scope_key in _distinct_app_scopes(live):
             if rng.random() >= _BUILD_HOUR_PROBABILITY:
                 continue
             org_id, project_id, environment_id, application_id, _resource_id = scope_key
