@@ -7,6 +7,7 @@ from wtforms import (
     HiddenField,
     IntegerField,
     SelectField,
+    SelectMultipleField,
     StringField,
     TextAreaField,
 )
@@ -218,6 +219,15 @@ class EditProjectSettingsForm(FlaskForm):
         [],
         description="Automatically create ephemeral environments for pull requests.",
     )
+    branch_deploy_fallback_to_base = BooleanField(
+        "Fall Back to Base Environment",
+        [],
+        description=(
+            "Let previews resolve ${app.url} and ${app.host} references to apps "
+            "that are not included in branch deploys against this project's base "
+            "environment. The preview then talks to the real service."
+        ),
+    )
     branch_deploy_base_environment_id = SelectField(
         "Base Environment",
         [Optional()],
@@ -428,6 +438,14 @@ class EditApplicationSettingsForm(FlaskForm):
     branch_deploy_watch_paths = TextAreaField(
         "Watch Paths",
         description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
+    )
+    branch_deploys_enabled = BooleanField(
+        "Include in Branch Deploys",
+        description=(
+            "Clone this app into pull request preview environments. "
+            "Turning this off does not remove the app from PR environments "
+            "that already exist."
+        ),
     )
     github_app_installation_id = SelectField(
         "GitHub App Installation",
@@ -769,6 +787,11 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
     auto_deploy_wait_for_ci = BooleanField(
         "Wait for CI",
         description="Wait for CI checks to pass before deploying. Uncheck to deploy immediately on push.",
+    )
+    deployment_checks = SelectMultipleField(
+        "Deployment Checks",
+        choices=[],
+        validate_choice=False,
     )
     github_environment_name = StringField(
         "GitHub Environment Name",

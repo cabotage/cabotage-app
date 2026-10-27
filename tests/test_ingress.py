@@ -1,6 +1,7 @@
 """Tests for ingress rendering (nginx + tailscale)."""
 
 import hashlib
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,6 +16,9 @@ from cabotage.server.models.utils import (
     readable_k8s_hostname,
     repair_ingress_hostname,
 )
+
+if TYPE_CHECKING:
+    from typing import ClassVar
 
 # ---------------------------------------------------------------------------
 # Fake model objects that mimic Ingress/IngressSnapshot, Host, Path
@@ -89,7 +93,10 @@ class FakeRelease:
 
     application = App()
     application_environment = AppEnv()
-    processes = {"web": "gunicorn app:app", "worker": "celery -A app worker"}
+    processes: ClassVar[dict[str, str]] = {
+        "web": "gunicorn app:app",
+        "worker": "celery -A app worker",
+    }
 
 
 LABELS = {

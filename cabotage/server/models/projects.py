@@ -140,6 +140,9 @@ class Project(Model, Timestamp):
     branch_deploys_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false"
     )
+    branch_deploy_fallback_to_base: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
     branch_deploy_base_environment_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("project_environments.id"),
@@ -319,6 +322,7 @@ class ApplicationEnvironment(Model, Timestamp):
         default=True,
         server_default="true",
     )
+    deployment_checks: Mapped[list[str] | None] = mapped_column(postgresql.JSONB())
     github_environment_name: Mapped[str | None] = mapped_column(Text())
     k8s_identifier: Mapped[str | None] = mapped_column(String(64))
     deleted_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, index=True)
@@ -585,6 +589,12 @@ class Application(Model, Timestamp):
     privileged: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
+    )
+
+    branch_deploys_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
     )
 
     @property
@@ -1410,6 +1420,7 @@ class Hook(Model, Timestamp):
     payload: Mapped[Any] = mapped_column(postgresql.JSONB())
     processed: Mapped[bool] = mapped_column(Boolean, default=False)
     deployed: Mapped[bool | None] = mapped_column(Boolean, default=None)
+    deployed_app_envs: Mapped[list[str] | None] = mapped_column(postgresql.JSONB())
     version_id: Mapped[int] = mapped_column(Integer)
 
     __mapper_args__ = {"version_id_col": version_id}

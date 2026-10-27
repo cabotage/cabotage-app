@@ -1,0 +1,22 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import app_resource_path, app_tab_nav %}
+
+{% block title %}Cost - {{ application.slug }} - Cabotage{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Cost', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block tab_bar %}
+  {{ app_tab_nav(application, 'cost', env=environment|default(none)) }}
+{% endblock tab_bar %}
+
+{% block content %}
+  {% set data_url = url_for('cost.application_cost_data', org_slug=organization.slug, project_slug=project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none) %}
+  {% set scope_kind = 'application' %}
+  {% set dashboard_title = 'Cost' %}
+  {% set dashboard_subtitle = application.name ~ ' · ' ~ project.name %}
+  {% set env_options = environments %}
+  {% set current_env_slug = environment.slug if environment else none %}
+  {% include "cost/_dashboard.html" %}
+{% endblock content %}

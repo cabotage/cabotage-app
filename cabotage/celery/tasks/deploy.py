@@ -1632,8 +1632,10 @@ def render_cabotage_sidecar_container(release, process_name, with_tls=True):
                 command=[
                     "sh",
                     "-c",
-                    "test -f /var/run/secrets/vault/vault-token && "
-                    "test -f /var/run/secrets/vault/consul-token",
+                    (
+                        "test -f /var/run/secrets/vault/vault-token && "
+                        "test -f /var/run/secrets/vault/consul-token"
+                    ),
                 ],
             ),
             period_seconds=1,
@@ -1741,6 +1743,7 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
             "--timed-reload=300s",
             "--shutdown-timeout=10s",
             "--connect-timeout=10s",
+            "--max-concurrent-conns=400",
             "--disable-authentication",
             "--quiet=handshake-errs",
             "--quiet=conns",
@@ -1759,11 +1762,11 @@ def render_cabotage_sidecar_tls_container(release, unix=True, tcp=False):
         readiness_probe=readiness_probe,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
-                "memory": "128Mi",
+                "memory": "256Mi",
                 "cpu": "100m",
             },
             requests={
-                "memory": "64Mi",
+                "memory": "128Mi",
                 "cpu": "20m",
             },
         ),
@@ -1789,6 +1792,11 @@ def render_process_container(
         process_name, DEFAULT_POD_CLASS
     )
     pod_class = pod_classes[process_pod_cls]
+    envconsul_args = ["envconsul", "-kill-signal=SIGTERM"]
+    if process_name.startswith("web"):
+        # Non-web keeps SIGINT; SIGTERM kills Celery pool children mid-task.
+        envconsul_args.append("-exec-kill-signal=SIGTERM")
+    envconsul_args.append(f"-config=/etc/cabotage/envconsul-{process_name}.hcl")
     return kubernetes.client.V1Container(
         name=process_name,
         image=f"{current_app.config['REGISTRY_PULL']}/{release.repository_name}:release-{release.version}",
@@ -1813,11 +1821,7 @@ def render_process_container(
             ),
             kubernetes.client.V1EnvVar(name="SOURCE_COMMIT", value=release.commit_sha),
         ],
-        args=[
-            "envconsul",
-            "-kill-signal=SIGTERM",
-            f"-config=/etc/cabotage/envconsul-{process_name}.hcl",
-        ],
+        args=envconsul_args,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": pod_class["memory"]["limits"],

@@ -42,6 +42,42 @@
   </div>
 {% endmacro %}
 
+{% macro info_popup(title, icon_name='info', link=none) %}
+  {#- Card-style hover popup, CSS-only (.info-popup in main.css). Wrap the
+      trigger and this in an .info-popup-anchor; caller() renders the body,
+      normally info_popup_row() calls. link adds a "Learn more" footer. -#}
+  <div class="info-popup">
+    <div class="info-popup-header">
+      {{ icon(icon_name, 'w-3 h-3 info-popup-header-icon') }}
+      <span class="info-popup-header-text">{{ title }}</span>
+    </div>
+    <div class="info-popup-body">{{ caller() }}</div>
+    {% if link %}
+      <div class="info-popup-footer">
+        <a href="{{ link }}" class="info-popup-link">Learn more in the Guide →</a>
+      </div>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% macro info_popup_row(type=none) %}
+  <div class="info-popup-row">
+    {% if type %}<code class="info-popup-type">{{ type }}</code>{% endif %}
+    <span class="info-popup-desc">{{ caller() }}</span>
+  </div>
+{% endmacro %}
+
+{% macro disabled_menu_item(icon_name, label) %}
+  {#- Greyed-out dropdown menu entry; caller() explains why it's unavailable. -#}
+  {% set reason = caller() %}
+  <li class="disabled info-popup-anchor">
+    <span class="opacity-30" tabindex="0" aria-disabled="true">{{ icon(icon_name, 'w-3.5 h-3.5') }} {{ label }}</span>
+    {% call info_popup(label ~ ' unavailable') %}
+      {% call info_popup_row() %}{{ reason }}{% endcall %}
+    {% endcall %}
+  </li>
+{% endmacro %}
+
 {% macro stat_card(value, label, icon_name='', color='primary') %}
   <div class="stat-card">
     <div class="flex items-center gap-2">
@@ -96,7 +132,7 @@
          class="tab-item {% if active == 'members' %}tab-active{% endif %}">{{ icon('users', 'w-4 h-4') }} <span class="tab-label">Members</span></a>
       <div class="dropdown dropdown-hover">
         <div tabindex="0" role="button"
-             class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
+             class="tab-item {% if active in ('observe', 'pipeline', 'audit') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
           <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
         </div>
@@ -105,15 +141,40 @@
           <li><a href="{{ url_for('user.organization_observe', org_slug=org_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
+          <li><a href="{{ url_for('user.organization_pipeline', org_slug=org_slug) }}"
+                 class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.organization_audit_log', org_slug=org_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
       </div>
+      {% if config.SHOW_COST_ESTIMATES %}
+      <a href="{{ url_for('cost.organization_cost', org_slug=org_slug) }}"
+         title="Cost"
+         class="tab-item {% if active == 'cost' %}tab-active{% endif %}">{{ icon('dollar-sign', 'w-4 h-4') }} <span class="tab-label">Cost</span></a>
+      {% endif %}
       <a href="{{ url_for('user.organization_settings', org_slug=org_slug) }}"
          title="Settings"
          class="tab-item {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro infra_tab_nav(active='') %}
+  <div class="app-content-padded !py-0">
+    <div class="tab-bar" data-tabs>
+      <a href="{{ url_for('user.infra_observe') }}"
+         title="Observe"
+         class="tab-item {% if active == 'observe' %}tab-active{% endif %}">{{ icon('search', 'w-4 h-4') }} <span class="tab-label">Observe</span></a>
+      <a href="{{ url_for('user.infra_pipeline') }}"
+         title="Pipeline"
+         class="tab-item {% if active == 'pipeline' %}tab-active{% endif %}">{{ icon('bar-chart-2', 'w-4 h-4') }} <span class="tab-label">Pipeline</span></a>
+      {% if config.SHOW_COST_ESTIMATES %}
+      <a href="{{ url_for('cost.platform_cost') }}"
+         title="Cost"
+         class="tab-item {% if active == 'cost' %}tab-active{% endif %}">{{ icon('dollar-sign', 'w-4 h-4') }} <span class="tab-label">Cost</span></a>
+      {% endif %}
     </div>
   </div>
 {% endmacro %}
@@ -138,12 +199,17 @@
           <li><a href="{{ url_for('user.environment_observe', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           <li><a href="{{ url_for('user.environment_audit_log', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
       </div>
+      {% if config.SHOW_COST_ESTIMATES %}
+      <a href="{{ url_for('cost.environment_cost', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
+         title="Cost"
+         class="tab-item {% if active == 'cost' %}tab-active{% endif %}">{{ icon('dollar-sign', 'w-4 h-4') }} <span class="tab-label">Cost</span></a>
+      {% endif %}
       <a href="{{ url_for('user.project_environment_settings', org_slug=org_slug, project_slug=project_slug, env_slug=env_slug) }}"
          title="Settings"
          class="tab-item {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
@@ -161,7 +227,7 @@
          class="tab-item {% if active == 'overview' %}tab-active{% endif %}">{{ icon('activity', 'w-4 h-4') }} <span class="tab-label">Overview</span></a>
       <div class="dropdown dropdown-hover">
         <div tabindex="0" role="button"
-             class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
+             class="tab-item {% if active in ('observe', 'pipeline', 'audit') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
           <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
         </div>
@@ -170,12 +236,19 @@
           <li><a href="{{ url_for('user.project_observe', org_slug=org_slug, project_slug=project_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
+          <li><a href="{{ url_for('user.project_pipeline', org_slug=org_slug, project_slug=project_slug) }}"
+                 class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
           <li><a href="{{ url_for('user.project_audit_log', org_slug=org_slug, project_slug=project_slug) }}"
                  class="{% if active == 'audit' %}active{% endif %}">{{ icon('clock', 'w-3.5 h-3.5') }} Audit Log</a></li>
         </ul>
       </div>
+      {% if config.SHOW_COST_ESTIMATES %}
+      <a href="{{ url_for('cost.project_cost', org_slug=org_slug, project_slug=project_slug) }}"
+         title="Cost"
+         class="tab-item {% if active == 'cost' %}tab-active{% endif %}">{{ icon('dollar-sign', 'w-4 h-4') }} <span class="tab-label">Cost</span></a>
+      {% endif %}
       <a href="{{ url_for('user.project_settings', org_slug=org_slug, project_slug=project_slug) }}"
          title="Settings"
          class="tab-item {% if active == 'settings' %}tab-active{% endif %}">{{ icon('settings', 'w-4 h-4') }} <span class="tab-label">Settings</span></a>
@@ -206,13 +279,13 @@
           <li><a href="{{ url_for('user.project_application_observe', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'observe' %}active{% endif %}">{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</a></li>
           {% else %}
-          <li class="disabled opacity-30"><span>{{ icon('bar-chart', 'w-3.5 h-3.5') }} Metrics</span></li>
+          {% call disabled_menu_item('bar-chart', 'Metrics') %}Requires <code>CABOTAGE_MIMIR_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           {% if config.LOKI_URL %}
           <li><a href="{{ url_for('user.project_application_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'logs' %}active{% endif %}">{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</a></li>
           {% else %}
-          <li class="disabled opacity-30"><span>{{ icon('file-text', 'w-3.5 h-3.5') }} Logs</span></li>
+          {% call disabled_menu_item('file-text', 'Logs') %}Requires <code>CABOTAGE_LOKI_URL</code> to be set by a Cabotage platform administrator.{% endcall %}
           {% endif %}
           <li><a href="{{ url_for('user.project_application_pipeline', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'pipeline' %}active{% endif %}">{{ icon('bar-chart-2', 'w-3.5 h-3.5') }} Pipeline</a></li>
@@ -237,7 +310,7 @@
           <li><a href="{{ url_for('user.project_application_ingress', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
                  class="{% if active == 'ingress' %}active{% endif %}">{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</a></li>
           {% else %}
-          <li class="disabled opacity-30"><span>{{ icon('globe', 'w-3.5 h-3.5') }} Ingress</span></li>
+          {% call disabled_menu_item('globe', 'Ingress') %}Requires <code>CABOTAGE_INGRESS_DOMAIN</code> to be set by a Cabotage platform administrator, or a Tailscale integration on this organization.{% endcall %}
           {% endif %}
         </ul>
       </div>
@@ -249,6 +322,11 @@
          title="Deploys"
          class="tab-item
                 {% if active == 'deployments' %}tab-active{% endif %}">{{ icon('upload', 'w-4 h-4') }} <span class="tab-label">Deploys</span></a>
+      {% if config.SHOW_COST_ESTIMATES %}
+      <a href="{{ url_for('cost.application_cost', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
+         title="Cost"
+         class="tab-item {% if active == 'cost' %}tab-active{% endif %}">{{ icon('dollar-sign', 'w-4 h-4') }} <span class="tab-label">Cost</span></a>
+      {% endif %}
       {% if application.project.environments_enabled and env %}
       <div class="dropdown dropdown-hover dropdown-end">
         <div tabindex="0" role="button" title="Settings"
@@ -572,22 +650,11 @@
                    gap:0.375rem">
       {{ label or field.label.text }}
       {% if field.description %}
-        <div class="info-popup-anchor" style="display:inline-flex">
+        <div class="info-popup-anchor">
           {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
-          <div class="info-popup"
-               style="min-width:14rem;
-                      white-space:normal;
-                      text-transform:none;
-                      letter-spacing:0;
-                      font-weight:400">
-            <div class="info-popup-header">
-              {{ icon('info', 'w-3 h-3 info-popup-header-icon') }}
-              <span class="info-popup-header-text">{{ label or field.label.text }}</span>
-            </div>
-            <div class="info-popup-body">
-              <div class="text-xs" style="line-height:1.5;padding:0.5rem 0.75rem">{{ field.description }}</div>
-            </div>
-          </div>
+          {% call info_popup(label or field.label.text) %}
+            {% call info_popup_row() %}{{ field.description }}{% endcall %}
+          {% endcall %}
         </div>
       {% endif %}
     </legend>
@@ -1335,6 +1402,10 @@
     <svg class="{{ size }}" viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
     </svg>
+  {% elif name == 'dollar-sign' %}
+    <svg class="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
   {% elif name == 'slack' %}
     <svg class="{{ size }}" viewBox="0 0 24 24" fill="currentColor">
       <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zm1.271 0a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zm0 1.271a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zm-1.27 0a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.163 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.163 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.163 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zm0-1.27a2.527 2.527 0 0 1-2.52-2.523 2.527 2.527 0 0 1 2.52-2.52h6.315A2.528 2.528 0 0 1 24 15.163a2.528 2.528 0 0 1-2.522 2.523h-6.315z"/>
@@ -1346,7 +1417,7 @@
   {% endif %}
 {% endmacro %}
 
-{% macro loki_log_viewer(query_url, process_names=[], loki_configured=true, no_poll=false, active_process='') %}
+{% macro loki_log_viewer(query_url, process_names=[], loki_configured=true, no_poll=false, active_process='', window_start=none, window_end=none, clear_url=none) %}
   {% if not loki_configured %}
     <div class="alert alert-warning">
       {{ icon('alert-triangle', 'w-4 h-4') }}
@@ -1356,7 +1427,16 @@
     <div class="loki-log-component"
          data-query-url="{{ query_url }}"
          data-processes="{{ process_names|tojson|e }}"
-         {% if no_poll %}data-no-poll="true"{% endif %}>
+         {% if no_poll %}data-no-poll="true"{% endif %}
+         {% if window_start and window_end %}data-start-ts="{{ window_start }}" data-end-ts="{{ window_end }}"{% endif %}>
+      {# Active window chip — present only when the viewer was opened scoped to a fixed time window #}
+      {% if window_start and window_end %}
+        <div class="js-window-chip flex items-center gap-2 mb-3 text-xs text-base-content/60">
+          {{ icon('clock', 'w-3.5 h-3.5') }}
+          <span>Showing <span class="js-window-label font-mono"></span></span>
+          <a href="{{ clear_url or query_url }}" class="btn btn-xs btn-ghost gap-1" title="Clear window, return to live tail">{{ icon('x', 'w-3 h-3') }} Clear</a>
+        </div>
+      {% endif %}
       {# Controls bar #}
       <div class="flex items-center gap-3 mb-4 flex-wrap">
         <select class="js-process-filter select select-bordered select-sm bg-base-100 text-base-content border-base-content/10">
