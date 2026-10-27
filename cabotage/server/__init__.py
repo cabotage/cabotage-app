@@ -414,7 +414,7 @@ def create_app():
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
-    from cabotage.server.cost import cost_blueprint
+    from cabotage.server.applets.cost.views import cost_blueprint
 
     app.register_blueprint(cost_blueprint)
 

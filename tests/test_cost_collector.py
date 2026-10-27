@@ -1,4 +1,4 @@
-"""Tests for the hourly cost collector (cabotage.utils.cost.collector)."""
+"""Tests for the hourly cost collector (cabotage.server.applets.cost.collector)."""
 
 import datetime
 import uuid
@@ -7,8 +7,10 @@ from unittest.mock import patch
 import pytest
 from flask_security import hash_password
 
-from cabotage.celery.tasks.cost import FAILED_HOUR_RETRY_AFTER, collect_costs
+from cabotage.celery.tasks.cost import collect_costs
 from cabotage.server import db
+from cabotage.server.applets.cost.collector import collect_hour
+from cabotage.server.applets.cost.constants import FAILED_HOUR_RETRY_AFTER
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
@@ -22,7 +24,6 @@ from cabotage.server.models.projects import (
 from cabotage.server.models.resources import PostgresResource, RedisResource, Resource
 from cabotage.server.models.utils import safe_k8s_name
 from cabotage.server.wsgi import app as _app
-from cabotage.utils.cost.collector import collect_hour
 from cabotage.utils.mimir import MimirError
 
 PERIOD_START = datetime.datetime(2026, 1, 1, 12, 0, 0, tzinfo=datetime.UTC)

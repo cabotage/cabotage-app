@@ -8,20 +8,20 @@ import pytest
 from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import db
-from cabotage.server.models.cost import CostNode, CostPriceSnapshot
-from cabotage.server.wsgi import app as _app
-from cabotage.utils.cost.aws_pricing import (
-    AwsPricingError,
+from cabotage.server.applets.cost.aws_pricing import (
     fetch_instance_prices,
     fetch_volume_prices,
     refresh_prices,
 )
-from cabotage.utils.cost.rates import (
-    DEFAULT_RATES,
+from cabotage.server.applets.cost.constants import DEFAULT_RATES
+from cabotage.server.applets.cost.exceptions import AwsPricingError
+from cabotage.server.applets.cost.rates import (
     effective_rates,
     node_hourly_price,
     volume_monthly_cost,
 )
+from cabotage.server.models.cost import CostNode, CostPriceSnapshot
+from cabotage.server.wsgi import app as _app
 
 REGION = "us-east-2"
 LINUX_ON_DEMAND = {
@@ -321,9 +321,9 @@ class TestRefreshPrices:
         )
 
         with (
-            patch("cabotage.utils.cost.aws_pricing.kubernetes_ext"),
+            patch("cabotage.server.applets.cost.aws_pricing.kubernetes_ext"),
             patch(
-                "cabotage.utils.cost.aws_pricing.kubernetes.client.StorageV1Api",
+                "cabotage.server.applets.cost.aws_pricing.kubernetes.client.StorageV1Api",
                 return_value=storage_api,
             ),
         ):
@@ -355,9 +355,9 @@ class TestRefreshPrices:
         storage_api.list_storage_class.side_effect = ApiException(status=403)
 
         with (
-            patch("cabotage.utils.cost.aws_pricing.kubernetes_ext"),
+            patch("cabotage.server.applets.cost.aws_pricing.kubernetes_ext"),
             patch(
-                "cabotage.utils.cost.aws_pricing.kubernetes.client.StorageV1Api",
+                "cabotage.server.applets.cost.aws_pricing.kubernetes.client.StorageV1Api",
                 return_value=storage_api,
             ),
         ):

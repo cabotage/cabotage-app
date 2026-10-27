@@ -7,17 +7,15 @@ from celery import shared_task
 from sqlalchemy.exc import SQLAlchemyError
 
 from cabotage.server import db
+from cabotage.server.applets.cost.aws_pricing import refresh_prices
+from cabotage.server.applets.cost.collector import collect_hour
+from cabotage.server.applets.cost.constants import FAILED_HOUR_RETRY_AFTER
 from cabotage.server.models.cost import CostCollectionRun
-from cabotage.utils.cost.aws_pricing import refresh_prices
-from cabotage.utils.cost.collector import collect_hour
 
 log = logging.getLogger(__name__)
 
 #: How far back to backfill missing/failed hours on each invocation.
 BACKFILL_HOURS = 48
-
-#: How long to wait before retrying an hour whose most recent attempt failed.
-FAILED_HOUR_RETRY_AFTER = datetime.timedelta(hours=6)
 
 
 def _last_completed_hour(

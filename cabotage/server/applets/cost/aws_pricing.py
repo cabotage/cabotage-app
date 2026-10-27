@@ -4,14 +4,14 @@
 type seen recently, and the EBS prices for the volume type the backing-service
 StorageClass provisions, then stores them as a
 :class:`~cabotage.server.models.cost.CostPriceSnapshot` that
-:func:`~cabotage.utils.cost.rates.effective_rates` layers over the defaults.
+:func:`~cabotage.server.applets.cost.rates.effective_rates` layers over the defaults.
 """
 
 import datetime
 import json
 import logging
 from collections.abc import Iterable, Mapping
-from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
+from typing import TYPE_CHECKING, cast
 
 import boto3
 import kubernetes.client
@@ -20,77 +20,33 @@ from kubernetes.client.exceptions import ApiException
 
 from cabotage.server import db
 from cabotage.server import kubernetes as kubernetes_ext
-from cabotage.server.models.cost import CostNode, CostPriceSnapshot
-from cabotage.utils.cost.rates import (
+from cabotage.server.applets.cost.constants import (
+    DEFAULT_CLASS_ANNOTATION,
+    DEFAULT_VOLUME_TYPE,
+    EC2_INSTANCE_FILTERS,
     GP3_BASELINE_IOPS,
     GP3_BASELINE_THROUGHPUT_MIBPS,
+    IO2_IOPS_TIERS,
+    NODE_LOOKBACK,
+    STORAGE_UNITS,
+    THROUGHPUT_UNIT_MIBPS,
+)
+from cabotage.server.applets.cost.exceptions import AwsPricingError
+from cabotage.server.applets.cost.helpers import optional_float
+from cabotage.server.applets.cost.types import (
+    PriceListItem,
     PriceTier,
     SnapshotRates,
     StorageVolume,
+    VolumeRates,
 )
+from cabotage.server.models.cost import CostNode, CostPriceSnapshot
 
 if TYPE_CHECKING:
     from mypy_boto3_pricing.client import PricingClient
     from mypy_boto3_pricing.type_defs import FilterTypeDef
 
 log = logging.getLogger(__name__)
-
-NODE_LOOKBACK = datetime.timedelta(days=7)
-
-_EC2_INSTANCE_FILTERS = {
-    "operatingSystem": "Linux",
-    "tenancy": "Shared",
-    "preInstalledSw": "NA",
-    "capacitystatus": "Used",
-    "marketoption": "OnDemand",
-}
-
-_IO2_IOPS_TIERS: list[tuple[str, float | None]] = [
-    ("EBS IOPS", 32000.0),
-    ("EBS IOPS Tier 2", 64000.0),
-    ("EBS IOPS Tier 3", None),
-]
-
-_STORAGE_UNITS = {"GB-Mo", "GB-month"}
-# Throughput is listed per GiBps-month even though it's sold per MiBps.
-_THROUGHPUT_UNIT_MIBPS = {"GiBps-mo": 1024.0, "MiBps-mo": 1.0}
-
-_DEFAULT_CLASS_ANNOTATION = "storageclass.kubernetes.io/is-default-class"
-_DEFAULT_VOLUME_TYPE = {"ebs.csi.aws.com": "gp3", "kubernetes.io/aws-ebs": "gp2"}
-
-
-class AwsPricingError(Exception):
-    """The Price List returned something we can't turn into a rate."""
-
-
-class _PriceDimension(TypedDict):
-    unit: str
-    pricePerUnit: dict[str, str]
-
-
-class _Term(TypedDict):
-    priceDimensions: dict[str, _PriceDimension]
-
-
-class _Terms(TypedDict):
-    OnDemand: NotRequired[dict[str, _Term]]
-
-
-class _Product(TypedDict):
-    productFamily: str
-    sku: str
-    attributes: dict[str, str]
-
-
-class _PriceListItem(TypedDict):
-    product: _Product
-    terms: _Terms
-
-
-class VolumeRates(TypedDict):
-    storage_gib_month: float
-    storage_iops_tiers: list[PriceTier]
-    storage_throughput_tiers: list[PriceTier]
 
 
 def refresh_prices(client: PricingClient | None = None) -> CostPriceSnapshot:
@@ -145,7 +101,7 @@ def fetch_instance_prices(
         items = _get_products(
             client,
             {"regionCode": region, "instanceType": instance_type}
-            | _EC2_INSTANCE_FILTERS,
+            | EC2_INSTANCE_FILTERS,
         )
         if not items:
             log.warning("No AWS price for %s in %s", instance_type, region)
@@ -174,12 +130,12 @@ def fetch_volume_prices(
     ):
         family = item["product"]["productFamily"]
         unit, usd = _on_demand_price(item)
-        if family == "Storage" and unit in _STORAGE_UNITS:
+        if family == "Storage" and unit in STORAGE_UNITS:
             storage = usd
         elif family == "System Operation" and unit == "IOPS-Mo":
             iops_by_group[item["product"]["attributes"]["group"]] = usd
-        elif family == "Provisioned Throughput" and unit in _THROUGHPUT_UNIT_MIBPS:
-            throughput_mibps = usd / _THROUGHPUT_UNIT_MIBPS[unit]
+        elif family == "Provisioned Throughput" and unit in THROUGHPUT_UNIT_MIBPS:
+            throughput_mibps = usd / THROUGHPUT_UNIT_MIBPS[unit]
         else:
             raise AwsPricingError(
                 f"Unexpected {volume_type} product {family!r} priced per {unit!r}"
@@ -194,11 +150,11 @@ def fetch_volume_prices(
             {"up_to": None, "usd_month": iops_by_group["EBS IOPS"]},
         ]
     elif volume_type == "io2":
-        if missing := [g for g, _ in _IO2_IOPS_TIERS if g not in iops_by_group]:
+        if missing := [g for g, _ in IO2_IOPS_TIERS if g not in iops_by_group]:
             raise AwsPricingError(f"Missing io2 IOPS tiers {missing} in {region}")
         iops_tiers = [
             {"up_to": up_to, "usd_month": iops_by_group[group]}
-            for group, up_to in _IO2_IOPS_TIERS
+            for group, up_to in IO2_IOPS_TIERS
         ]
     elif len(iops_by_group) == 1:
         iops_tiers = [{"up_to": None, "usd_month": next(iter(iops_by_group.values()))}]
@@ -238,21 +194,17 @@ def read_storage_volume(storage_class_name: str | None) -> StorageVolume | None:
     if storage_class is None:
         log.warning("StorageClass %s not found", storage_class_name or "(default)")
         return None
-    default_type = _DEFAULT_VOLUME_TYPE.get(storage_class.provisioner)
+    default_type = DEFAULT_VOLUME_TYPE.get(storage_class.provisioner)
     if default_type is None:
         return None
     # EBS CSI parameter names are case-insensitive.
     params = {k.lower(): v for k, v in (storage_class.parameters or {}).items()}
     return {
         "volume_type": params.get("type", default_type).lower(),
-        "iops": _optional_float(params.get("iops")),
-        "iops_per_gib": _optional_float(params.get("iopspergb")),
-        "throughput_mibps": _optional_float(params.get("throughput")),
+        "iops": optional_float(params.get("iops")),
+        "iops_per_gib": optional_float(params.get("iopspergb")),
+        "throughput_mibps": optional_float(params.get("throughput")),
     }
-
-
-def _optional_float(value: str | None) -> float | None:
-    return float(value) if value else None
 
 
 def _select_storage_class(
@@ -265,27 +217,27 @@ def _select_storage_class(
         if name:
             if metadata.name == name:
                 return storage_class
-        elif (metadata.annotations or {}).get(_DEFAULT_CLASS_ANNOTATION) == "true":
+        elif (metadata.annotations or {}).get(DEFAULT_CLASS_ANNOTATION) == "true":
             return storage_class
     return None
 
 
 def _get_products(
     client: PricingClient, filters: Mapping[str, str]
-) -> list[_PriceListItem]:
+) -> list[PriceListItem]:
     term_filters: list[FilterTypeDef] = [
         {"Type": "TERM_MATCH", "Field": field, "Value": value}
         for field, value in filters.items()
     ]
-    items: list[_PriceListItem] = []
+    items: list[PriceListItem] = []
     for page in client.get_paginator("get_products").paginate(
         ServiceCode="AmazonEC2", FormatVersion="aws_v1", Filters=term_filters
     ):
-        items.extend(cast(_PriceListItem, json.loads(raw)) for raw in page["PriceList"])
+        items.extend(cast(PriceListItem, json.loads(raw)) for raw in page["PriceList"])
     return items
 
 
-def _on_demand_price(item: _PriceListItem) -> tuple[str, float]:
+def _on_demand_price(item: PriceListItem) -> tuple[str, float]:
     dimensions = [
         dimension
         for term in item["terms"].get("OnDemand", {}).values()

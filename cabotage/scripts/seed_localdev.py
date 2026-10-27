@@ -1705,7 +1705,10 @@ def seed():
         # over every Organization and call seed_cost_history once each —
         # seed_cost_history itself is safe to call per-org (it reuses the
         # shared hour's run rather than deleting/recreating it).
-        from cabotage.utils.cost.demo import finalize_platform_stats, seed_cost_history
+        from cabotage.server.applets.cost.demo import (
+            finalize_platform_stats,
+            seed_cost_history,
+        )
 
         all_orgs: list[Organization] = Organization.query.filter(
             Organization.deleted_at.is_(None)

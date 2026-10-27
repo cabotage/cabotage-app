@@ -12,112 +12,15 @@ effective rates are recorded on every collection run so the UI can render a
 import copy
 import json
 from collections.abc import Mapping, Sequence
-from typing import NotRequired, TypedDict, cast
+from typing import cast
 
-#: gp3 volumes include this much IOPS and throughput at no extra charge, and
-#: are provisioned with exactly that much unless the StorageClass asks for more.
-GP3_BASELINE_IOPS = 3000.0
-GP3_BASELINE_THROUGHPUT_MIBPS = 125.0
-
-
-class PriceTier(TypedDict):
-    """USD per unit-month for the slice of an amount up to ``up_to``.
-
-    Tiers are ordered; ``up_to`` of ``None`` means no upper bound.
-    """
-
-    up_to: float | None
-    usd_month: float
-
-
-class StorageVolume(TypedDict):
-    """How backing-service EBS volumes are provisioned (from their StorageClass)."""
-
-    volume_type: str
-    iops: float | None
-    iops_per_gib: float | None
-    throughput_mibps: float | None
-
-
-class RatesSource(TypedDict):
-    basis: str
-    region: str
-    checked: str
-
-
-class CostRates(TypedDict):
-    """The effective, JSON-serializable rate table shape, as persisted on
-    every ``CostCollectionRun.rates`` and returned by :func:`effective_rates`.
-    """
-
-    vcpu_hour: float
-    memory_gib_hour: float
-    storage_gib_month: float
-    egress_gb: float
-    fixed_hourly: dict[str, float]
-    node_family_xlarge_hourly: dict[str, float]
-    node_size_factor: dict[str, float]
-    source: NotRequired[RatesSource]
-    node_instance_hourly: NotRequired[dict[str, float]]
-    storage_volume: NotRequired[StorageVolume]
-    storage_iops_tiers: NotRequired[list[PriceTier]]
-    storage_throughput_tiers: NotRequired[list[PriceTier]]
-
-
-class SnapshotRates(TypedDict, total=False):
-    """The subset of ``CostRates`` refreshed from the AWS Price List."""
-
-    source: RatesSource
-    node_instance_hourly: dict[str, float]
-    storage_gib_month: float
-    storage_volume: StorageVolume
-    storage_iops_tiers: list[PriceTier]
-    storage_throughput_tiers: list[PriceTier]
-
-
-DEFAULT_RATES: CostRates = {
-    # Per-vCPU / per-GiB-memory compute, derived from m8g.xlarge ($0.17952,
-    # 4 vCPU / 16 GiB) and c8g.xlarge ($0.15952, 4 vCPU / 8 GiB).
-    "vcpu_hour": 0.03488,
-    "memory_gib_hour": 0.0025,
-    # gp3 EBS storage.
-    "storage_gib_month": 0.08,
-    # Internet egress.
-    "egress_gb": 0.09,
-    # Fixed hourly costs shared across all tenants on the cluster.
-    "fixed_hourly": {
-        "eks_control_plane": 0.10,
-        "nat_gateway": 0.045,
-        "load_balancer": 0.0225,
-    },
-    # On-demand hourly price for each Graviton family at the ".xlarge" size;
-    # other sizes are derived via node_size_factor.
-    "node_family_xlarge_hourly": {
-        "m8g": 0.17952,
-        "c8g": 0.15952,
-        "r8g": 0.23562,
-        "t4g": 0.1344,
-    },
-    "node_size_factor": {
-        "nano": 0.03125,
-        "micro": 0.0625,
-        "small": 0.125,
-        "medium": 0.25,
-        "large": 0.5,
-        "xlarge": 1.0,
-        "2xlarge": 2.0,
-        "4xlarge": 4.0,
-        "8xlarge": 8.0,
-        "12xlarge": 12.0,
-        "16xlarge": 16.0,
-        "24xlarge": 24.0,
-    },
-    "source": {
-        "basis": "AWS on-demand list price",
-        "region": "us-east-2",
-        "checked": "2026-10-11",
-    },
-}
+from cabotage.server.applets.cost.constants import (
+    DEFAULT_RATES,
+    GP3_BASELINE_IOPS,
+    GP3_BASELINE_THROUGHPUT_MIBPS,
+)
+from cabotage.server.applets.cost.types import CostRates, PriceTier
+from cabotage.server.models.cost import CostPriceSnapshot
 
 
 def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
@@ -134,9 +37,6 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
 
         config = current_app.config
     if config.get("COST_AWS_PRICING_ENABLED"):
-        # Imported here: the models module imports CostRates from this one.
-        from cabotage.server.models.cost import CostPriceSnapshot
-
         snapshot = CostPriceSnapshot.latest()
         if snapshot is not None:
             _merge_into(rates, dict(snapshot.rates))
@@ -168,15 +68,6 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
     return cast(CostRates, rates)
 
 
-def _merge_into(rates: dict[str, object], overrides: Mapping[str, object]) -> None:
-    for key, value in overrides.items():
-        existing = rates.get(key)
-        if isinstance(value, dict) and isinstance(existing, dict):
-            rates[key] = {**existing, **value}
-        else:
-            rates[key] = copy.deepcopy(value)
-
-
 _RATE_KEYS = CostRates.__required_keys__ | CostRates.__optional_keys__
 _SCALAR_RATE_KEYS = {"vcpu_hour", "memory_gib_hour", "storage_gib_month", "egress_gb"}
 _PRICE_MAP_KEYS = {
@@ -206,6 +97,15 @@ def _validate_overrides(overrides: Mapping[str, object]) -> None:
             raise TypeError(
                 f"COST_RATES[{key!r}] must be an object of numbers, got {value!r}"
             )
+
+
+def _merge_into(rates: dict[str, object], overrides: Mapping[str, object]) -> None:
+    for key, value in overrides.items():
+        existing = rates.get(key)
+        if isinstance(value, dict) and isinstance(existing, dict):
+            rates[key] = {**existing, **value}
+        else:
+            rates[key] = copy.deepcopy(value)
 
 
 def node_hourly_price(
