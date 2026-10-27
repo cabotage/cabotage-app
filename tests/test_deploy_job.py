@@ -118,6 +118,27 @@ def test_in_cluster_deploy_runs_in_a_job_from_the_worker_template(
     assert container.liveness_probe is None
 
 
+def test_worker_without_envconsul_runs_the_deploy_as_the_command(
+    cluster: Cluster,
+) -> None:
+    worker = cluster.apps.read_namespaced_deployment.return_value
+    worker_container = worker.spec.template.spec.containers[0]
+    worker_container.command = ["celery"]
+    worker_container.args = ["-A", "cabotage.celery.worker.celery_app", "worker"]
+
+    deploy_module.run_deploy(deployment_id=DEPLOYMENT_ID)
+
+    job = cluster.batch.create_namespaced_job.call_args.args[1]
+    container = job.spec.template.spec.containers[0]
+    assert container.command == [
+        "python",
+        "-m",
+        "cabotage.scripts.deploy",
+        str(DEPLOYMENT_ID),
+    ]
+    assert container.args is None
+
+
 def test_redelivered_task_keeps_the_existing_job(cluster: Cluster) -> None:
     cluster.batch.create_namespaced_job.side_effect = ApiException(status=409)
 

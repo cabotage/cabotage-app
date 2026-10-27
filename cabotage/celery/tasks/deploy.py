@@ -3460,9 +3460,7 @@ _SERVICE_ACCOUNT_NAMESPACE = Path(
 # How long the reaper waits for the Job's pod to start; deploy_release then
 # keeps the heartbeat alive itself.
 _DEPLOY_JOB_START_TTL = 600
-# envconsul runs trailing arguments instead of its configured command; -once
-# stops it from restarting that command when secrets change.
-_DEPLOY_JOB_ARGS = ("-once", "python", "-m", "cabotage.scripts.deploy")
+_DEPLOY_JOB_COMMAND = ("python", "-m", "cabotage.scripts.deploy")
 
 
 def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
@@ -3498,7 +3496,17 @@ def _submit_deploy_job(deployment_id: uuid.UUID | str) -> None:
     # Selectors for the worker process count pods by this label.
     _ = (labels or {}).pop("process", None)
     container = spec.containers[0]
-    container.args = [*(container.args or []), *_DEPLOY_JOB_ARGS, str(deployment_id)]
+    deploy_command = [*_DEPLOY_JOB_COMMAND, str(deployment_id)]
+    if container.args and container.args[0] == "envconsul":
+        # Cabotage-rendered worker: envconsul runs trailing arguments instead
+        # of its configured command; -once stops it from restarting that
+        # command when secrets change.
+        container.args = [*container.args, "-once", *deploy_command]
+    else:
+        # Worker installed outside Cabotage (e.g. the terraform bootstrap),
+        # which runs celery directly with config from its env.
+        container.command = deploy_command
+        container.args = None
     container.liveness_probe = None
     container.readiness_probe = None
     container.startup_probe = None
