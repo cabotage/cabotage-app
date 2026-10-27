@@ -367,12 +367,13 @@ def finalize_platform_stats(
     each call only ever wrote *its own* org's independently-scaled numbers
     into that shared row's stats (whichever org got there first), never a
     true cluster-wide total. Call this once, after every organization has
-    been seeded, to fix that up: it re-derives `cluster_compute_cost`
-    directly from the current `CostNode` fleet (constant across every
-    seeded hour — demo data doesn't model node scale-up/down over time)
-    and `tenant_compute_cost` as the real SUM of every organization's
-    compute/backing_service/build line items under each shared run,
-    matching the real collector's single-pass-covers-everyone semantics.
+    been seeded, to fix that up: it re-derives `tenant_compute_cost` as the
+    real SUM of every organization's compute/backing_service/build line
+    items under each shared run (matching the real collector's
+    single-pass-covers-everyone semantics), and `cluster_compute_cost` as
+    that total marked up by a random per-run idle margin rather than a
+    fleet-wide constant. The current `CostNode` fleet is only used for
+    `node_hours`.
 
     Real (non-demo) hours are left untouched. Returns the number of runs
     updated.
