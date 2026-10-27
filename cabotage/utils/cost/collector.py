@@ -10,12 +10,15 @@ re-running for an hour that was already collected replaces its rows.
 """
 
 import datetime
+import hashlib
 import re
+import struct
 import uuid
 from collections import defaultdict
 from typing import TypedDict
 
 import kubernetes.client
+import sqlalchemy as sa
 from flask import current_app
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -185,6 +188,16 @@ def _write_run(
     stats: CostRunStats,
     line_items: list[CostLineItem],
 ) -> CostCollectionRun:
+    # Beat and "Collect now" can both rewrite the same hour; serialize them so
+    # the second waits instead of losing its insert to the unique constraint.
+    lock_hash = hashlib.sha256(
+        f"cost_collection_run:{int(period_start.timestamp())}".encode()
+    ).digest()
+    lock_key = struct.unpack(">q", lock_hash[:8])[0]
+    _ = db.session.execute(
+        sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key}
+    )
+
     CostLineItem.query.filter_by(period_start=period_start).delete()
     CostCollectionRun.query.filter_by(period_start=period_start).delete()
     db.session.flush()
