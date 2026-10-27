@@ -1797,6 +1797,11 @@ def render_process_container(
         process_name, DEFAULT_POD_CLASS
     )
     pod_class = pod_classes[process_pod_cls]
+    envconsul_args = ["envconsul", "-kill-signal=SIGTERM"]
+    if process_name.startswith("web"):
+        # Non-web keeps SIGINT; SIGTERM kills Celery pool children mid-task.
+        envconsul_args.append("-exec-kill-signal=SIGTERM")
+    envconsul_args.append(f"-config=/etc/cabotage/envconsul-{process_name}.hcl")
     return kubernetes.client.V1Container(
         name=process_name,
         image=f"{current_app.config['REGISTRY_PULL']}/{release.repository_name}:release-{release.version}",
@@ -1821,13 +1826,7 @@ def render_process_container(
             ),
             kubernetes.client.V1EnvVar(name="SOURCE_COMMIT", value=release.commit_sha),
         ],
-        args=[
-            "envconsul",
-            "-kill-signal=SIGTERM",
-            # The supervisor's kill signal does not set the child's kill signal.
-            "-exec-kill-signal=SIGTERM",
-            f"-config=/etc/cabotage/envconsul-{process_name}.hcl",
-        ],
+        args=envconsul_args,
         resources=kubernetes.client.V1ResourceRequirements(
             limits={
                 "memory": pod_class["memory"]["limits"],
