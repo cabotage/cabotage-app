@@ -1556,7 +1556,7 @@
     var up = rows.filter(function(r) { return r.change > 0; }).sort(function(a, b) { return b.change - a.change; }).slice(0, 5);
     var down = rows.filter(function(r) { return r.change < 0; }).sort(function(a, b) { return a.change - b.change; }).slice(0, 5);
     function rowHtml(r, isUp) {
-      var nameHtml = r.url ? '<a href="' + r.url + '">' + esc(r.name) + '</a>' : esc(r.name);
+      var nameHtml = r.url ? '<a href="' + esc(r.url) + '">' + esc(r.name) + '</a>' : esc(r.name);
       return '<div class="cost-mover-row"><div class="cost-mover-name">' + nameHtml +
         (r.context ? '<span class="cost-mover-ctx"> · ' + esc(r.context) + '</span>' : '') + '</div>' +
         '<div class="cost-mover-delta ' + (isUp ? 'is-up' : 'is-down') + ' num">' + (isUp ? '+' : '') + fmtMoney(r.change) + '</div></div>';
@@ -1573,7 +1573,7 @@
       var biggest = moverRows.slice().sort(function(a, b) { return Math.abs(b.change) - Math.abs(a.change); })[0];
       if (biggest) {
         var up = biggest.change > 0;
-        var nameHtml = biggest.url ? '<a href="' + biggest.url + '">' + esc(biggest.name) + '</a>' : esc(biggest.name);
+        var nameHtml = biggest.url ? '<a href="' + esc(biggest.url) + '">' + esc(biggest.name) + '</a>' : esc(biggest.name);
         parts.push('<div><span class="cost-label">Biggest change</span>' +
           '<div class="cost-donut-teaser-row"><span>' + nameHtml + '</span>' +
           '<span class="num" style="color:' + (up ? 'var(--cost-up)' : 'var(--cost-down)') + '">' + (up ? '+' : '') + fmtMoney(biggest.change) + '</span></div></div>');
@@ -1657,7 +1657,7 @@
         var deltaPct = fmtDelta(row.cost, row.previous_cost);
         var deltaCls = deltaPct == null ? '' : (deltaPct > 0 ? 'is-up' : deltaPct < 0 ? 'is-down' : '');
         var deltaText = deltaPct == null ? '—' : (deltaPct >= 0 ? '+' : '') + deltaPct.toFixed(0) + '%';
-        var nameHtml = row.url ? '<a href="' + row.url + '">' + esc(row.name) + '</a>' : '<span class="plain">' + esc(row.name) + '</span>';
+        var nameHtml = row.url ? '<a href="' + esc(row.url) + '">' + esc(row.name) + '</a>' : '<span class="plain">' + esc(row.name) + '</span>';
         var bodyHtml;
         if (row.meters && row.meters.length) {
           bodyHtml = '<table class="cost-bd-meters"><thead><tr><th>Meter</th><th class="num">Quantity</th><th class="num">Rate</th><th class="num">Cost</th></tr></thead><tbody>' +
