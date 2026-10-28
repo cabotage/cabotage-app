@@ -1084,27 +1084,37 @@ class TestCostCollector:
         self, app, org, project, environment, application, app_env
     ):
         pod = "api-web-abc12-xyz34"
-        pv = SimpleNamespace(
-            spec=SimpleNamespace(
-                capacity={"storage": "10Gi"},
-                claim_ref=SimpleNamespace(
-                    namespace=org.k8s_identifier, name="data-foo"
+
+        def pv(name, created):
+            return SimpleNamespace(
+                metadata=SimpleNamespace(creation_timestamp=created),
+                spec=SimpleNamespace(
+                    capacity={"storage": "10Gi"},
+                    claim_ref=SimpleNamespace(namespace=org.k8s_identifier, name=name),
                 ),
-            ),
-            status=SimpleNamespace(phase="Bound"),
-        )
-        claim = SimpleNamespace(
-            metadata=SimpleNamespace(
-                namespace=org.k8s_identifier,
-                name="data-foo",
-                labels={"cabotage.io/organization": org.k8s_identifier},
+                status=SimpleNamespace(phase="Bound"),
             )
-        )
+
+        existing = pv("data-foo", PERIOD_START - datetime.timedelta(days=1))
+        # Created after the hour being collected (a backfill).
+        later = pv("data-later", PERIOD_START + datetime.timedelta(hours=2))
+        claims = [
+            SimpleNamespace(
+                metadata=SimpleNamespace(
+                    namespace=org.k8s_identifier,
+                    name=name,
+                    labels={"cabotage.io/organization": org.k8s_identifier},
+                )
+            )
+            for name in ("data-foo", "data-later")
+        ]
         core_api = MagicMock()
         core_api.list_node.return_value = SimpleNamespace(items=[])
-        core_api.list_persistent_volume.return_value = SimpleNamespace(items=[pv])
+        core_api.list_persistent_volume.return_value = SimpleNamespace(
+            items=[existing, later]
+        )
         core_api.list_persistent_volume_claim_for_all_namespaces.return_value = (
-            SimpleNamespace(items=[claim])
+            SimpleNamespace(items=claims)
         )
         app.config["KUBERNETES_ENABLED"] = True
         with (
@@ -1121,9 +1131,8 @@ class TestCostCollector:
 
         assert run.status == "succeeded"
         assert run.stats["storage_inventory_error"] is None
-        item = CostLineItem.query.filter_by(
-            run_id=run.id, category="storage", component="data-foo"
-        ).one()
+        item = CostLineItem.query.filter_by(run_id=run.id, category="storage").one()
+        assert item.component == "data-foo"
         assert item.organization_id == org.id
         assert item.project_id is None
         assert item.environment_id is None
@@ -1140,6 +1149,7 @@ class TestCostCollector:
     ):
         pod = "api-web-abc12-xyz34"
         pv = SimpleNamespace(
+            metadata=SimpleNamespace(creation_timestamp=None),
             spec=SimpleNamespace(
                 capacity={"storage": "100Gi"},
                 claim_ref=SimpleNamespace(
@@ -1212,6 +1222,7 @@ class TestCostCollector:
 
         pod = "api-web-abc12-xyz34"
         pv = SimpleNamespace(
+            metadata=SimpleNamespace(creation_timestamp=None),
             spec=SimpleNamespace(
                 capacity={"storage": "10Gi"},
                 claim_ref=SimpleNamespace(namespace=namespace, name=claim_name),
