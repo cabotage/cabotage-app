@@ -174,7 +174,10 @@ def _write_run(
         sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key}
     )
 
-    CostLineItem.query.filter_by(period_start=period_start).delete()
+    # Keep AWS true-up rows; they belong to a day, not this run.
+    CostLineItem.query.filter(
+        CostLineItem.period_start == period_start, CostLineItem.run_id.isnot(None)
+    ).delete()
     CostNodeHour.query.filter_by(period_start=period_start).delete()
     CostCollectionRun.query.filter_by(period_start=period_start).delete()
     db.session.flush()
