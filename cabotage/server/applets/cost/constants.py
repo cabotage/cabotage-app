@@ -194,6 +194,17 @@ POD_LABELS_QUERY = "last_over_time(kube_pod_labels[1h])"
 
 TRAEFIK_QUERY = "sum by (service) (increase(traefik_service_responses_bytes_total[1h]))"
 
+# eth0 excludes hostNetwork pods.
+NETWORK_RECEIVE_QUERY = (
+    "sum by (namespace, pod) "
+    '(increase(container_network_receive_bytes_total{interface="eth0"}[1h]))'
+)
+
+NETWORK_TRANSMIT_QUERY = (
+    "sum by (namespace, pod) "
+    '(increase(container_network_transmit_bytes_total{interface="eth0"}[1h]))'
+)
+
 MEM_SUFFIXES: dict[str, float] = {
     "Ki": 1024.0,
     "Mi": 1024.0**2,
@@ -215,6 +226,7 @@ CATEGORY_ORDER = [
     "backing_service",
     "storage",
     "egress",
+    "network",
     "build",
     "overhead",
 ]
@@ -224,17 +236,19 @@ CATEGORY_LABELS = {
     "backing_service": "Backing services",
     "storage": "Storage",
     "egress": "Egress",
+    "network": "Network",
     "build": "Builds",
     "overhead": "Shared overhead",
 }
 
-METER_ORDER = ["vcpu", "memory", "storage", "egress", "shared"]
+METER_ORDER = ["vcpu", "memory", "storage", "egress", "network", "shared"]
 
 METER_LABELS = {
     "vcpu": "vCPU",
     "memory": "Memory",
     "storage": "Storage",
     "egress": "Egress",
+    "network": "Network",
     "shared": "Shared",
 }
 
@@ -243,6 +257,7 @@ METER_UNITS = {
     "memory": "GiB-hr",
     "storage": "GiB-mo",
     "egress": "GB",
+    "network": "GB",
     "shared": "USD",
 }
 
@@ -251,6 +266,7 @@ METER_RATE_KEY = {
     "memory": "memory_gib_hour",
     "storage": "storage_gib_month",
     "egress": "egress_gb",
+    "network": "network_gb",
 }
 
 # "24h" and "7d" chart hourly (matching the collector's native grain); "30d"
