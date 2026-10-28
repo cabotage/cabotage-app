@@ -28,3 +28,22 @@ def test_auto_deploy_branch_normalization(form_class, value, expected):
             MultiDict({"auto_deploy_branch": value}), meta={"csrf": False}
         )
         assert form.auto_deploy_branch.data == expected
+
+
+@pytest.mark.parametrize(
+    "form_class",
+    [EditApplicationSettingsForm, EditApplicationEnvironmentSettingsForm],
+)
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (" /health/live", "/health/live"),
+        ("\t/_health/ \n", "/_health/"),
+        ("/healthz", "/healthz"),
+        ("", ""),
+    ],
+)
+def test_health_check_path_strips_whitespace(form_class, value, expected):
+    with Flask(__name__).test_request_context():
+        form = form_class(MultiDict({"health_check_path": value}), meta={"csrf": False})
+        assert form.health_check_path.data == expected
