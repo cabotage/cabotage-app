@@ -25040,41 +25040,6 @@
       "severity": "error"
     },
     {
-      "column": 29,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `channel_id`",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `message_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `text`",
-      "severity": "error"
-    },
-    {
-      "column": 59,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `embeds`",
-      "severity": "error"
-    },
-    {
-      "column": 72,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `components`",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/server/integrations/discord_oauth.py",
       "name": "unannotated-return",
