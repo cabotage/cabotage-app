@@ -1162,13 +1162,13 @@ class TestDispatchAutodeployNotification:
 
 
 def _stale_notification(db_session, org, object_type, object_id, **kwargs):
+    kwargs.setdefault("channel_id", "D001")
     sent = SentNotification(
         organization_id=org.id,
         notification_type="pipeline.image",
         object_type=object_type,
         object_id=object_id,
         integration="discord",
-        channel_id="D001",
         external_message_id=f"msg-{uuid.uuid4().hex[:8]}",
         **kwargs,
     )
@@ -1342,6 +1342,113 @@ class TestReconcileNotifications:
                     {"key": RECONCILE_LOCK_KEY},
                 )
         assert sent.reconciled_at is None
+
+    def _failed_images(self, db_session, application, app_env, count):
+        images = [
+            Image(
+                application_id=application.id,
+                application_environment_id=app_env.id,
+                _repository_name="cabotage/test/webapp",
+                image_metadata={},
+                build_ref="a" * 40,
+                error=True,
+                error_detail="boom",
+            )
+            for _ in range(count)
+        ]
+        db_session.add_all(images)
+        db_session.flush()
+        return images
+
+    def test_autodeploy_resend_claims_every_channel(
+        self, db_session, org, application, app_env
+    ):
+        (image,) = self._failed_images(db_session, application, app_env, 1)
+        rows = [
+            _stale_notification(
+                db_session, org, "AutoDeploy", image.id, channel_id=channel
+            )
+            for channel in ("D001", "D002")
+        ]
+        routes = [("discord", "D001"), ("discord", "D002")]
+        with patch("cabotage.celery.tasks.notify.resolve_routes", return_value=routes):
+            # One fan-out updates both channels; the second row must not
+            # trigger another one.
+            assert self._run().call_count == 2
+            for row in rows:
+                db_session.refresh(row)
+                assert row.reconciled_at is not None
+                _age(db_session, row)
+            assert self._run().call_count == 0
+
+    def test_cap_counts_messages_not_rows(self, db_session, org, application, app_env):
+        routes = [("discord", "D001"), ("discord", "D002")]
+        for image in self._failed_images(db_session, application, app_env, 2):
+            for _, channel in routes:
+                _stale_notification(
+                    db_session, org, "AutoDeploy", image.id, channel_id=channel
+                )
+        with (
+            patch("cabotage.celery.tasks.notify.resolve_routes", return_value=routes),
+            patch("cabotage.celery.tasks.notify.RECONCILE_MAX_DISPATCHES", 2),
+        ):
+            # The first image already updates two messages, which fills the cap.
+            assert self._run().call_count == 2
+            # The second image goes out on the next run.
+            assert self._run().call_count == 2
+
+    @pytest.mark.parametrize(("retries", "released"), [(0, False), (5, True)])
+    def test_failed_resend_is_released_once_retries_run_out(
+        self, db_session, org, built_image, retries, released
+    ):
+        marked = datetime.now(UTC).replace(tzinfo=None)
+        sent = _stale_notification(
+            db_session, org, "Image", built_image.id, reconciled_at=marked
+        )
+        send_notification.push_request(retries=retries)
+        try:
+            with (
+                patch(
+                    "cabotage.celery.tasks.notify._update_discord_message",
+                    side_effect=RuntimeError("discord down"),
+                ),
+                patch("cabotage.celery.tasks.notify.db.session.commit"),
+                patch("cabotage.celery.tasks.notify.db.session.rollback"),
+                patch.object(
+                    send_notification, "retry", side_effect=RuntimeError("retried")
+                ),
+                pytest.raises(RuntimeError, match="retried"),
+            ):
+                send_notification.run(
+                    str(org.id),
+                    "discord",
+                    "D001",
+                    "Image",
+                    str(built_image.id),
+                    "pipeline.image",
+                    "final",
+                    reconcile=True,
+                )
+        finally:
+            send_notification.pop_request()
+        db_session.refresh(sent)
+        assert (sent.reconciled_at is None) is released
+
+    def test_regular_autodeploy_send_omits_reconcile(
+        self, db_session, application, app_env, built_image
+    ):
+        # Workers still on the previous version don't accept ``reconcile``.
+        with (
+            patch(
+                "cabotage.celery.tasks.notify.resolve_routes",
+                return_value=[("discord", "D001")],
+            ),
+            patch.object(send_notification, "delay") as mock_delay,
+        ):
+            dispatch_autodeploy_notification(
+                "image_building", built_image.id, application, app_env
+            )
+        assert "reconcile" not in mock_delay.call_args.kwargs
 
 
 # --- Discord rate limits on message edits ---
