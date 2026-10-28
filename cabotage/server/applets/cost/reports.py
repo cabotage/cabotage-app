@@ -732,35 +732,14 @@ def _run_rate_hourly(scope: CostScope, now: datetime.datetime) -> float | None:
 
 
 def _covered_hours(start: datetime.datetime, end: datetime.datetime) -> int:
-    """Hours with a succeeded run, plus all hours of days with AWS true-ups."""
+    """Hours with a succeeded run."""
     end_hour = end.replace(minute=0, second=0, microsecond=0)
-    run_hours: set[datetime.datetime] = {
-        as_utc(period_start)
-        for (period_start,) in db.session.query(CostCollectionRun.period_start)
-        .filter(
-            CostCollectionRun.status == "succeeded",
-            CostCollectionRun.period_start >= start,
-            CostCollectionRun.period_start < end_hour,
-        )
-        .all()
-    }
-    actual_days: list[datetime.date] = [
-        day
-        for (day,) in db.session.query(CostLineItem.aws_day)
-        .filter(
-            CostLineItem.aws_day >= start.date(), CostLineItem.aws_day < end_hour.date()
-        )
-        .distinct()
-        .all()
-    ]
-    for day in actual_days:
-        day_start = datetime.datetime.combine(day, datetime.time(), datetime.UTC)
-        run_hours.update(
-            hour
-            for hour in (day_start + datetime.timedelta(hours=h) for h in range(24))
-            if start <= hour < end_hour
-        )
-    return len(run_hours)
+    hours: int = CostCollectionRun.query.filter(
+        CostCollectionRun.status == "succeeded",
+        CostCollectionRun.period_start >= start,
+        CostCollectionRun.period_start < end_hour,
+    ).count()
+    return hours
 
 
 def _efficiency(
