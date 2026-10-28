@@ -187,11 +187,20 @@ def _config_list(value: object) -> list[str]:
 
 
 def true_up_day(day: datetime.date, buckets: Mapping[str, float]) -> None:
-    """Rewrite ``day``'s true-ups so its line items sum to its actuals."""
+    """Rewrite ``day``'s true-ups so its line items sum to its actuals, scaled
+    to the hours that were collected."""
     CostLineItem.query.filter(CostLineItem.aws_day == day).delete()
 
     day_start = datetime.datetime.combine(day, datetime.time(), datetime.UTC)
     day_end = day_start + datetime.timedelta(days=1)
+    hours: int = CostCollectionRun.query.filter(
+        CostCollectionRun.status == "succeeded",
+        CostCollectionRun.period_start >= day_start,
+        CostCollectionRun.period_start < day_end,
+    ).count()
+    if not hours:
+        return
+    scale = hours / 24
     rows: list[
         Row[
             tuple[
@@ -269,8 +278,8 @@ def true_up_day(day: datetime.date, buckets: Mapping[str, float]) -> None:
             if category in _DIRECT_CATEGORIES:
                 direct_weights[key] += cost
 
-    actual_network = sum(buckets.get(b, 0.0) for b in ACTUALS_NETWORK_BUCKETS)
-    actual_other = sum(
+    actual_network = scale * sum(buckets.get(b, 0.0) for b in ACTUALS_NETWORK_BUCKETS)
+    actual_other = scale * sum(
         cost for b, cost in buckets.items() if b not in ACTUALS_NETWORK_BUCKETS
     )
     _spread(
