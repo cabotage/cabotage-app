@@ -21,12 +21,14 @@ def upgrade():
         "notification_messages",
         sa.Column("reconciled_at", sa.DateTime(), nullable=True),
     )
-    # Existing messages have already been re-sent by the reconciler (every five
-    # minutes, indefinitely); mark them done so the new code doesn't re-send
-    # all of them once more on deploy.
+    # Messages older than an hour belong to pipelines that have long finished,
+    # and the old reconciler has re-sent them every five minutes since; mark
+    # them done so the new code doesn't re-send all of them once more on
+    # deploy. Newer messages may still be in progress, so leave them eligible.
     op.execute(
         "UPDATE notification_messages SET reconciled_at = updated_at "
-        "WHERE reconciled_at IS NULL"
+        "WHERE reconciled_at IS NULL "
+        "AND created_at < (now() AT TIME ZONE 'utc') - interval '1 hour'"
     )
 
 
