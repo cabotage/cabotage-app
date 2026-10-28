@@ -876,9 +876,13 @@ def reconcile_notifications():
     )
 
     reconciled = 0
+    handled: set[tuple[str, object]] = set()
     for sent in stale:
         if reconciled >= RECONCILE_MAX_DISPATCHES:
             break
+        key = (sent.object_type, sent.object_id)
+        if key in handled:
+            continue
         try:
             if sent.object_type == "AutoDeploy":
                 dispatched = _reconcile_autodeploy_notification(sent)
@@ -887,8 +891,21 @@ def reconcile_notifications():
         except Exception:
             log.warning("Failed to reconcile notification %s", sent.id, exc_info=True)
             continue
-        if dispatched:
-            sent.reconciled_at = now
+        if not dispatched:
+            continue
+        sent.reconciled_at = now
+        if sent.object_type == "AutoDeploy":
+            # One auto-deploy re-send updates every channel the image posted
+            # to, so claim all of its messages and count each against the cap.
+            handled.add(key)
+            claimed = SentNotification.query.filter(
+                SentNotification.object_type == sent.object_type,
+                SentNotification.object_id == sent.object_id,
+                SentNotification.id != sent.id,
+                SentNotification.reconciled_at.is_(None),
+            ).update({"reconciled_at": now}, synchronize_session=False)
+            reconciled += 1 + claimed
+        else:
             reconciled += 1
 
     # Commit even when nothing was dispatched: it ends the transaction and
