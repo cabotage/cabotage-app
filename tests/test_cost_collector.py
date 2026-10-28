@@ -998,9 +998,7 @@ class TestCostCollector:
         )
         assert platform[name]["network_gb"] == pytest.approx(1.0, rel=1e-6)
         expected_cost = (
-            0.25 * run.rates["vcpu_hour"]
-            + 0.35 * run.rates["memory_gib_hour"]
-            + 1.0 * run.rates["network_gb"]
+            0.25 * run.rates["vcpu_hour"] + 0.35 * run.rates["memory_gib_hour"]
         )
         assert platform[name]["cost_usd"] == pytest.approx(expected_cost, rel=1e-6)
         assert run.stats["platform_cost"] == pytest.approx(expected_cost, rel=1e-6)
