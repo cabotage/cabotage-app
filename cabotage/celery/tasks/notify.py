@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from cabotage.server import db
 from cabotage.server.integrations.discord_oauth import (
+    DiscordRateLimitedError,
     _send_discord_message,
     _update_discord_message,
 )
@@ -386,10 +387,12 @@ def dispatch_autodeploy_notification(
     release_url=None,
     deploy_url=None,
     image_metadata=None,
+    reconcile=False,
 ):
     """Send or update an auto-deploy notification, keyed by image_id.
 
     Called from within Celery tasks so runs synchronously (not .delay).
+    ``reconcile`` marks a re-send from ``reconcile_notifications``.
     """
     organization = application.project.organization
     app_path = _format_app_path(application, app_env)
@@ -448,6 +451,7 @@ def dispatch_autodeploy_notification(
             str(image_id),
             notification_type,
             message,
+            reconcile=reconcile,
         )
 
 
@@ -521,11 +525,14 @@ def send_notification(
     object_id,
     notification_type,
     message,
+    reconcile=False,
 ):
     """Send or update a single notification message. Retries on failure.
 
     ``message`` is a dict with keys: text (fallback), slack_attachments,
     discord_embeds. A plain string is also accepted for simple messages.
+    ``reconcile`` is True when the reconciler re-sends a terminal state; any
+    other update makes the message eligible for one more reconcile pass.
     """
     if isinstance(object_id, str):
         object_id = _uuid.UUID(object_id)
@@ -586,6 +593,8 @@ def send_notification(
                     components=discord_components,
                 )
             existing.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            if not reconcile:
+                existing.reconciled_at = None
             db.session.commit()
             return
 
@@ -633,6 +642,9 @@ def send_notification(
     except IntegrityError:
         db.session.rollback()
         return
+    except DiscordRateLimitedError as exc:
+        db.session.rollback()
+        raise self.retry(exc=exc, countdown=max(exc.retry_after, 1.0))
     except Exception as exc:
         raise self.retry(exc=exc)
 
@@ -776,6 +788,14 @@ def dispatch_pipeline_notification(
 # Minimum age before reconciler considers a notification stale (seconds).
 RECONCILE_STALE_THRESHOLD = 300  # 5 minutes
 
+# At most this many re-sends per reconcile run. Each one is a chat API edit and
+# the beat fires every 15 s, so this caps the reconciler at ~100 edits a minute.
+RECONCILE_MAX_DISPATCHES = 25
+
+# Advisory lock key so overlapping reconcile runs (beat keeps enqueueing while
+# the worker is busy) never dispatch the same rows twice. Spells "cabo_rec".
+RECONCILE_LOCK_KEY = 0x6361626F5F726563
+
 # Map object_type → (model class, is_terminal, get_state)
 _TERMINAL_CHECKS = {
     "Image": (
@@ -803,34 +823,53 @@ _TERMINAL_CHECKS = {
 
 @shared_task()
 def reconcile_notifications():
-    """Find stale notifications whose source objects have reached a terminal
-    state and re-dispatch to update the message.
+    """Re-send the terminal state of notifications whose final update may have
+    been lost.
 
-    Only touches notifications that haven't been updated in
-    RECONCILE_STALE_THRESHOLD seconds, to avoid stepping on in-flight workers.
+    Each message is re-sent at most once per regular update: dispatching sets
+    ``reconciled_at``, and only a regular (non-reconcile) update clears it.
+    Only notifications untouched for RECONCILE_STALE_THRESHOLD seconds are
+    considered, to avoid stepping on in-flight workers.
     """
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(
-        seconds=RECONCILE_STALE_THRESHOLD
-    )
+    acquired = db.session.execute(
+        sa.text("SELECT pg_try_advisory_xact_lock(:key)"),
+        {"key": RECONCILE_LOCK_KEY},
+    ).scalar()
+    if not acquired:
+        return
 
-    stale = SentNotification.query.filter(
-        SentNotification.updated_at < cutoff,
-    ).all()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    cutoff = now - timedelta(seconds=RECONCILE_STALE_THRESHOLD)
+
+    stale: list[SentNotification] = (
+        SentNotification.query.filter(
+            SentNotification.reconciled_at.is_(None),
+            SentNotification.updated_at < cutoff,
+        )
+        .order_by(SentNotification.updated_at)
+        .all()
+    )
 
     reconciled = 0
     for sent in stale:
+        if reconciled >= RECONCILE_MAX_DISPATCHES:
+            break
         try:
             if sent.object_type == "AutoDeploy":
-                if _reconcile_autodeploy_notification(sent):
-                    reconciled += 1
+                dispatched = _reconcile_autodeploy_notification(sent)
             else:
-                if _reconcile_pipeline_notification(sent):
-                    reconciled += 1
+                dispatched = _reconcile_pipeline_notification(sent)
         except Exception:
             log.warning("Failed to reconcile notification %s", sent.id, exc_info=True)
+            continue
+        if dispatched:
+            sent.reconciled_at = now
+            reconciled += 1
 
+    # Commit even when nothing was dispatched: it ends the transaction and
+    # releases the advisory lock.
+    db.session.commit()
     if reconciled:
-        db.session.commit()
         log.info("Reconciled %d stale notification(s)", reconciled)
 
 
@@ -861,6 +900,7 @@ def _reconcile_pipeline_notification(sent):
                 str(sent.object_id),
                 sent.notification_type,
                 message,
+                reconcile=True,
             )
             return True
         return False
@@ -887,6 +927,7 @@ def _reconcile_pipeline_notification(sent):
         str(sent.object_id),
         ntype,
         message,
+        reconcile=True,
     )
     return True
 
@@ -915,6 +956,7 @@ def _reconcile_autodeploy_notification(sent):
             error=image.error_detail,
             image_url=cabotage_url(app, f"images/{image.id}"),
             image_metadata=image.image_metadata,
+            reconcile=True,
         )
         return True
 
@@ -940,6 +982,7 @@ def _reconcile_autodeploy_notification(sent):
             image_url=cabotage_url(app, f"images/{image.id}"),
             release_url=cabotage_url(app, f"releases/{release.id}"),
             image_metadata=image.image_metadata,
+            reconcile=True,
         )
         return True
 
@@ -965,6 +1008,7 @@ def _reconcile_autodeploy_notification(sent):
             image_url=cabotage_url(app, f"images/{image.id}"),
             deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
             image_metadata=image.image_metadata,
+            reconcile=True,
         )
         return True
 
@@ -977,6 +1021,7 @@ def _reconcile_autodeploy_notification(sent):
             image_url=cabotage_url(app, f"images/{image.id}"),
             deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
             image_metadata=image.image_metadata,
+            reconcile=True,
         )
         return True
 

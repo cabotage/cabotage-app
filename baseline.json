@@ -13840,13 +13840,6 @@
       "severity": "error"
     },
     {
-      "column": 64,
-      "path": "cabotage/celery/tasks/notify.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
       "column": 5,
       "path": "cabotage/celery/tasks/notify.py",
       "name": "unannotated-return",
