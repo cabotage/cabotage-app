@@ -442,6 +442,9 @@ def dispatch_autodeploy_notification(
                 targets.append(t)
                 seen.add(t)
 
+    # Only pass ``reconcile`` when set, so regular sends stay callable by
+    # workers still running a version without the parameter.
+    extra: dict[str, bool] = {"reconcile": True} if reconcile else {}
     for integration, channel_id in targets:
         send_notification.delay(
             str(organization.id),
@@ -451,7 +454,7 @@ def dispatch_autodeploy_notification(
             str(image_id),
             notification_type,
             message,
-            reconcile=reconcile,
+            **extra,
         )
 
 
