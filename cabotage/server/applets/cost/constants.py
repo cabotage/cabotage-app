@@ -23,6 +23,8 @@ DEFAULT_RATES: CostRates = {
     "storage_gib_month": 0.08,
     # Internet egress.
     "egress_gb": 0.09,
+    # Pod traffic, sent + received. ~2/3 crosses AZs at $0.01/GB per side.
+    "network_gb": 0.0067,
     # Fixed hourly costs shared across all tenants on the cluster.
     "fixed_hourly": {
         "eks_control_plane": 0.10,
@@ -87,6 +89,62 @@ THROUGHPUT_UNIT_MIBPS = {"GiBps-mo": 1024.0, "MiBps-mo": 1.0}
 DEFAULT_CLASS_ANNOTATION = "storageclass.kubernetes.io/is-default-class"
 
 DEFAULT_VOLUME_TYPE = {"ebs.csi.aws.com": "gp3", "kubernetes.io/aws-ebs": "gp2"}
+
+
+# ---------------------------------------------------------------------------
+# AWS actuals (Cost Explorer)
+# ---------------------------------------------------------------------------
+
+#: Cost Explorer revises recent days, so each refresh re-fetches this many.
+ACTUALS_LOOKBACK_DAYS = 7
+
+#: Used when no cluster tag is configured. Excludes RDS, OpenSearch, etc.
+DEFAULT_ACTUALS_SERVICES = [
+    "Amazon Elastic Compute Cloud - Compute",
+    "EC2 - Other",
+    "Amazon Elastic Load Balancing",
+    "Amazon Virtual Private Cloud",
+]
+
+#: Usage type -> bucket, first match wins.
+ACTUALS_BUCKET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("compute", re.compile(r"BoxUsage|SpotUsage|DedicatedUsage|HostUsage|CPUCredits")),
+    ("storage", re.compile(r"EBS:")),
+    ("cross_az", re.compile(r"DataTransfer-Regional-Bytes")),
+    ("inter_region", re.compile(r"-AWS-(In|Out)-Bytes")),
+    ("internet_egress", re.compile(r"DataTransfer-Out-Bytes")),
+    ("load_balancer", re.compile(r"LoadBalancerUsage|LCUUsage|DataProcessing-Bytes")),
+    ("public_ipv4", re.compile(r"PublicIPv4")),
+    ("nat_gateway", re.compile(r"NatGateway")),
+    ("eks_control_plane", re.compile(r"EKS-Hours")),
+]
+ACTUALS_OTHER_BUCKET = "other"
+
+ACTUALS_NETWORK_BUCKETS = ("cross_az", "inter_region", "internet_egress")
+
+#: Become ``fixed_hourly``. Storage is handled separately.
+ACTUALS_FIXED_BUCKETS = (
+    "load_balancer",
+    "public_ipv4",
+    "nat_gateway",
+    "eks_control_plane",
+    ACTUALS_OTHER_BUCKET,
+)
+
+ACTUALS_BUCKET_LABELS = {
+    "compute": "EC2 instances",
+    "storage": "EBS volumes",
+    "cross_az": "Cross-AZ transfer",
+    "inter_region": "Inter-region transfer",
+    "internet_egress": "Internet egress",
+    "load_balancer": "Load balancers",
+    "public_ipv4": "Public IPv4",
+    "nat_gateway": "NAT gateway",
+    "eks_control_plane": "EKS control plane",
+    ACTUALS_OTHER_BUCKET: "Other",
+}
+
+TRUE_UP_COMPONENT = "aws-true-up"
 
 
 # ---------------------------------------------------------------------------

@@ -47,6 +47,7 @@ class CostRates(TypedDict):
     memory_gib_hour: float
     storage_gib_month: float
     egress_gb: float
+    network_gb: float
     fixed_hourly: dict[str, float]
     node_family_xlarge_hourly: dict[str, float]
     node_size_factor: dict[str, float]
@@ -139,6 +140,16 @@ class PodClassification(TypedDict):
     application_id: uuid.UUID | None
     resource_id: uuid.UUID | None
     component: str
+
+
+class PlatformComponentStats(TypedDict):
+    """One hour of a pod group that belongs to no tenant."""
+
+    cpu_billed_hours: float
+    memory_billed_gib_hours: float
+    network_gb: float
+    storage_gib_month: float
+    cost_usd: float
 
 
 # ---------------------------------------------------------------------------

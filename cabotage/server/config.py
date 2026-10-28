@@ -232,3 +232,8 @@ class Config(metaclass=MetaFlaskEnv):
     COST_AWS_REGION = "us-east-2"
     COST_AWS_PRICING_API_REGION = "us-east-1"
     COST_STORAGE_CLASS = None
+    COST_AWS_ACTUALS_ENABLED = False
+    COST_AWS_ACTUALS_TAG = None
+    COST_AWS_ACCOUNT_ID = None
+    # JSON array of Cost Explorer service names.
+    COST_AWS_ACTUALS_SERVICES = None

@@ -67,7 +67,7 @@ dev = [
     "typing-extensions",
     "types-simple-websocket>=1.1.0.20260512",
     "prek>=0.5.3",
-    "boto3-stubs[pricing]>=1.43.115",
+    "boto3-stubs[ce,pricing]>=1.43.115",
 ]
 
 [tool.pytest.ini_options]
