@@ -98,12 +98,13 @@ DEFAULT_VOLUME_TYPE = {"ebs.csi.aws.com": "gp3", "kubernetes.io/aws-ebs": "gp2"}
 #: Cost Explorer revises recent days, so each refresh re-fetches this many.
 ACTUALS_LOOKBACK_DAYS = 7
 
-#: Used when no cluster tag is configured. Excludes RDS, OpenSearch, etc.
+#: Services counted as the cluster's bill. Excludes RDS, OpenSearch, etc.
 DEFAULT_ACTUALS_SERVICES = [
     "Amazon Elastic Compute Cloud - Compute",
     "EC2 - Other",
     "Amazon Elastic Load Balancing",
     "Amazon Virtual Private Cloud",
+    "Amazon Elastic Container Service for Kubernetes",
 ]
 
 #: Usage type -> bucket, first match wins.
