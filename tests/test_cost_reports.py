@@ -1270,13 +1270,22 @@ class TestPlatformActuals:
         assert aws["difference"] == pytest.approx(5.0)
         assert [b["key"] for b in aws["buckets"]] == ["compute", "cross_az"]
 
-    def test_actual_days_count_as_covered_for_projection(self, app, org, application):
+    def test_trued_up_days_count_as_covered_for_projection(self, app, org, application):
         month_start = NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        actual_day = (month_start + datetime.timedelta(days=3)).date()
-        db.session.add(
-            CostAwsDaily(
-                day=actual_day, bucket="compute", cost_usd=24.0, fetched_at=NOW
+        trued_up_day = (month_start + datetime.timedelta(days=3)).date()
+        # Actuals with nothing collected to true up against: not covered.
+        actuals_only_day = (month_start + datetime.timedelta(days=5)).date()
+        for day in (trued_up_day, actuals_only_day):
+            db.session.add(
+                CostAwsDaily(day=day, bucket="compute", cost_usd=24.0, fetched_at=NOW)
             )
+        _add_true_up(
+            trued_up_day,
+            datetime.datetime.combine(trued_up_day, datetime.time(), datetime.UTC),
+            org=org,
+            application=application,
+            category="overhead",
+            cost=24.0,
         )
         collected = _floor_hour(NOW) - datetime.timedelta(hours=1)
         _add_item(_add_run(collected), collected, org=org, cost=1.0)
