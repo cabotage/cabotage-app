@@ -77,6 +77,9 @@ def refresh_actuals(
     CostAwsDaily.query.filter(
         CostAwsDaily.day >= first_day, CostAwsDaily.day < today
     ).delete()
+    CostLineItem.query.filter(
+        CostLineItem.aws_day >= first_day, CostLineItem.aws_day < today
+    ).delete()
     for day, buckets in sorted(by_day.items()):
         for bucket, cost in sorted(buckets.items()):
             db.session.add(
