@@ -492,7 +492,7 @@ def _collect(
     line_items.extend(storage_items)
 
     pv_items, storage_inventory_error = _collect_pv_storage(
-        rates, caches, platform_components
+        period_end, rates, caches, platform_components
     )
     line_items.extend(pv_items)
 
@@ -1122,6 +1122,7 @@ def _collect_storage(
 
 
 def _collect_pv_storage(
+    period_end: datetime.datetime,
     rates: CostRates,
     caches: _ScopeCaches,
     platform_components: defaultdict[str, PlatformComponentStats],
@@ -1152,6 +1153,9 @@ def _collect_pv_storage(
     for volume in volumes.items:
         spec = volume.spec
         if spec is None:
+            continue
+        created = volume.metadata.creation_timestamp if volume.metadata else None
+        if created is not None and created >= period_end:
             continue
         capacity = spec.capacity or {}
         gib = parse_memory_quantity_gib(capacity.get("storage"))
