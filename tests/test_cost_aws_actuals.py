@@ -95,7 +95,7 @@ def _page(groups_by_day, token=None):
                 "Groups": [
                     {
                         "Keys": [usage_type],
-                        "Metrics": {"UnblendedCost": {"Amount": str(amount)}},
+                        "Metrics": {"AmortizedCost": {"Amount": str(amount)}},
                     }
                     for usage_type, amount in groups.items()
                 ],
@@ -266,6 +266,10 @@ def test_true_up_spreads_network_by_gb_and_the_rest_by_direct_cost(app, org, app
     refresh_actuals(FakeCostExplorer(client.pages), today=TODAY)
     assert sum(_true_ups("network").values()) == pytest.approx(4.0)
 
+    # A day Cost Explorer stops reporting loses its true-ups too.
+    refresh_actuals(FakeCostExplorer([_page({})]), today=TODAY)
+    assert CostLineItem.query.filter(CostLineItem.aws_day.isnot(None)).count() == 0
+
 
 def test_network_true_up_falls_back_to_egress_usage(app, org, apps):
     web, api = apps
@@ -333,18 +337,20 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
         )
     db.session.commit()
 
-    overrides = actuals_rate_overrides()
+    overrides = actuals_rate_overrides(today=TODAY + datetime.timedelta(days=1))
     rates = effective_rates({"COST_AWS_ACTUALS_ENABLED": True})
 
-    # $24 cross-AZ over 1,200 pod GB collected that day.
-    assert overrides["network_gb"] == pytest.approx(0.02)
+    # $24 cross-AZ over 1,200 pod GB in 12 hours, i.e. 2,400 GB for the day.
+    assert overrides["network_gb"] == pytest.approx(0.01)
     # $4.80 EBS minus $2.40/day already priced as storage line items.
     assert overrides["fixed_hourly"] == {
         "load_balancer": pytest.approx(0.2),
         "unattributed_storage": pytest.approx(0.1),
     }
     assert rates["fixed_hourly"] == overrides["fixed_hourly"]
-    assert rates["network_gb"] == pytest.approx(0.02)
+    assert rates["network_gb"] == pytest.approx(0.01)
+    # Yesterday's costs are still settling; rates don't come from it.
+    assert actuals_rate_overrides(today=TODAY) == {}
 
 
 def test_no_rate_overrides_without_collected_hours(app):
