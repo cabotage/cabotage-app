@@ -1229,15 +1229,19 @@ class TestPlatformActuals:
         assert rec["overhead_allocated"] == pytest.approx(6.0)
         assert rec["residual"] == pytest.approx(0.0, abs=1e-9)
 
-    def test_aws_block_compares_whole_days_only(
+    def test_aws_block_scales_whole_days_to_collected_hours(
         self, app, org, project, environment, application
     ):
         full_day = (NOW - datetime.timedelta(days=2)).date()
+        uncollected_day = (NOW - datetime.timedelta(days=3)).date()
         today = NOW.date()
         fetched = NOW - datetime.timedelta(hours=2)
         for day, bucket, cost in [
-            (full_day, "compute", 70.0),
-            (full_day, "cross_az", 30.0),
+            # One of 24 hours collected: a 24th of the day is compared.
+            (full_day, "compute", 70.0 * 24),
+            (full_day, "cross_az", 30.0 * 24),
+            # Nothing collected to compare against.
+            (uncollected_day, "compute", 500.0),
             # The range's partial last day (today) isn't compared.
             (today, "compute", 999.0),
         ]:
@@ -1270,22 +1274,23 @@ class TestPlatformActuals:
         assert aws["difference"] == pytest.approx(5.0)
         assert [b["key"] for b in aws["buckets"]] == ["compute", "cross_az"]
 
-    def test_trued_up_days_count_as_covered_for_projection(self, app, org, application):
+    def test_true_ups_do_not_count_as_covered_hours(self, app, org, application):
         month_start = NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         trued_up_day = (month_start + datetime.timedelta(days=3)).date()
-        # Actuals with nothing collected to true up against: not covered.
-        actuals_only_day = (month_start + datetime.timedelta(days=5)).date()
-        for day in (trued_up_day, actuals_only_day):
-            db.session.add(
-                CostAwsDaily(day=day, bucket="compute", cost_usd=24.0, fetched_at=NOW)
+        db.session.add(
+            CostAwsDaily(
+                day=trued_up_day, bucket="compute", cost_usd=24.0, fetched_at=NOW
             )
+        )
+        # True-ups only cover the hours that were collected, so the rest of the
+        # day still needs filling by the projection.
         _add_true_up(
             trued_up_day,
             datetime.datetime.combine(trued_up_day, datetime.time(), datetime.UTC),
             org=org,
             application=application,
             category="overhead",
-            cost=24.0,
+            cost=1.0,
         )
         collected = _floor_hour(NOW) - datetime.timedelta(hours=1)
         _add_item(_add_run(collected), collected, org=org, cost=1.0)
@@ -1297,7 +1302,7 @@ class TestPlatformActuals:
         assert coverage["completed_hours"] == int(
             (NOW - month_start).total_seconds() // 3600
         )
-        assert coverage["covered_hours"] == 24 + 1
+        assert coverage["covered_hours"] == 1
 
     def test_platform_components_summed_over_range(self, app):
         hours = [_floor_hour(NOW) - datetime.timedelta(hours=h) for h in (1, 2)]
