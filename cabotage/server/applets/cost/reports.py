@@ -1479,28 +1479,39 @@ def _platform_reconciliation(
 def _aws_reconciliation(
     start: datetime.datetime, end: datetime.datetime
 ) -> AwsReconciliation | None:
-    """Actuals vs. everything allocated, over whole days that have actuals."""
+    """Actuals vs. everything allocated, over whole days with actuals and
+    collected hours. Each day's actuals are scaled to the hours collected."""
     first_day = start.date()
     if start.time() != datetime.time():
         first_day += datetime.timedelta(days=1)
     end_day = end.date()  # exclusive: a partial last day isn't compared
-    rows = (
-        db.session.query(
-            CostAwsDaily.bucket, func.sum(CostAwsDaily.cost_usd).label("cost")
+    run_day = func.date(func.timezone("UTC", CostCollectionRun.period_start))
+    hours_by_day: dict[datetime.date, int] = {
+        day: count
+        for day, count in db.session.query(run_day, func.count())
+        .filter(
+            CostCollectionRun.status == "succeeded",
+            run_day >= first_day,
+            run_day < end_day,
         )
-        .filter(CostAwsDaily.day >= first_day, CostAwsDaily.day < end_day)
-        .group_by(CostAwsDaily.bucket)
+        .group_by(run_day)
         .all()
-    )
-    if not rows:
+    }
+    bucket_costs: defaultdict[str, float] = defaultdict(float)
+    day_set: set[datetime.date] = set()
+    for day, bucket, cost in (
+        db.session.query(CostAwsDaily.day, CostAwsDaily.bucket, CostAwsDaily.cost_usd)
+        .filter(CostAwsDaily.day >= first_day, CostAwsDaily.day < end_day)
+        .all()
+    ):
+        hours = hours_by_day.get(day, 0)
+        if not hours:
+            continue
+        bucket_costs[bucket] += float(cost) * hours / 24
+        day_set.add(day)
+    if not day_set:
         return None
-    days: list[datetime.date] = [
-        day
-        for (day,) in db.session.query(CostAwsDaily.day)
-        .filter(CostAwsDaily.day >= first_day, CostAwsDaily.day < end_day)
-        .distinct()
-        .all()
-    ]
+    days = sorted(day_set)
     line_day = func.date(func.timezone("UTC", CostLineItem.period_start))
     allocated_row = (
         db.session.query(
@@ -1518,21 +1529,21 @@ def _aws_reconciliation(
         .filter(line_day.in_(days))
         .one()
     )
-    actual = sum(float(row.cost or 0.0) for row in rows)
+    actual = sum(bucket_costs.values())
     allocated = float(allocated_row.allocated or 0.0)
     buckets: list[AwsBucketRow] = [
         {
-            "key": row.bucket,
-            "label": ACTUALS_BUCKET_LABELS.get(row.bucket, row.bucket),
-            "cost": float(row.cost or 0.0),
+            "key": bucket,
+            "label": ACTUALS_BUCKET_LABELS.get(bucket, bucket),
+            "cost": cost,
         }
-        for row in rows
+        for bucket, cost in bucket_costs.items()
     ]
     buckets.sort(key=lambda bucket: bucket["cost"], reverse=True)
     return {
         "days": len(days),
-        "first_day": min(days).isoformat(),
-        "last_day": max(days).isoformat(),
+        "first_day": days[0].isoformat(),
+        "last_day": days[-1].isoformat(),
         "actual": actual,
         "allocated": allocated,
         "true_up": float(allocated_row.true_up or 0.0),
