@@ -230,13 +230,14 @@ def test_true_up_spreads_network_by_gb_and_the_rest_by_direct_cost(app, org, app
         meter="network",
     )
     db.session.commit()
+    # Full-day actuals; 2 of 24 hours were collected, so a twelfth applies.
     client = FakeCostExplorer(
         [
             _page(
                 {
                     DAY: {
-                        "USE2-BoxUsage:m8g.2xlarge": 15.0,  # other: 15 actual vs 12 est.
-                        "USE2-DataTransfer-Regional-Bytes": 5.0,  # network: 5 vs 1
+                        "USE2-BoxUsage:m8g.2xlarge": 180.0,  # other: 15 vs 12 est.
+                        "USE2-DataTransfer-Regional-Bytes": 60.0,  # network: 5 vs 1
                     }
                 }
             )
@@ -287,7 +288,7 @@ def test_network_true_up_falls_back_to_egress_usage(app, org, apps):
     db.session.commit()
 
     refresh_actuals(
-        FakeCostExplorer([_page({DAY: {"USE2-DataTransfer-Out-Bytes": 2.9}})]),
+        FakeCostExplorer([_page({DAY: {"USE2-DataTransfer-Out-Bytes": 2.9 * 24}})]),
         today=TODAY,
     )
 
@@ -300,7 +301,7 @@ def test_true_ups_survive_recollecting_their_hour(app, org, apps):
     _item(run, org=org, application=web, category="compute", cost=1.0)
     db.session.commit()
     refresh_actuals(
-        FakeCostExplorer([_page({DAY: {"USE2-BoxUsage:m8g.2xlarge": 3.0}})]),
+        FakeCostExplorer([_page({DAY: {"USE2-BoxUsage:m8g.2xlarge": 3.0 * 24}})]),
         today=TODAY,
     )
 
@@ -321,11 +322,17 @@ def test_true_ups_survive_recollecting_their_hour(app, org, apps):
 def test_rate_overrides_from_latest_actuals(app, org, apps):
     web, _ = apps
     for hour in range(12):
-        run = _run(
-            DAY_START + datetime.timedelta(hours=hour),
-            stats={"network_gb_total": 100.0},
-        )
+        run = _run(DAY_START + datetime.timedelta(hours=hour))
         _item(run, org=org, application=web, category="storage", cost=0.1)
+        _item(
+            run,
+            org=org,
+            application=web,
+            category="network",
+            cost=0.0,
+            quantity=100.0,
+            meter="network",
+        )
     for bucket, cost in {
         "cross_az": 24.0,
         "load_balancer": 4.8,
@@ -340,7 +347,7 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
     overrides = actuals_rate_overrides(today=TODAY + datetime.timedelta(days=1))
     rates = effective_rates({"COST_AWS_ACTUALS_ENABLED": True})
 
-    # $24 cross-AZ over 1,200 pod GB in 12 hours, i.e. 2,400 GB for the day.
+    # $24 cross-AZ over 1,200 tenant GB in 12 hours, i.e. 2,400 GB for the day.
     assert overrides["network_gb"] == pytest.approx(0.01)
     # $4.80 EBS minus $2.40/day already priced as storage line items.
     assert overrides["fixed_hourly"] == {
