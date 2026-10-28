@@ -23,6 +23,8 @@ DEFAULT_RATES: CostRates = {
     "storage_gib_month": 0.08,
     # Internet egress.
     "egress_gb": 0.09,
+    # Pod traffic, sent + received. ~2/3 crosses AZs at $0.01/GB per side.
+    "network_gb": 0.0067,
     # Fixed hourly costs shared across all tenants on the cluster.
     "fixed_hourly": {
         "eks_control_plane": 0.10,
@@ -90,6 +92,66 @@ DEFAULT_VOLUME_TYPE = {"ebs.csi.aws.com": "gp3", "kubernetes.io/aws-ebs": "gp2"}
 
 
 # ---------------------------------------------------------------------------
+# AWS actuals (Cost Explorer)
+# ---------------------------------------------------------------------------
+
+#: Cost Explorer revises recent days, so each refresh re-fetches this many.
+ACTUALS_LOOKBACK_DAYS = 7
+
+#: Rates are derived from a day at least this old, once its costs have settled.
+ACTUALS_SETTLED_DAYS = 2
+
+#: Services counted as the cluster's bill. Excludes RDS, OpenSearch, etc.
+DEFAULT_ACTUALS_SERVICES = [
+    "Amazon Elastic Compute Cloud - Compute",
+    "EC2 - Other",
+    "Amazon Elastic Load Balancing",
+    "Amazon Virtual Private Cloud",
+    "Amazon Elastic Container Service for Kubernetes",
+]
+
+#: Usage type -> bucket, first match wins.
+ACTUALS_BUCKET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    ("compute", re.compile(r"BoxUsage|SpotUsage|DedicatedUsage|HostUsage|CPUCredits")),
+    ("storage", re.compile(r"EBS:")),
+    ("cross_az", re.compile(r"DataTransfer-Regional-Bytes")),
+    ("inter_region", re.compile(r"-AWS-(In|Out)-Bytes")),
+    ("internet_egress", re.compile(r"DataTransfer-Out-Bytes")),
+    ("load_balancer", re.compile(r"LoadBalancerUsage|LCUUsage|DataProcessing-Bytes")),
+    ("public_ipv4", re.compile(r"PublicIPv4")),
+    ("nat_gateway", re.compile(r"NatGateway")),
+    ("eks_control_plane", re.compile(r"EKS-Hours")),
+]
+ACTUALS_OTHER_BUCKET = "other"
+
+ACTUALS_NETWORK_BUCKETS = ("cross_az", "inter_region", "internet_egress")
+
+#: Become ``fixed_hourly``. Storage is handled separately.
+ACTUALS_FIXED_BUCKETS = (
+    "load_balancer",
+    "public_ipv4",
+    "nat_gateway",
+    "eks_control_plane",
+    ACTUALS_OTHER_BUCKET,
+)
+
+ACTUALS_BUCKET_LABELS = {
+    "compute": "EC2 instances",
+    "storage": "EBS volumes",
+    "cross_az": "Cross-AZ transfer",
+    "inter_region": "Inter-region transfer",
+    "internet_egress": "Internet egress",
+    "load_balancer": "Load balancers",
+    "public_ipv4": "Public IPv4",
+    "nat_gateway": "NAT gateway",
+    "eks_control_plane": "EKS control plane",
+    ACTUALS_OTHER_BUCKET: "Other",
+}
+
+TRUE_UP_COMPONENT = "aws-true-up"
+
+
+# ---------------------------------------------------------------------------
 # Collection
 # ---------------------------------------------------------------------------
 
@@ -136,6 +198,17 @@ POD_LABELS_QUERY = "last_over_time(kube_pod_labels[1h])"
 
 TRAEFIK_QUERY = "sum by (service) (increase(traefik_service_responses_bytes_total[1h]))"
 
+# eth0 excludes hostNetwork pods.
+NETWORK_RECEIVE_QUERY = (
+    "sum by (namespace, pod) "
+    '(increase(container_network_receive_bytes_total{interface="eth0"}[1h]))'
+)
+
+NETWORK_TRANSMIT_QUERY = (
+    "sum by (namespace, pod) "
+    '(increase(container_network_transmit_bytes_total{interface="eth0"}[1h]))'
+)
+
 MEM_SUFFIXES: dict[str, float] = {
     "Ki": 1024.0,
     "Mi": 1024.0**2,
@@ -157,6 +230,7 @@ CATEGORY_ORDER = [
     "backing_service",
     "storage",
     "egress",
+    "network",
     "build",
     "overhead",
 ]
@@ -166,17 +240,19 @@ CATEGORY_LABELS = {
     "backing_service": "Backing services",
     "storage": "Storage",
     "egress": "Egress",
+    "network": "Network",
     "build": "Builds",
     "overhead": "Shared overhead",
 }
 
-METER_ORDER = ["vcpu", "memory", "storage", "egress", "shared"]
+METER_ORDER = ["vcpu", "memory", "storage", "egress", "network", "shared"]
 
 METER_LABELS = {
     "vcpu": "vCPU",
     "memory": "Memory",
     "storage": "Storage",
     "egress": "Egress",
+    "network": "Network",
     "shared": "Shared",
 }
 
@@ -185,6 +261,7 @@ METER_UNITS = {
     "memory": "GiB-hr",
     "storage": "GiB-mo",
     "egress": "GB",
+    "network": "GB",
     "shared": "USD",
 }
 
@@ -193,6 +270,7 @@ METER_RATE_KEY = {
     "memory": "memory_gib_hour",
     "storage": "storage_gib_month",
     "egress": "egress_gb",
+    "network": "network_gb",
 }
 
 # "24h" and "7d" chart hourly (matching the collector's native grain); "30d"
@@ -248,13 +326,23 @@ RATE_LINE_ITEMS: list[tuple[str, str, str, str, str | None]] = [
     ("memory", "Memory", "memory_gib_hour", "USD/GiB-hr", None),
     ("storage", "Storage", "storage_gib_month", "USD/GiB-mo", None),
     ("egress", "Egress", "egress_gb", "USD/GB", None),
+    (
+        "network",
+        "Network",
+        "network_gb",
+        "USD/GB",
+        "pod bytes sent + received; covers cross-AZ transfer",
+    ),
 ]
 
-FIXED_RATE_ITEMS: list[tuple[str, str]] = [
-    ("eks_control_plane", "EKS control plane"),
-    ("nat_gateway", "NAT gateway"),
-    ("load_balancer", "Load balancer"),
-]
+FIXED_RATE_LABELS: dict[str, str] = {
+    "eks_control_plane": "EKS control plane",
+    "nat_gateway": "NAT gateway",
+    "load_balancer": "Load balancer",
+    "public_ipv4": "Public IPv4",
+    "unattributed_storage": "Unattributed EBS volumes",
+    "other": "Other AWS",
+}
 
 WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 

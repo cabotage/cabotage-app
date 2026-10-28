@@ -11,6 +11,7 @@ re-running for an hour that was already collected replaces its rows.
 
 import datetime
 import hashlib
+import re
 import struct
 import uuid
 from collections import defaultdict
@@ -33,6 +34,8 @@ from cabotage.server.applets.cost.constants import (
     HOURS_PER_MONTH,
     MEM_REQUEST_QUERY,
     MEM_USAGE_QUERY,
+    NETWORK_RECEIVE_QUERY,
+    NETWORK_TRANSMIT_QUERY,
     POD_LABELS_QUERY,
     STEP_HOURS,
     STEP_SECONDS,
@@ -52,6 +55,7 @@ from cabotage.server.applets.cost.rates import (
 from cabotage.server.applets.cost.types import (
     CostRates,
     GroupKey,
+    PlatformComponentStats,
     PodClassification,
     PodKey,
     ScopeKey,
@@ -174,7 +178,10 @@ def _write_run(
         sa.text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key}
     )
 
-    CostLineItem.query.filter_by(period_start=period_start).delete()
+    # Keep AWS true-up rows; they belong to a day, not this run.
+    CostLineItem.query.filter(
+        CostLineItem.period_start == period_start, CostLineItem.run_id.isnot(None)
+    ).delete()
     CostNodeHour.query.filter_by(period_start=period_start).delete()
     CostCollectionRun.query.filter_by(period_start=period_start).delete()
     db.session.flush()
@@ -254,11 +261,32 @@ def _collect(
     traefik_result = mimir.query_instant(
         TRAEFIK_QUERY, tenant_id=tenant_id, time=instant_time
     )
+    network_receive_result = mimir.query_instant(
+        NETWORK_RECEIVE_QUERY, tenant_id=tenant_id, time=instant_time
+    )
+    network_transmit_result = mimir.query_instant(
+        NETWORK_TRANSMIT_QUERY, tenant_id=tenant_id, time=instant_time
+    )
 
     pod_labels: dict[PodKey, dict[str, str]] = {}
     for series in pod_labels_result:
         metric = series.get("metric", {})
         pod_labels[(metric.get("namespace"), metric.get("pod"))] = metric
+
+    network_bytes_by_pod: defaultdict[PodKey, float] = defaultdict(float)
+    for series in list(network_receive_result or []) + list(
+        network_transmit_result or []
+    ):
+        metric = series.get("metric", {})
+        pod_key: PodKey = (metric.get("namespace"), metric.get("pod"))
+        if not pod_key[0] or not pod_key[1]:
+            continue
+        value = series.get("value")
+        try:
+            network_bytes_by_pod[pod_key] += float(value[1]) if value else 0.0
+        except TypeError, ValueError, IndexError:
+            pass
+    network_gb_total = sum(network_bytes_by_pod.values()) / 1e9
 
     build_job_ids: set[str] = set()
     for (_, pod_name), labels in pod_labels.items():
@@ -281,7 +309,11 @@ def _collect(
             "mem_billed": 0.0,
             "mem_usage": 0.0,
             "mem_request": 0.0,
+            "network_gb": 0.0,
         }
+    )
+    platform_components: defaultdict[str, PlatformComponentStats] = defaultdict(
+        _empty_platform_stats
     )
 
     node_load: defaultdict[str, _NodeLoad] = defaultdict(_NodeLoad)
@@ -295,6 +327,9 @@ def _collect(
     # would otherwise record a "succeeded" hour with every pod unallocated.
     if not pod_labels:
         raise RuntimeError("no pod labels for hour")
+    # Pods seen only by the network query still get billed for their bytes.
+    all_pod_keys |= set(network_bytes_by_pod)
+
     for pod_key in all_pod_keys:
         namespace, pod_name = pod_key
         if not namespace or not pod_name:
@@ -310,15 +345,38 @@ def _collect(
             mem_usage.get(pod_key, {}),
             mem_request.get(pod_key, {}),
         )
+        network_gb = network_bytes_by_pod.get(pod_key, 0.0) / 1e9
         labels = pod_labels.get(pod_key)
-        if labels is None:
-            pods_unallocated += 1
-            continue
-        classification = _classify_pod(
-            namespace, pod_name, labels, caches, build_environment_by_job
+        classification = (
+            _classify_pod(namespace, pod_name, labels, caches, build_environment_by_job)
+            if labels is not None
+            else None
         )
         if classification is None:
-            pods_unallocated += 1
+            if _claims_tenant(namespace, labels, caches):
+                pods_unallocated += 1
+                continue
+            # No tenant labels: platform, even in a namespace a tenant shares.
+            cpu_b, _, _ = _billed_hours(
+                cpu_usage.get(pod_key, {}), cpu_request.get(pod_key, {})
+            )
+            mem_b, _, _ = _billed_hours(
+                mem_usage.get(pod_key, {}), mem_request.get(pod_key, {})
+            )
+            cost = (
+                cpu_b * rates["vcpu_hour"]
+                + mem_b * rates["memory_gib_hour"]
+                + network_gb * rates["network_gb"]
+            )
+            name = f"{namespace}/{_platform_pod_workload(pod_name)}"
+            _add_platform(
+                platform_components,
+                name,
+                cpu_billed_hours=cpu_b,
+                memory_billed_gib_hours=mem_b,
+                network_gb=network_gb,
+                cost_usd=cost,
+            )
             continue
 
         cpu_b, cpu_u, cpu_r = _billed_hours(
@@ -344,6 +402,7 @@ def _collect(
         g["mem_billed"] += mem_b
         g["mem_usage"] += mem_u
         g["mem_request"] += mem_r
+        g["network_gb"] += network_gb
 
     line_items: list[CostLineItem] = []
     direct_compute_total = 0.0
@@ -407,9 +466,35 @@ def _collect(
                 direct_compute_total += cost
                 direct_weight_by_scope[scope_key] += cost
 
+        # Kept out of the overhead weights: network isn't compute capacity.
+        if totals["network_gb"] > 1e-12:
+            cost = totals["network_gb"] * rates["network_gb"]
+            line_items.append(
+                CostLineItem(
+                    organization_id=org_id,
+                    project_id=project_id,
+                    environment_id=env_id,
+                    application_id=app_id,
+                    resource_id=resource_id,
+                    category="network",
+                    meter="network",
+                    component=component,
+                    quantity=totals["network_gb"],
+                    unit="GB",
+                    usage_quantity=None,
+                    request_quantity=None,
+                    cost_usd=cost,
+                )
+            )
+
     # --- Storage -----------------------------------------------------
     storage_items = _collect_storage(period_start, period_end, rates)
     line_items.extend(storage_items)
+
+    pv_items, storage_inventory_error = _collect_pv_storage(
+        period_end, rates, caches, platform_components
+    )
+    line_items.extend(pv_items)
 
     # --- Egress --------------------------------------------------------
     egress_items = _collect_egress(traefik_result, rates)
@@ -452,6 +537,8 @@ def _collect(
     else:
         overhead_allocated = 0.0
 
+    platform_cost = sum(entry["cost_usd"] for entry in platform_components.values())
+
     stats: CostRunStats = {
         "pods_seen": pods_seen,
         "pods_unallocated": pods_unallocated,
@@ -464,6 +551,10 @@ def _collect(
         "overhead_pool": overhead_pool,
         "overhead_allocated": overhead_allocated,
         "fixed_overhead": fixed_overhead,
+        "network_gb_total": network_gb_total,
+        "platform_components": dict(platform_components),
+        "platform_cost": platform_cost,
+        "storage_inventory_error": storage_inventory_error,
     }
 
     return line_items, node_hours, stats
@@ -605,6 +696,10 @@ class _ScopeCaches:
         self.resources_by_namespace: defaultdict[str, list[tuple[Resource, str]]] = (
             defaultdict(list)
         )
+        #: Tenant namespace -> scope. Missing means platform.
+        self.namespace_scope: dict[
+            str, tuple[Organization, Project | None, Environment | None]
+        ] = {}
 
 
 def _build_scope_caches() -> _ScopeCaches:
@@ -612,12 +707,23 @@ def _build_scope_caches() -> _ScopeCaches:
     orgs: list[Organization] = Organization.query.all()
     for org in orgs:
         caches.orgs[org.k8s_identifier] = org
+        caches.namespace_scope[org.k8s_identifier] = (org, None, None)
+    orgs_by_id = {org.id: org for org in orgs}
     projects: list[Project] = Project.query.all()
     for project in projects:
         caches.projects[(project.organization_id, project.k8s_identifier)] = project
     environments: list[Environment] = Environment.query.all()
     for env in environments:
         caches.environments[(env.project_id, env.k8s_identifier)] = env
+        if env.uses_environment_namespace:
+            project = env.project
+            org = (
+                orgs_by_id.get(project.organization_id)
+                if project is not None and project.organization_id is not None
+                else None
+            )
+            if org is not None:
+                caches.namespace_scope[env.k8s_namespace] = (org, project, env)
     apps: list[Application] = Application.query.all()
     for app in apps:
         caches.applications[(app.project_id, app.k8s_identifier)] = app
@@ -852,6 +958,78 @@ def _classify_backing_pod(
 
 
 # ---------------------------------------------------------------------------
+# Platform workloads
+# ---------------------------------------------------------------------------
+
+
+_STATEFULSET_ORDINAL_RE = re.compile(r"^(.+)-(\d+)$")
+_REPLICASET_POD_RE = re.compile(r"^(.+)-[a-z0-9]{8,10}-[a-z0-9]{5}$")
+_GENERATED_SUFFIX_RE = re.compile(r"^(.+)-[a-z0-9]{5}$")
+
+
+def _claims_tenant(
+    namespace: str | None, labels: dict[str, str] | None, caches: _ScopeCaches
+) -> bool:
+    """Whether an unclassifiable pod is a tenant's (unallocated) rather than
+    platform. Without labels, only the namespace can tell."""
+    if labels is None:
+        return namespace in caches.namespace_scope
+    return bool(
+        labels.get("label_cabotage_io_organization") or labels.get("label_organization")
+    )
+
+
+def _platform_pod_workload(pod_name: str) -> str:
+    """``mimir-write-0`` -> ``mimir-write``, ``traefik-5d8f7c9b4-x2k9p`` ->
+    ``traefik``, so replicas roll up into one component."""
+    for pattern in (
+        _STATEFULSET_ORDINAL_RE,
+        _REPLICASET_POD_RE,
+        _GENERATED_SUFFIX_RE,
+    ):
+        match = pattern.match(pod_name)
+        if match:
+            return match.group(1)
+    return pod_name
+
+
+def _platform_claim_workload(claim_name: str) -> str:
+    """``data-mimir-write-0`` -> ``data-mimir-write``."""
+    match = _STATEFULSET_ORDINAL_RE.match(claim_name)
+    if match:
+        return match.group(1)
+    return claim_name
+
+
+def _empty_platform_stats() -> PlatformComponentStats:
+    return {
+        "cpu_billed_hours": 0.0,
+        "memory_billed_gib_hours": 0.0,
+        "network_gb": 0.0,
+        "storage_gib_month": 0.0,
+        "cost_usd": 0.0,
+    }
+
+
+def _add_platform(
+    platform_components: defaultdict[str, PlatformComponentStats],
+    name: str,
+    *,
+    cpu_billed_hours: float = 0.0,
+    memory_billed_gib_hours: float = 0.0,
+    network_gb: float = 0.0,
+    storage_gib_month: float = 0.0,
+    cost_usd: float = 0.0,
+) -> None:
+    entry = platform_components[name]
+    entry["cpu_billed_hours"] += cpu_billed_hours
+    entry["memory_billed_gib_hours"] += memory_billed_gib_hours
+    entry["network_gb"] += network_gb
+    entry["storage_gib_month"] += storage_gib_month
+    entry["cost_usd"] += cost_usd
+
+
+# ---------------------------------------------------------------------------
 # Storage
 # ---------------------------------------------------------------------------
 
@@ -941,6 +1119,125 @@ def _collect_storage(
         )
 
     return items
+
+
+def _collect_pv_storage(
+    period_end: datetime.datetime,
+    rates: CostRates,
+    caches: _ScopeCaches,
+    platform_components: defaultdict[str, PlatformComponentStats],
+) -> tuple[list[CostLineItem], str | None]:
+    """Price every bound PersistentVolume, skipping Cabotage Postgres/Redis
+    (priced in `_collect_storage`). Claims with tenant ``cabotage.io/*``
+    labels become storage line items; the rest are platform components."""
+    items: list[CostLineItem] = []
+    if not current_app.config.get("KUBERNETES_ENABLED"):
+        return items, None
+    try:
+        api_client = kubernetes_ext.kubernetes_client
+        core_api = kubernetes.client.CoreV1Api(api_client)
+        volumes = core_api.list_persistent_volume()
+        claims = core_api.list_persistent_volume_claim_for_all_namespaces()
+    except ApiException as exc:
+        return items, f"listing persistent volumes failed: {exc.status} {exc.reason}"
+    except Exception as exc:
+        return items, f"listing persistent volumes failed: {type(exc).__name__}: {exc}"
+    claim_labels: dict[tuple[str, str], dict[str, str]] = {
+        (claim.metadata.namespace, claim.metadata.name): claim.metadata.labels or {}
+        for claim in claims.items
+        if claim.metadata is not None
+        and claim.metadata.namespace
+        and claim.metadata.name
+    }
+
+    for volume in volumes.items:
+        spec = volume.spec
+        if spec is None:
+            continue
+        created = volume.metadata.creation_timestamp if volume.metadata else None
+        if created is not None and created >= period_end:
+            continue
+        capacity = spec.capacity or {}
+        gib = parse_memory_quantity_gib(capacity.get("storage"))
+        if gib is None:
+            continue
+        phase = volume.status.phase if volume.status is not None else None
+        if phase != "Bound":
+            continue
+        gib_month = gib / HOURS_PER_MONTH
+        cost = volume_monthly_cost(gib, rates) / HOURS_PER_MONTH
+
+        claim_ref = spec.claim_ref
+        claim_namespace = claim_ref.namespace if claim_ref is not None else None
+        claim_name = claim_ref.name if claim_ref is not None else None
+        if not claim_namespace or not claim_name:
+            _add_platform(
+                platform_components,
+                "unclaimed/volumes",
+                storage_gib_month=gib_month,
+                cost_usd=cost,
+            )
+            continue
+
+        # Already priced from the resource's storage_size.
+        if any(
+            claim_name.startswith(prefix + "-")
+            for _, prefix in caches.resources_by_namespace.get(claim_namespace, [])
+        ):
+            continue
+
+        scope = _claim_scope(
+            claim_labels.get((claim_namespace, claim_name), {}), caches
+        )
+        if scope is None:
+            name = f"{claim_namespace}/{_platform_claim_workload(claim_name)}"
+            _add_platform(
+                platform_components,
+                name,
+                storage_gib_month=gib_month,
+                cost_usd=cost,
+            )
+            continue
+
+        org, project, environment = scope
+        items.append(
+            CostLineItem(
+                organization_id=org.id,
+                project_id=project.id if project is not None else None,
+                environment_id=environment.id if environment is not None else None,
+                application_id=None,
+                resource_id=None,
+                category="storage",
+                meter="storage",
+                component=claim_name[:COMPONENT_MAX_LEN],
+                quantity=gib_month,
+                unit="GiB-mo",
+                usage_quantity=None,
+                request_quantity=None,
+                cost_usd=cost,
+            )
+        )
+
+    return items, None
+
+
+def _claim_scope(
+    labels: dict[str, str], caches: _ScopeCaches
+) -> tuple[Organization, Project | None, Environment | None] | None:
+    """The tenant a PVC's ``cabotage.io/*`` labels resolve to, if any."""
+    org_k8s = labels.get("cabotage.io/organization")
+    org = caches.orgs.get(org_k8s) if org_k8s else None
+    if org is None:
+        return None
+    project_k8s = labels.get("cabotage.io/project")
+    project = caches.projects.get((org.id, project_k8s)) if project_k8s else None
+    env_k8s = labels.get("cabotage.io/environment")
+    environment = (
+        caches.environments.get((project.id, env_k8s))
+        if project is not None and env_k8s
+        else None
+    )
+    return org, project, environment
 
 
 # ---------------------------------------------------------------------------

@@ -1,8 +1,11 @@
 import datetime
 import uuid
+from decimal import Decimal
 from typing import Any, TypedDict
 
 from sqlalchemy import (
+    CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -17,7 +20,11 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cabotage.server import Model
-from cabotage.server.applets.cost.types import CostRates, SnapshotRates
+from cabotage.server.applets.cost.types import (
+    CostRates,
+    PlatformComponentStats,
+    SnapshotRates,
+)
 
 
 class CostRunStats(TypedDict, total=False):
@@ -34,6 +41,10 @@ class CostRunStats(TypedDict, total=False):
     overhead_pool: float
     overhead_allocated: float
     fixed_overhead: float
+    network_gb_total: float
+    platform_components: dict[str, PlatformComponentStats]
+    platform_cost: float
+    storage_inventory_error: str | None
     synthetic: bool
     seed: str
     last_attempt_status: str
@@ -84,10 +95,10 @@ class CostLineItem(Model):
         server_default=text("gen_random_uuid()"),
         primary_key=True,
     )
-    run_id: Mapped[uuid.UUID] = mapped_column(
+    #: NULL for AWS true-up rows, which set ``aws_day`` instead.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("cost_collection_runs.id", ondelete="CASCADE"),
-        nullable=False,
     )
     period_start: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -121,8 +132,9 @@ class CostLineItem(Model):
     usage_quantity: Mapped[float | None] = mapped_column(Float())
     request_quantity: Mapped[float | None] = mapped_column(Float())
     cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=False)
+    aws_day: Mapped[datetime.date | None] = mapped_column(Date())
 
-    run: Mapped[CostCollectionRun] = relationship(back_populates="line_items")
+    run: Mapped[CostCollectionRun | None] = relationship(back_populates="line_items")
 
     __table_args__ = (
         Index(
@@ -147,6 +159,11 @@ class CostLineItem(Model):
         # FK columns not led by another index; ON DELETE actions scan without them.
         Index("ix_cost_line_items_run_id", "run_id"),
         Index("ix_cost_line_items_resource_id", "resource_id"),
+        Index("ix_cost_line_items_aws_day", "aws_day"),
+        CheckConstraint(
+            "(run_id IS NULL) <> (aws_day IS NULL)",
+            name="ck_cost_line_items_run_or_aws_day",
+        ),
     )
 
 
@@ -237,3 +254,16 @@ class CostPriceSnapshot(Model):
             cls.fetched_at.desc()
         ).first()
         return snapshot
+
+
+class CostAwsDaily(Model):
+    """One day's Cost Explorer spend for one bucket, before credits."""
+
+    __tablename__ = "cost_aws_daily"
+
+    day: Mapped[datetime.date] = mapped_column(Date(), primary_key=True)
+    bucket: Mapped[str] = mapped_column(String(32), primary_key=True)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    fetched_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )

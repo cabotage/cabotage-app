@@ -360,6 +360,9 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+ce = [
+    { name = "mypy-boto3-ce" },
+]
 pricing = [
     { name = "mypy-boto3-pricing" },
 ]
@@ -439,7 +442,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "bandit" },
-    { name = "boto3-stubs", extra = ["pricing"] },
+    { name = "boto3-stubs", extra = ["ce", "pricing"] },
     { name = "hupper" },
     { name = "kubernetes-stubs-elephant-fork" },
     { name = "prek" },
@@ -508,7 +511,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "bandit" },
-    { name = "boto3-stubs", extras = ["pricing"], specifier = ">=1.43.115" },
+    { name = "boto3-stubs", extras = ["ce", "pricing"], specifier = ">=1.43.115" },
     { name = "hupper" },
     { name = "kubernetes-stubs-elephant-fork", specifier = ">=36.0.3.post1" },
     { name = "prek", specifier = ">=0.5.3" },
@@ -1455,6 +1458,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/02/8b/b2c2805c3eb6fa4cdf5512fb95ac6174dde71e34dd601c5be52f4df5dc82/multidict-6.9.1-cp315-cp315t-win_amd64.whl", hash = "sha256:e96ca64383efa107262ee3949f047af5ee4f1845ba09463466c04d35a83bd3ec", size = 64984, upload-time = "2026-09-21T17:58:59.446Z" },
     { url = "https://files.pythonhosted.org/packages/fd/34/03f1d204d698c408f4754c969882609b6b7a902c0e3d16a7033f219cdeda/multidict-6.9.1-cp315-cp315t-win_arm64.whl", hash = "sha256:501ed8b02a5990c67a91c732843609d43a6be1f7576fcdfc867331239f37fbd3", size = 58742, upload-time = "2026-09-21T17:59:01.726Z" },
     { url = "https://files.pythonhosted.org/packages/be/59/e26cb779be4c591d1a910f59d29aca9fba4de70349840a833beba2652371/multidict-6.9.1-py3-none-any.whl", hash = "sha256:7bf6478188f4e47bf5686e8a33da4ae28bf43b1b2528d9ee144d28492bfac60b", size = 19176, upload-time = "2026-09-21T17:59:03.501Z" },
+]
+
+[[package]]
+name = "mypy-boto3-ce"
+version = "1.43.110"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/df/1e/cd75838c156ec1656cfeb3aa39c5e029d5fb4d10dbdd580c3bca7fd14801/mypy_boto3_ce-1.43.110.tar.gz", hash = "sha256:acf495eb2c3b33397c2b0f8bb062a9227292bb0de92c872cea0bbbd043fd3c8b", size = 43027, upload-time = "2026-10-08T22:26:11.107Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e2/fe/b400ef2413cd96ef199b96d3784f91953b537b8b7d623d3c615e48377867/mypy_boto3_ce-1.43.110-py3-none-any.whl", hash = "sha256:e81c39f8ddb197b0a314ae151b8ae62f55917354f0483221a4160e6e95b23ed4", size = 49857, upload-time = "2026-10-08T22:26:07.799Z" },
 ]
 
 [[package]]

@@ -2,6 +2,7 @@
 
 import datetime
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -12,7 +13,7 @@ from cabotage.celery.tasks.cost import collect_costs
 from cabotage.server import db
 from cabotage.server.applets.cost.collector import collect_hour
 from cabotage.server.applets.cost.constants import FAILED_HOUR_RETRY_AFTER
-from cabotage.server.applets.cost.rates import node_hourly_price
+from cabotage.server.applets.cost.rates import node_hourly_price, volume_monthly_cost
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
 from cabotage.server.models.cost import (
@@ -228,9 +229,20 @@ def _mimir_stub(responses, pod_labels, traefik=None, raise_on=None):
             return pod_labels
         if "traefik" in query:
             return traefik or []
+        for substr, result in responses.items():
+            if substr in query:
+                return result
         return []
 
     return query_range, query_instant
+
+
+def _instant_series(namespace, pod, value):
+    """Build one Mimir instant-query series (network queries)."""
+    return {
+        "metric": {"namespace": namespace, "pod": pod},
+        "value": [int(PERIOD_START.timestamp()), str(value)],
+    }
 
 
 def _app_pod_responses(namespace, pod):
@@ -400,7 +412,7 @@ class TestCostCollector:
         # Only 6 of 12 steps have data: billed = max(0.2, 0.1) * 6 * 5/60 = 0.1
         assert items[0].quantity == pytest.approx(0.1, rel=1e-6)
 
-    def test_attribution_app_build_backing_and_unallocated(
+    def test_attribution_app_build_backing_and_platform(
         self, app, org, project, environment, application, app_env
     ):
         namespace = org.k8s_identifier
@@ -436,7 +448,6 @@ class TestCostCollector:
             f"{safe_k8s_name(project.k8s_identifier, resource.k8s_identifier)}-0"
         )
 
-        # Unallocated: no cabotage.io/* labels at all.
         unalloc_pod = "coredns-7d8f9c-abcde"
 
         def mk(pod, value):
@@ -536,8 +547,8 @@ class TestCostCollector:
         assert all(i.resource_id == resource.id for i in backing_items)
         assert all(i.component == resource.slug for i in backing_items)
 
-        # The unallocated pod produces no line items at all.
-        assert run.stats["pods_unallocated"] >= 1
+        assert run.stats["pods_unallocated"] == 0
+        assert list(run.stats["platform_components"]) == [f"{namespace}/coredns-7d8f9c"]
         assert not any(i.component == "coredns" for i in items)
 
     def test_node_idle_capacity_feeds_the_overhead_pool(
@@ -905,6 +916,375 @@ class TestCostCollector:
         )
 
         assert run.status == "succeeded", run.error
+
+    def test_network_meter_prices_pod_bytes_and_records_total(
+        self, app, org, project, environment, application, app_env
+    ):
+        namespace = org.k8s_identifier
+        pod = "api-web-abc12-xyz34"
+        responses = _app_pod_responses(namespace, pod)
+        responses["container_network_receive_bytes_total"] = [
+            _instant_series(namespace, pod, 2_000_000_000)
+        ]
+        responses["container_network_transmit_bytes_total"] = [
+            _instant_series(namespace, pod, 500_000_000)
+        ]
+        run = _collect_with(responses, _app_pod_labels(org, project, application, pod))
+
+        assert run.status == "succeeded"
+        network_items = CostLineItem.query.filter_by(
+            run_id=run.id, meter="network"
+        ).all()
+        assert len(network_items) == 1
+        item = network_items[0]
+        assert item.category == "network"
+        assert item.unit == "GB"
+        assert item.component == "web"
+        assert item.organization_id == org.id
+        assert item.application_id == application.id
+        assert item.usage_quantity is None
+        assert item.request_quantity is None
+        # (2_000_000_000 + 500_000_000) bytes = 2.5 GB
+        assert item.quantity == pytest.approx(2.5, rel=1e-6)
+        assert float(item.cost_usd) == pytest.approx(
+            2.5 * run.rates["network_gb"], rel=1e-6
+        )
+        assert run.stats["network_gb_total"] == pytest.approx(2.5, rel=1e-6)
+
+    def test_platform_pod_is_named_component_not_unallocated(
+        self, app, org, project, environment, application, app_env
+    ):
+        namespace = org.k8s_identifier
+        app_pod = "api-web-abc12-xyz34"
+        platform_pod = "cilium-ab3f9"
+        platform_ns = "kube-system"
+        responses = {
+            "rate(container_cpu_usage_seconds_total": [
+                _series(namespace, app_pod, _full_hour(0.1)),
+                _series(platform_ns, platform_pod, _full_hour(0.2)),
+            ],
+            "container_memory_working_set_bytes{": [
+                _series(namespace, app_pod, _full_hour(0.2 * GIB)),
+                _series(platform_ns, platform_pod, _full_hour(0.3 * GIB)),
+            ],
+            'resource="cpu"': [
+                _series(namespace, app_pod, _full_hour(0.2)),
+                _series(platform_ns, platform_pod, _full_hour(0.25)),
+            ],
+            'resource="memory"': [
+                _series(namespace, app_pod, _full_hour(0.25 * GIB)),
+                _series(platform_ns, platform_pod, _full_hour(0.35 * GIB)),
+            ],
+            "container_network_receive_bytes_total": [
+                _instant_series(platform_ns, platform_pod, 1_000_000_000)
+            ],
+        }
+        # No labels for the platform pod.
+        pod_labels = _app_pod_labels(org, project, application, app_pod)
+
+        run = _collect_with(responses, pod_labels)
+
+        assert run.status == "succeeded"
+        items = CostLineItem.query.filter_by(run_id=run.id).all()
+        assert not any(platform_pod in (i.component or "") for i in items)
+        assert run.stats["pods_unallocated"] == 0
+
+        name = f"{platform_ns}/cilium"
+        platform = run.stats["platform_components"]
+        assert name in platform
+        assert platform[name]["cpu_billed_hours"] == pytest.approx(0.25, rel=1e-6)
+        assert platform[name]["memory_billed_gib_hours"] == pytest.approx(
+            0.35, rel=1e-6
+        )
+        assert platform[name]["network_gb"] == pytest.approx(1.0, rel=1e-6)
+        expected_cost = (
+            0.25 * run.rates["vcpu_hour"]
+            + 0.35 * run.rates["memory_gib_hour"]
+            + 1.0 * run.rates["network_gb"]
+        )
+        assert platform[name]["cost_usd"] == pytest.approx(expected_cost, rel=1e-6)
+        assert run.stats["platform_cost"] == pytest.approx(expected_cost, rel=1e-6)
+        assert run.stats["network_gb_total"] == pytest.approx(1.0, rel=1e-6)
+
+    def test_unclassified_pod_in_tenant_namespace_still_unallocated(
+        self, app, org, project, environment, application, app_env
+    ):
+        namespace = org.k8s_identifier
+        app_pod = "api-web-abc12-xyz34"
+        unalloc_pod = "mystery-pod"
+        responses = {
+            "rate(container_cpu_usage_seconds_total": [
+                _series(namespace, app_pod, _full_hour(0.1)),
+                _series(namespace, unalloc_pod, _full_hour(0.05)),
+            ],
+            "container_memory_working_set_bytes{": [
+                _series(namespace, app_pod, _full_hour(0.2 * GIB)),
+                _series(namespace, unalloc_pod, _full_hour(0.1 * GIB)),
+            ],
+            'resource="cpu"': [
+                _series(namespace, app_pod, _full_hour(0.2)),
+                _series(namespace, unalloc_pod, _full_hour(0.1)),
+            ],
+            'resource="memory"': [
+                _series(namespace, app_pod, _full_hour(0.25 * GIB)),
+                _series(namespace, unalloc_pod, _full_hour(0.15 * GIB)),
+            ],
+        }
+        pod_labels = _app_pod_labels(org, project, application, app_pod) + [
+            {
+                "metric": {
+                    "namespace": namespace,
+                    "pod": unalloc_pod,
+                    # Claims a tenant, but one that doesn't exist.
+                    "label_cabotage_io_organization": "no-such-org",
+                }
+            }
+        ]
+        run = _collect_with(responses, pod_labels)
+
+        assert run.status == "succeeded"
+        assert run.stats["pods_unallocated"] == 1
+        assert run.stats["platform_components"] == {}
+
+    def test_unlabelled_pod_in_shared_tenant_namespace_is_platform(
+        self, app, org, project, environment, application, app_env
+    ):
+        namespace = org.k8s_identifier
+        app_pod = "api-web-abc12-xyz34"
+        mimir_pod = "resident-mimir-write-0"
+        responses = {
+            "rate(container_cpu_usage_seconds_total": [
+                _series(namespace, app_pod, _full_hour(0.1)),
+                _series(namespace, mimir_pod, _full_hour(0.5)),
+            ],
+            'resource="cpu"': [
+                _series(namespace, app_pod, _full_hour(0.2)),
+                _series(namespace, mimir_pod, _full_hour(1.0)),
+            ],
+        }
+        pod_labels = _app_pod_labels(org, project, application, app_pod) + [
+            {
+                "metric": {
+                    "namespace": namespace,
+                    "pod": mimir_pod,
+                    "label_app": "resident-mimir",
+                }
+            }
+        ]
+        run = _collect_with(responses, pod_labels)
+
+        assert run.stats["pods_unallocated"] == 0
+        platform = run.stats["platform_components"]
+        assert list(platform) == [f"{namespace}/resident-mimir-write"]
+        assert platform[f"{namespace}/resident-mimir-write"][
+            "cpu_billed_hours"
+        ] == pytest.approx(1.0, rel=1e-6)
+
+    def test_pv_storage_prices_tenant_claim(
+        self, app, org, project, environment, application, app_env
+    ):
+        pod = "api-web-abc12-xyz34"
+
+        def pv(name, created):
+            return SimpleNamespace(
+                metadata=SimpleNamespace(creation_timestamp=created),
+                spec=SimpleNamespace(
+                    capacity={"storage": "10Gi"},
+                    claim_ref=SimpleNamespace(namespace=org.k8s_identifier, name=name),
+                ),
+                status=SimpleNamespace(phase="Bound"),
+            )
+
+        existing = pv("data-foo", PERIOD_START - datetime.timedelta(days=1))
+        # Created after the hour being collected (a backfill).
+        later = pv("data-later", PERIOD_START + datetime.timedelta(hours=2))
+        claims = [
+            SimpleNamespace(
+                metadata=SimpleNamespace(
+                    namespace=org.k8s_identifier,
+                    name=name,
+                    labels={"cabotage.io/organization": org.k8s_identifier},
+                )
+            )
+            for name in ("data-foo", "data-later")
+        ]
+        core_api = MagicMock()
+        core_api.list_node.return_value = SimpleNamespace(items=[])
+        core_api.list_persistent_volume.return_value = SimpleNamespace(
+            items=[existing, later]
+        )
+        core_api.list_persistent_volume_claim_for_all_namespaces.return_value = (
+            SimpleNamespace(items=claims)
+        )
+        app.config["KUBERNETES_ENABLED"] = True
+        with (
+            patch("cabotage.server.applets.cost.collector.kubernetes_ext"),
+            patch(
+                "cabotage.server.applets.cost.collector.kubernetes.client.CoreV1Api",
+                return_value=core_api,
+            ),
+        ):
+            run = _collect_with(
+                _app_pod_responses(org.k8s_identifier, pod),
+                _app_pod_labels(org, project, application, pod),
+            )
+
+        assert run.status == "succeeded"
+        assert run.stats["storage_inventory_error"] is None
+        item = CostLineItem.query.filter_by(run_id=run.id, category="storage").one()
+        assert item.component == "data-foo"
+        assert item.organization_id == org.id
+        assert item.project_id is None
+        assert item.environment_id is None
+        assert item.resource_id is None
+        assert item.unit == "GiB-mo"
+        assert item.quantity == pytest.approx(10 / 730.0, rel=1e-6)
+        # cost_usd is Numeric(14, 6).
+        assert float(item.cost_usd) == pytest.approx(
+            volume_monthly_cost(10, run.rates) / 730.0, abs=1e-6
+        )
+
+    def test_pv_storage_platform_claim_becomes_named_component(
+        self, app, org, project, environment, application, app_env
+    ):
+        pod = "api-web-abc12-xyz34"
+        pv = SimpleNamespace(
+            metadata=SimpleNamespace(creation_timestamp=None),
+            spec=SimpleNamespace(
+                capacity={"storage": "100Gi"},
+                claim_ref=SimpleNamespace(
+                    namespace=org.k8s_identifier, name="data-resident-mimir-write-0"
+                ),
+            ),
+            status=SimpleNamespace(phase="Bound"),
+        )
+        claim = SimpleNamespace(
+            metadata=SimpleNamespace(
+                namespace=org.k8s_identifier,
+                name="data-resident-mimir-write-0",
+                labels={"app": "resident-mimir"},
+            )
+        )
+        core_api = MagicMock()
+        core_api.list_node.return_value = SimpleNamespace(items=[])
+        core_api.list_persistent_volume.return_value = SimpleNamespace(items=[pv])
+        core_api.list_persistent_volume_claim_for_all_namespaces.return_value = (
+            SimpleNamespace(items=[claim])
+        )
+        app.config["KUBERNETES_ENABLED"] = True
+        with (
+            patch("cabotage.server.applets.cost.collector.kubernetes_ext"),
+            patch(
+                "cabotage.server.applets.cost.collector.kubernetes.client.CoreV1Api",
+                return_value=core_api,
+            ),
+        ):
+            run = _collect_with(
+                _app_pod_responses(org.k8s_identifier, pod),
+                _app_pod_labels(org, project, application, pod),
+            )
+
+        assert run.status == "succeeded"
+        assert run.stats["storage_inventory_error"] is None
+        assert (
+            CostLineItem.query.filter(
+                CostLineItem.run_id == run.id,
+                CostLineItem.category == "storage",
+                CostLineItem.component.like("%resident-mimir-write%"),
+            ).count()
+            == 0
+        )
+        name = f"{org.k8s_identifier}/data-resident-mimir-write"
+        platform = run.stats["platform_components"]
+        assert name in platform
+        assert platform[name]["storage_gib_month"] == pytest.approx(
+            100 / 730.0, rel=1e-6
+        )
+        assert platform[name]["cost_usd"] == pytest.approx(
+            volume_monthly_cost(100, run.rates) / 730.0, rel=1e-6
+        )
+
+    def test_pv_storage_skips_cabotage_managed_resource_claim(
+        self, app, org, project, environment, application, app_env
+    ):
+        resource = PostgresResource(
+            environment_id=environment.id,
+            name="maindb",
+            service_version="18",
+            size_class="db.medium",
+            storage_size=10,
+        )
+        db.session.add(resource)
+        db.session.flush()
+        prefix = safe_k8s_name(project.k8s_identifier, resource.k8s_identifier)
+        claim_name = f"{prefix}-0"
+        namespace = environment.k8s_namespace
+
+        pod = "api-web-abc12-xyz34"
+        pv = SimpleNamespace(
+            metadata=SimpleNamespace(creation_timestamp=None),
+            spec=SimpleNamespace(
+                capacity={"storage": "10Gi"},
+                claim_ref=SimpleNamespace(namespace=namespace, name=claim_name),
+            ),
+            status=SimpleNamespace(phase="Bound"),
+        )
+        core_api = MagicMock()
+        core_api.list_node.return_value = SimpleNamespace(items=[])
+        core_api.list_persistent_volume.return_value = SimpleNamespace(items=[pv])
+        core_api.list_persistent_volume_claim_for_all_namespaces.return_value = (
+            SimpleNamespace(items=[])
+        )
+        app.config["KUBERNETES_ENABLED"] = True
+        with (
+            patch("cabotage.server.applets.cost.collector.kubernetes_ext"),
+            patch(
+                "cabotage.server.applets.cost.collector.kubernetes.client.CoreV1Api",
+                return_value=core_api,
+            ),
+        ):
+            run = _collect_with(
+                _app_pod_responses(org.k8s_identifier, pod),
+                _app_pod_labels(org, project, application, pod),
+            )
+
+        assert run.status == "succeeded"
+        assert run.stats["storage_inventory_error"] is None
+        assert (
+            CostLineItem.query.filter_by(
+                run_id=run.id, category="storage", component=claim_name
+            ).count()
+            == 0
+        )
+        assert claim_name not in run.stats["platform_components"]
+
+    def test_pv_storage_listing_failure_is_recorded(
+        self, app, org, project, environment, application, app_env
+    ):
+        pod = "api-web-abc12-xyz34"
+        core_api = MagicMock()
+        core_api.list_node.return_value = SimpleNamespace(items=[])
+        core_api.list_persistent_volume.side_effect = ApiException(
+            status=403, reason="Forbidden"
+        )
+        app.config["KUBERNETES_ENABLED"] = True
+        with (
+            patch("cabotage.server.applets.cost.collector.kubernetes_ext"),
+            patch(
+                "cabotage.server.applets.cost.collector.kubernetes.client.CoreV1Api",
+                return_value=core_api,
+            ),
+        ):
+            run = _collect_with(
+                _app_pod_responses(org.k8s_identifier, pod),
+                _app_pod_labels(org, project, application, pod),
+            )
+
+        assert run.status == "succeeded"
+        assert (
+            run.stats["storage_inventory_error"]
+            == "listing persistent volumes failed: 403 Forbidden"
+        )
 
 
 class TestCollectCostsBackoff:

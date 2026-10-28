@@ -2,11 +2,12 @@
 
 Prices checked 2026-10-11. When ``COST_AWS_PRICING_ENABLED`` is set, the
 latest :class:`~cabotage.server.models.cost.CostPriceSnapshot` (refreshed from
-the AWS Price List API) is layered on top. Any key may then be overridden via
-the ``COST_RATES`` app config (a dict, or a JSON object string when set via the
-environment; nested dicts are merged key-by-key, not replaced wholesale). The
-effective rates are recorded on every collection run so the UI can render a
-"how costs are calculated" panel.
+the AWS Price List API) is layered on top, then rates derived from Cost
+Explorer actuals when ``COST_AWS_ACTUALS_ENABLED``. Any key may then be
+overridden via the ``COST_RATES`` app config (a dict, or a JSON object string
+when set via the environment; nested dicts are merged key-by-key, not replaced
+wholesale). The effective rates are recorded on every collection run so the UI
+can render a "how costs are calculated" panel.
 """
 
 import copy
@@ -14,6 +15,7 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import cast
 
+from cabotage.server.applets.cost.aws_actuals import actuals_rate_overrides
 from cabotage.server.applets.cost.constants import (
     DEFAULT_RATES,
     GP3_BASELINE_IOPS,
@@ -25,7 +27,8 @@ from cabotage.server.models.cost import CostPriceSnapshot
 
 def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
     """Return :data:`DEFAULT_RATES`, then the latest AWS price snapshot (when
-    ``COST_AWS_PRICING_ENABLED``), then any ``COST_RATES`` overrides.
+    ``COST_AWS_PRICING_ENABLED``), then Cost Explorer actuals (when
+    ``COST_AWS_ACTUALS_ENABLED``), then any ``COST_RATES`` overrides.
 
     ``config`` is a Flask config mapping; defaults to ``current_app.config``.
     The result is a plain, JSON-serializable dict safe to persist on a
@@ -40,6 +43,9 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
         snapshot = CostPriceSnapshot.latest()
         if snapshot is not None:
             _merge_into(rates, dict(snapshot.rates))
+    if config.get("COST_AWS_ACTUALS_ENABLED"):
+        # Replace, don't merge: drops default fixed costs the cluster lacks.
+        rates.update(actuals_rate_overrides())
     overrides_raw = config.get("COST_RATES")
     # Set via CABOTAGE_COST_RATES, MetaFlaskEnv leaves a JSON object as a str.
     if isinstance(overrides_raw, str):
@@ -69,7 +75,13 @@ def effective_rates(config: Mapping[str, object] | None = None) -> CostRates:
 
 
 _RATE_KEYS = CostRates.__required_keys__ | CostRates.__optional_keys__
-_SCALAR_RATE_KEYS = {"vcpu_hour", "memory_gib_hour", "storage_gib_month", "egress_gb"}
+_SCALAR_RATE_KEYS = {
+    "vcpu_hour",
+    "memory_gib_hour",
+    "storage_gib_month",
+    "egress_gb",
+    "network_gb",
+}
 _PRICE_MAP_KEYS = {
     "fixed_hourly",
     "node_family_xlarge_hourly",
