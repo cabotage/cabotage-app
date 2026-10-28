@@ -146,6 +146,12 @@ class SentNotification(Model):
         default=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
         onupdate=lambda: datetime.datetime.now(datetime.UTC).replace(tzinfo=None),
     )
+    # Set when the reconciler re-sends this message's terminal state, so it does
+    # so once. Cleared whenever a regular dispatch updates the message, which
+    # makes it eligible for one more reconcile pass.
+    reconciled_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
 
     organization = relationship("Organization")
 
