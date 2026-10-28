@@ -2,7 +2,7 @@
 
 Each refresh stores the trailing days' actuals and rewrites their true-up line
 items (``aws_day`` set, no ``run_id``) so each day's line items sum to its
-actuals. Amounts are gross usage, before credits.
+actuals. Amounts are amortized cost before credits, refunds and tax.
 """
 
 import datetime
@@ -111,7 +111,7 @@ def fetch_daily_buckets(
         request: GetCostAndUsageRequestTypeDef = {
             "TimePeriod": {"Start": first_day.isoformat(), "End": end_day.isoformat()},
             "Granularity": "DAILY",
-            "Metrics": ["UnblendedCost"],
+            "Metrics": ["AmortizedCost"],
             "Filter": cost_filter,
             "GroupBy": [{"Type": "DIMENSION", "Key": "USAGE_TYPE"}],
         }
@@ -126,7 +126,7 @@ def fetch_daily_buckets(
             for group in result.get("Groups", []):
                 keys = group.get("Keys")
                 metrics = group.get("Metrics")
-                metric = metrics.get("UnblendedCost") if metrics else None
+                metric = metrics.get("AmortizedCost") if metrics else None
                 amount = metric.get("Amount") if metric else None
                 if keys and amount and float(amount):
                     by_day[day][bucket_for_usage_type(keys[0])] += float(amount)
@@ -139,7 +139,14 @@ def fetch_daily_buckets(
 def _actuals_filter(config: Mapping[str, object]) -> ExpressionTypeDef:
     services = _config_list(config.get("COST_AWS_ACTUALS_SERVICES"))
     expressions: list[ExpressionTypeDef] = [
-        {"Dimensions": {"Key": "RECORD_TYPE", "Values": ["Usage"]}},
+        {
+            "Not": {
+                "Dimensions": {
+                    "Key": "RECORD_TYPE",
+                    "Values": ["Credit", "Refund", "Tax"],
+                }
+            }
+        },
         {"Dimensions": {"Key": "REGION", "Values": [str(config["COST_AWS_REGION"])]}},
         {
             "Dimensions": {
