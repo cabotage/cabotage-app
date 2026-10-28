@@ -322,13 +322,23 @@ RATE_LINE_ITEMS: list[tuple[str, str, str, str, str | None]] = [
     ("memory", "Memory", "memory_gib_hour", "USD/GiB-hr", None),
     ("storage", "Storage", "storage_gib_month", "USD/GiB-mo", None),
     ("egress", "Egress", "egress_gb", "USD/GB", None),
+    (
+        "network",
+        "Network",
+        "network_gb",
+        "USD/GB",
+        "pod bytes sent + received; covers cross-AZ transfer",
+    ),
 ]
 
-FIXED_RATE_ITEMS: list[tuple[str, str]] = [
-    ("eks_control_plane", "EKS control plane"),
-    ("nat_gateway", "NAT gateway"),
-    ("load_balancer", "Load balancer"),
-]
+FIXED_RATE_LABELS: dict[str, str] = {
+    "eks_control_plane": "EKS control plane",
+    "nat_gateway": "NAT gateway",
+    "load_balancer": "Load balancer",
+    "public_ipv4": "Public IPv4",
+    "unattributed_storage": "Unattributed EBS volumes",
+    "other": "Other AWS",
+}
 
 WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 

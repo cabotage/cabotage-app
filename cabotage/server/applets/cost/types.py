@@ -226,6 +226,9 @@ class CapacitySeries(TypedDict):
 
 
 class ReconciliationStats(TypedDict):
+    """Over only the hours that have node data."""
+
+    hours: int
     cluster_compute: float
     fixed_overhead: float
     tenant_direct: float
@@ -233,6 +236,36 @@ class ReconciliationStats(TypedDict):
     unallocated_idle: float
     total: float
     residual: float
+    aws: NotRequired[AwsReconciliation]
+
+
+class AwsBucketRow(TypedDict):
+    key: str
+    label: str
+    cost: float
+
+
+class AwsReconciliation(TypedDict):
+    """Cost Explorer actuals vs. allocated, over days that have actuals."""
+
+    days: int
+    first_day: str
+    last_day: str
+    actual: float
+    allocated: float
+    true_up: float
+    difference: float
+    buckets: list[AwsBucketRow]
+
+
+class PlatformComponentRow(TypedDict):
+    name: str
+    cpu_billed_hours: float
+    memory_billed_gib_hours: float
+    network_gb: float
+    storage_gib_month: float
+    cost: float
+    share: float
 
 
 class NodeRow(TypedDict):
@@ -277,6 +310,7 @@ class PlatformBlock(TypedDict):
     node_inventory: NodeInventoryStats
     unallocated: UnallocatedStats
     top_orgs_series: SeriesBreakdownEntry
+    platform_components: list[PlatformComponentRow]
 
 
 class RateLineItem(TypedDict):
