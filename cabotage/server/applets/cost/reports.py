@@ -732,7 +732,7 @@ def _run_rate_hourly(scope: CostScope, now: datetime.datetime) -> float | None:
 
 
 def _covered_hours(start: datetime.datetime, end: datetime.datetime) -> int:
-    """Hours with a succeeded run, plus all hours of days with AWS actuals."""
+    """Hours with a succeeded run, plus all hours of days with AWS true-ups."""
     end_hour = end.replace(minute=0, second=0, microsecond=0)
     run_hours: set[datetime.datetime] = {
         as_utc(period_start)
@@ -746,8 +746,10 @@ def _covered_hours(start: datetime.datetime, end: datetime.datetime) -> int:
     }
     actual_days: list[datetime.date] = [
         day
-        for (day,) in db.session.query(CostAwsDaily.day)
-        .filter(CostAwsDaily.day >= start.date(), CostAwsDaily.day < end_hour.date())
+        for (day,) in db.session.query(CostLineItem.aws_day)
+        .filter(
+            CostLineItem.aws_day >= start.date(), CostLineItem.aws_day < end_hour.date()
+        )
         .distinct()
         .all()
     ]
