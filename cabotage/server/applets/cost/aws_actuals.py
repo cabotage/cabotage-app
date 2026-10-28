@@ -350,12 +350,15 @@ def actuals_rate_overrides() -> dict[str, object]:
     hours = len(runs)
 
     overrides: dict[str, object] = {}
-    network_gb = sum(
-        float((run.stats or {}).get("network_gb_total", 0.0)) for run in runs
-    )
+    network_hours = [
+        gb
+        for run in runs
+        if (gb := (run.stats or {}).get("network_gb_total")) is not None
+    ]
+    network_gb = sum(network_hours)
     cross_az = buckets.get("cross_az", 0.0)
     if network_gb > 0 and cross_az > 0:
-        overrides["network_gb"] = cross_az / network_gb
+        overrides["network_gb"] = cross_az / (network_gb * 24 / len(network_hours))
 
     storage_priced = (
         db.session.query(
