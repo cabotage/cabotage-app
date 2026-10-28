@@ -60,3 +60,5 @@ __all__ = (
     "send_notification",
     "teardown_tailscale_operator",
 )
+
+from .feedback import dispatch_feedback_notification  # noqa: F401
