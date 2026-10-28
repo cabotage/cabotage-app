@@ -574,6 +574,7 @@ def send_notification(
         integration=integration,
         channel_id=channel_id,
     ).first()
+    existing_id: _uuid.UUID | None = existing.id if existing else None
 
     try:
         if existing:
@@ -647,9 +648,30 @@ def send_notification(
         return
     except DiscordRateLimitedError as exc:
         db.session.rollback()
+        if reconcile and self.request.retries >= self.max_retries:
+            _release_reconcile_claim(existing_id)
         raise self.retry(exc=exc, countdown=max(exc.retry_after, 1.0))
     except Exception as exc:
+        if reconcile and self.request.retries >= self.max_retries:
+            _release_reconcile_claim(existing_id)
         raise self.retry(exc=exc)
+
+
+def _release_reconcile_claim(sent_id: _uuid.UUID | None) -> None:
+    """Let the reconciler try a failed re-send again.
+
+    The reconciler sets ``reconciled_at`` when it queues a re-send, so a backed
+    up queue can't make it queue the same message twice. Once that re-send has
+    run out of retries, clearing the mark makes the message eligible again after
+    RECONCILE_STALE_THRESHOLD (the update also bumps ``updated_at``).
+    """
+    if sent_id is None:
+        return
+    db.session.rollback()
+    SentNotification.query.filter_by(id=sent_id).update(
+        {"reconciled_at": None}, synchronize_session=False
+    )
+    db.session.commit()
 
 
 def _dispatch_alert_notification_impl(alert_id):
