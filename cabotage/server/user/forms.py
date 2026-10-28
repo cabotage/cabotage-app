@@ -50,6 +50,10 @@ def _normalize_branch(value: str | None) -> str | None:
     return (value or "").strip() or None
 
 
+def _strip(value: str | None) -> str | None:
+    return value.strip() if value else value
+
+
 class ExtendedLoginForm(LoginForm):
     email = StringField("Username or Email Address", [InputRequired()])
 
@@ -513,6 +517,7 @@ class EditApplicationSettingsForm(FlaskForm):
             "It should respond quickly with a simple HTTP 200 OK. "
             "Requires a new release to take effect."
         ),
+        filters=[_strip],
     )
     health_check_host = StringField(
         "HTTP Health Check Host Header",
@@ -808,6 +813,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "HTTP Health Check Path",
         [Optional()],
         description="Path for health check probes",
+        filters=[_strip],
     )
     health_check_host = StringField(
         "HTTP Health Check Host Header",
