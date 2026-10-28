@@ -1045,6 +1045,42 @@ class TestBuildReportBasics:
         assert mystery["idle_cost"] is None
         assert mystery["cpu_requested"] == pytest.approx(1.0)
 
+    def test_platform_nodes_keep_reused_names_apart(self, app):
+        """An EKS ip-name recycled onto a different machine is two nodes."""
+        name = "ip-10-0-0-1.us-east-2.compute.internal"
+        old = _add_node_hour(
+            _add_run(_floor_hour(NOW) - datetime.timedelta(hours=3)),
+            name,
+            cost=1.0,
+            idle=0.5,
+            cpu_request=1.0,
+        )
+        new = _add_node_hour(
+            _add_run(_floor_hour(NOW) - datetime.timedelta(hours=2)),
+            name,
+            cost=3.0,
+            idle=0.5,
+            cpu_request=12.0,
+        )
+        new.instance_type = "c8g.4xlarge"
+        new.cpu_capacity = 16.0
+        new.memory_gib = 32.0
+        db.session.commit()
+
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+        rows = {
+            n["instance_type"]: n
+            for n in report["platform"]["nodes"]
+            if n["name"] == name
+        }
+
+        assert set(rows) == {old.instance_type, "c8g.4xlarge"}
+        assert rows["c8g.4xlarge"]["cpu_capacity"] == 16.0
+        assert rows["c8g.4xlarge"]["cpu_requested"] == pytest.approx(12.0)
+        assert rows["c8g.4xlarge"]["cost"] == pytest.approx(3.0)
+        assert rows[old.instance_type]["cpu_capacity"] == 4.0
+        assert rows[old.instance_type]["cpu_requested"] == pytest.approx(1.0)
+
     def test_platform_node_inventory_reports_latest_run(self, app):
         _add_run(
             _floor_hour(NOW) - datetime.timedelta(hours=3),

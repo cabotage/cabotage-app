@@ -1477,9 +1477,12 @@ def _platform_capacity_series(
 
 def _platform_nodes(start: datetime.datetime, end: datetime.datetime) -> list[NodeRow]:
     """Every node that ran pods in the range, from the collector's per-node
-    hours: capacity is the node's latest, load is hour-weighted averages,
-    dollars are summed. A node that was only ever unpriced has None costs;
-    one priced for part of the range sums the priced hours.
+    hours: load is hour-weighted averages, dollars are summed.
+
+    A row is a node name plus the type and capacity it was collected with,
+    so a name reused by a different machine (EKS ``ip-…`` names follow
+    recycled IPs) gets its own row instead of blending two machines, and
+    hours collected while the node was unpriced show apart from priced ones.
     """
     rows: list[
         Row[
@@ -1503,12 +1506,10 @@ def _platform_nodes(start: datetime.datetime, end: datetime.datetime) -> list[No
     ] = (
         db.session.query(
             CostNodeHour.node_name,
-            # A node's type and capacity never change, so any non-null value
-            # stands for the whole range.
-            func.max(CostNodeHour.instance_type).label("instance_type"),
-            func.max(CostNodeHour.capacity_type).label("capacity_type"),
-            func.max(CostNodeHour.cpu_capacity).label("cpu_capacity"),
-            func.max(CostNodeHour.memory_gib).label("memory_gib"),
+            CostNodeHour.instance_type,
+            CostNodeHour.capacity_type,
+            CostNodeHour.cpu_capacity,
+            CostNodeHour.memory_gib,
             func.sum(CostNodeHour.node_hours).label("node_hours"),
             func.sum(CostNodeHour.cpu_request_hours).label("cpu_request_hours"),
             func.sum(CostNodeHour.cpu_usage_hours).label("cpu_usage_hours"),
@@ -1520,7 +1521,13 @@ def _platform_nodes(start: datetime.datetime, end: datetime.datetime) -> list[No
             func.sum(CostNodeHour.idle_cost_usd).label("idle_cost"),
         )
         .filter(CostNodeHour.period_start >= start, CostNodeHour.period_start < end)
-        .group_by(CostNodeHour.node_name)
+        .group_by(
+            CostNodeHour.node_name,
+            CostNodeHour.instance_type,
+            CostNodeHour.capacity_type,
+            CostNodeHour.cpu_capacity,
+            CostNodeHour.memory_gib,
+        )
         .all()
     )
 
