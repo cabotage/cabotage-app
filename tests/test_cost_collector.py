@@ -2,18 +2,25 @@
 
 import datetime
 import uuid
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from flask_security import hash_password
+from kubernetes.client.exceptions import ApiException
 
 from cabotage.celery.tasks.cost import collect_costs
 from cabotage.server import db
 from cabotage.server.applets.cost.collector import collect_hour
 from cabotage.server.applets.cost.constants import FAILED_HOUR_RETRY_AFTER
+from cabotage.server.applets.cost.rates import node_hourly_price
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
+from cabotage.server.models.cost import (
+    CostCollectionRun,
+    CostLineItem,
+    CostNode,
+    CostNodeHour,
+)
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -182,11 +189,14 @@ def orgless_app_env(app):
     db.session.commit()
 
 
-def _series(namespace, pod, points):
+def _series(namespace, pod, points, node=None):
     """Build one Mimir range-query series: points = [(offset_seconds, value)]."""
     base = int(PERIOD_START.timestamp())
+    metric = {"namespace": namespace, "pod": pod}
+    if node is not None:
+        metric["node"] = node
     return {
-        "metric": {"namespace": namespace, "pod": pod},
+        "metric": metric,
         "values": [[base + offset, str(value)] for offset, value in points],
     }
 
@@ -202,7 +212,7 @@ def _second_half_hour(value):
 GIB = 1024.0**3
 
 
-def _mimir_stub(responses, pod_labels, traefik=None, node_presence=None, raise_on=None):
+def _mimir_stub(responses, pod_labels, traefik=None, raise_on=None):
     """responses: dict query-substring -> list[series]."""
 
     def query_range(query, start, end, step, tenant_id=None):
@@ -211,8 +221,6 @@ def _mimir_stub(responses, pod_labels, traefik=None, node_presence=None, raise_o
         for substr, result in responses.items():
             if substr in query:
                 return result
-        if "count by (instance)" in query:
-            return node_presence or []
         return []
 
     def query_instant(query, tenant_id=None, time=None):
@@ -532,71 +540,148 @@ class TestCostCollector:
         assert run.stats["pods_unallocated"] >= 1
         assert not any(i.component == "coredns" for i in items)
 
-    def test_overhead_pool_split_sums_to_pool(
+    def test_node_idle_capacity_feeds_the_overhead_pool(
         self, app, org, project, environment, application, app_env
     ):
         namespace = org.k8s_identifier
         app_pod = "api-web-abc12-xyz34"
+        node_name = f"i-{uuid.uuid4().hex[:12]}"
+        # The app pod is attributed; the kube-system pod isn't, but it still
+        # occupies the node, bursting past its request.
         responses = {
             "rate(container_cpu_usage_seconds_total": [
-                _series(namespace, app_pod, _full_hour(0.5))
+                _series(namespace, app_pod, _full_hour(0.5), node=node_name),
+                _series("kube-system", "coredns-1", _full_hour(3.0), node=node_name),
             ],
             "container_memory_working_set_bytes{": [
-                _series(namespace, app_pod, _full_hour(0.5 * GIB))
+                _series(namespace, app_pod, _full_hour(0.5 * GIB), node=node_name),
             ],
-            'resource="cpu"': [_series(namespace, app_pod, _full_hour(1.0))],
-            'resource="memory"': [_series(namespace, app_pod, _full_hour(1.0 * GIB))],
+            'resource="cpu"': [
+                _series(namespace, app_pod, _full_hour(1.0), node=node_name),
+                _series("kube-system", "coredns-1", _full_hour(2.0), node=node_name),
+            ],
+            'resource="memory"': [
+                _series(namespace, app_pod, _full_hour(1.0 * GIB), node=node_name),
+            ],
         }
-        pod_labels = [
-            {
-                "metric": {
-                    "namespace": namespace,
-                    "pod": app_pod,
-                    "label_cabotage_io_organization": org.k8s_identifier,
-                    "label_cabotage_io_project": project.k8s_identifier,
-                    "label_cabotage_io_application": application.k8s_identifier,
-                    "label_process": "web",
-                }
-            }
-        ]
-        node_name = "ip-10-0-0-1.us-east-2.compute.internal"
-        CostNode.query.filter_by(name=node_name).delete()
-        node = CostNode(
-            name=node_name,
-            instance_type="m8g.xlarge",
-            capacity_type="on-demand",
-            cpu_capacity=4,
-            memory_gib=16,
+        pod_labels = _app_pod_labels(org, project, application, app_pod)
+        db.session.add(
+            CostNode(
+                name=node_name,
+                instance_type="m8g.xlarge",
+                capacity_type="on-demand",
+                cpu_capacity=4,
+                memory_gib=16,
+            )
         )
-        db.session.add(node)
         db.session.flush()
-        node_presence = [
-            {
-                "metric": {"instance": "ip-10-0-0-1.us-east-2.compute.internal:10250"},
-                "values": [
-                    [int(PERIOD_START.timestamp()) + s * 300, "1"] for s in range(12)
-                ],
-            }
-        ]
-        query_range, query_instant = _mimir_stub(
-            responses, pod_labels, node_presence=node_presence
+        try:
+            run = _collect_with(responses, pod_labels)
+            node_hour = CostNodeHour.query.filter_by(run_id=run.id).one()
+            overhead_total = sum(
+                float(i.cost_usd)
+                for i in CostLineItem.query.filter_by(
+                    run_id=run.id, category="overhead"
+                )
+            )
+        finally:
+            CostNode.query.filter_by(name=node_name).delete()
+            db.session.commit()
+
+        rates = run.rates
+        price = node_hourly_price("m8g.xlarge", rates, cpu_capacity=4, memory_gib=16)
+        per_unit = price / (4 * rates["vcpu_hour"] + 16 * rates["memory_gib_hour"])
+        billed_value = per_unit * (
+            (1.0 + 3.0) * rates["vcpu_hour"] + 1.0 * rates["memory_gib_hour"]
         )
-        with (
-            patch("cabotage.utils.mimir.query_range", side_effect=query_range),
-            patch("cabotage.utils.mimir.query_instant", side_effect=query_instant),
-        ):
-            run = collect_hour(PERIOD_START)
 
         assert run.status == "succeeded"
-        overhead_items = CostLineItem.query.filter_by(
-            run_id=run.id, category="overhead"
-        ).all()
-        assert overhead_items
-        total_overhead = sum(float(i.cost_usd) for i in overhead_items)
-        assert total_overhead == pytest.approx(run.stats["overhead_pool"], rel=1e-6)
+        assert run.stats["node_inventory_error"] is None
+        assert run.stats["nodes_unpriced"] == 0
+        assert node_hour.node_name == node_name
+        assert node_hour.node_hours == pytest.approx(1.0)
+        assert node_hour.cpu_request_hours == pytest.approx(3.0)
+        assert node_hour.cpu_usage_hours == pytest.approx(3.5)
+        assert node_hour.cpu_billed_hours == pytest.approx(4.0)
+        assert node_hour.memory_billed_gib_hours == pytest.approx(1.0)
+        assert float(node_hour.cost_usd) == pytest.approx(price, rel=1e-5)
+        assert float(node_hour.idle_cost_usd) == pytest.approx(
+            price - billed_value, rel=1e-5
+        )
+        assert run.stats["cluster_compute_cost"] == pytest.approx(price, rel=1e-6)
+        tenant_direct = run.stats["tenant_compute_cost"]
+        assert run.stats["overhead_pool"] == pytest.approx(
+            price - tenant_direct + run.stats["fixed_overhead"], rel=1e-6
+        )
+        assert overhead_total == pytest.approx(run.stats["overhead_pool"], rel=1e-5)
 
-        CostNode.query.filter_by(name=node_name).delete()
-        db.session.commit()
+    def test_rescheduled_pod_splits_across_nodes_without_double_billing(
+        self, app, org, project, environment, application, app_env
+    ):
+        namespace = org.k8s_identifier
+        pod = "api-web-abc12-xyz34"
+        first_half = [(step * 300, 1.0) for step in range(6)]
+        second_half = [(step * 300, 1.0) for step in range(6, 12)]
+        responses = {
+            "rate(container_cpu_usage_seconds_total": [
+                _series(namespace, pod, first_half, node="node-a"),
+                _series(namespace, pod, second_half, node="node-b"),
+                # Same samples from before Alloy labelled cAdvisor by node.
+                _series(namespace, pod, _full_hour(1.0)),
+            ],
+            'resource="cpu"': [
+                _series(namespace, pod, first_half, node="node-a"),
+                _series(namespace, pod, second_half, node="node-b"),
+            ],
+        }
+        run = _collect_with(responses, _app_pod_labels(org, project, application, pod))
+
+        by_node = {
+            row.node_name: row
+            for row in CostNodeHour.query.filter_by(run_id=run.id).all()
+        }
+        vcpu = CostLineItem.query.filter_by(run_id=run.id, meter="vcpu").one()
+        assert set(by_node) == {"node-a", "node-b"}
+        for row in by_node.values():
+            assert row.node_hours == pytest.approx(0.5)
+            assert row.cpu_request_hours == pytest.approx(0.5)
+            assert row.cost_usd is None
+        assert run.stats["nodes_unpriced"] == 2
+        assert run.stats["cluster_compute_cost"] == 0.0
+        # Neither summed (the overlapping unlabelled series) nor dropped (the
+        # node-a half of the request).
+        assert vcpu.usage_quantity == pytest.approx(1.0)
+        assert vcpu.request_quantity == pytest.approx(1.0)
+        assert vcpu.quantity == pytest.approx(1.0)
+
+    def test_node_list_failure_is_recorded_on_the_run(
+        self, app, org, project, environment, application, app_env
+    ):
+        pod = "api-web-abc12-xyz34"
+        responses = {
+            'resource="cpu"': [
+                _series(org.k8s_identifier, pod, _full_hour(1.0), node="node-a")
+            ]
+        }
+        core_api = MagicMock()
+        core_api.list_node.side_effect = ApiException(status=403, reason="Forbidden")
+        app.config["KUBERNETES_ENABLED"] = True
+        with (
+            patch("cabotage.server.applets.cost.collector.kubernetes_ext"),
+            patch(
+                "cabotage.server.applets.cost.collector.kubernetes.client.CoreV1Api",
+                return_value=core_api,
+            ),
+        ):
+            run = _collect_with(
+                responses, _app_pod_labels(org, project, application, pod)
+            )
+
+        assert run.status == "succeeded"
+        assert (
+            run.stats["node_inventory_error"] == "listing nodes failed: 403 Forbidden"
+        )
+        assert run.stats["nodes_unpriced"] == 1
 
     def test_idempotent_rerun_replaces_rows(
         self, app, org, project, environment, application, app_env

@@ -225,12 +225,32 @@ class ReconciliationStats(TypedDict):
 
 
 class NodeRow(TypedDict):
+    """One node over the report range. CPU/memory figures are hour-weighted
+    averages (vCPU, GiB); dollar figures are None when the node was never
+    priced (unknown instance type or capacity)."""
+
+    name: str
     instance_type: str | None
     capacity_type: str | None
-    count: int
+    cpu_capacity: float | None
+    memory_gib: float | None
     node_hours: float
-    hourly: float
-    cost: float
+    cpu_requested: float
+    cpu_used: float
+    memory_requested: float
+    memory_used: float
+    cost: float | None
+    requested_cost: float | None
+    used_cost: float | None
+    idle_cost: float | None
+
+
+class NodeInventoryStats(TypedDict):
+    """Node pricing health as of the latest collected hour."""
+
+    period_start: str | None
+    error: str | None
+    nodes_unpriced: int
 
 
 class UnallocatedStats(TypedDict):
@@ -243,6 +263,7 @@ class PlatformBlock(TypedDict):
     reconciliation: ReconciliationStats
     capacity_series: CapacitySeries
     nodes: list[NodeRow]
+    node_inventory: NodeInventoryStats
     unallocated: UnallocatedStats
     top_orgs_series: SeriesBreakdownEntry
 

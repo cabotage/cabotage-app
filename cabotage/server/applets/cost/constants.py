@@ -108,25 +108,27 @@ COMPONENT_MAX_LEN = 64
 
 BUILD_POD_RE = re.compile(r"^(?:image|release|omnibus)build-([0-9a-f]{8})-")
 
+# Every pod query also keeps `node` (native on kube-state-metrics; Alloy adds
+# it to cAdvisor) so per-pod usage can be rolled up per node.
 CPU_USAGE_QUERY = (
-    "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total"
+    "sum by (namespace, pod, node) (rate(container_cpu_usage_seconds_total"
     '{container!="",container!="POD"}[5m]))'
 )
 
 MEM_USAGE_QUERY = (
-    "sum by (namespace, pod) (container_memory_working_set_bytes"
+    "sum by (namespace, pod, node) (container_memory_working_set_bytes"
     '{container!="",container!="POD"})'
 )
 
 CPU_REQUEST_QUERY = (
-    'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="cpu"})'
+    "sum by (namespace, pod, node) "
+    '(kube_pod_container_resource_requests{resource="cpu"})'
 )
 
 MEM_REQUEST_QUERY = (
-    'sum by (namespace, pod) (kube_pod_container_resource_requests{resource="memory"})'
+    "sum by (namespace, pod, node) "
+    '(kube_pod_container_resource_requests{resource="memory"})'
 )
-
-NODE_PRESENCE_QUERY = "count by (instance) (container_memory_working_set_bytes)"
 
 # Range lookback at period_end so pods that terminated mid-hour (builds,
 # replaced replicas) still have labels to attribute their usage samples.

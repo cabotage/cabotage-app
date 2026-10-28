@@ -11,6 +11,7 @@ import datetime
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import cast
 
 from flask import current_app
@@ -57,6 +58,7 @@ from cabotage.server.applets.cost.types import (
     MeterRow,
     MoverRow,
     NameResolver,
+    NodeInventoryStats,
     NodeRow,
     PlatformBlock,
     PriceTier,
@@ -74,6 +76,7 @@ from cabotage.server.models.cost import (
     CostCollectionRun,
     CostLineItem,
     CostNode,
+    CostNodeHour,
 )
 from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.models.resources import Resource
@@ -283,7 +286,8 @@ def build_report(
             "capacity_series": _platform_capacity_series(
                 scope, range_start, range_end, interval, buckets, rates
             ),
-            "nodes": _platform_nodes(rates, range_start, range_end),
+            "nodes": _platform_nodes(range_start, range_end),
+            "node_inventory": _platform_node_inventory(),
             "unallocated": _platform_unallocated(range_start, range_end),
             "top_orgs_series": series["breakdowns"].get(
                 "organizations", empty_breakdown
@@ -1471,52 +1475,107 @@ def _platform_capacity_series(
     }
 
 
-def _platform_nodes(
-    rates: CostRates, start: datetime.datetime, end: datetime.datetime
-) -> list[NodeRow]:
-    """Grouped by instance type: `node_hours` approximates every node in
-    that group as present for the whole requested range (true per-node
-    hourly presence isn't persisted — only the live collector's aggregate
-    `node_hours` stat is, which isn't broken out by type).
+def _platform_nodes(start: datetime.datetime, end: datetime.datetime) -> list[NodeRow]:
+    """Every node that ran pods in the range, from the collector's per-node
+    hours: load is hour-weighted averages, dollars are summed.
+
+    A row is a node name plus the type and capacity it was collected with,
+    so a name reused by a different machine (EKS ``ip-…`` names follow
+    recycled IPs) gets its own row instead of blending two machines, and
+    hours collected while the node was unpriced show apart from priced ones.
     """
-    hours_in_range = max((end - start).total_seconds() / 3600.0, 0.0)
-    rows = (
+    rows: list[
+        Row[
+            tuple[
+                str,
+                str | None,
+                str | None,
+                float | None,
+                float | None,
+                float,
+                float,
+                float,
+                float,
+                float,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+            ]
+        ]
+    ] = (
         db.session.query(
-            CostNode.instance_type,
-            CostNode.capacity_type,
-            # Labeled "node_count", not "count": SQLAlchemy Row objects
-            # inherit tuple.count(), which would shadow a `.count` column
-            # attribute.
-            func.count().label("node_count"),
-            func.avg(CostNode.cpu_capacity).label("cpu_capacity"),
-            func.avg(CostNode.memory_gib).label("memory_gib"),
+            CostNodeHour.node_name,
+            CostNodeHour.instance_type,
+            CostNodeHour.capacity_type,
+            CostNodeHour.cpu_capacity,
+            CostNodeHour.memory_gib,
+            func.sum(CostNodeHour.node_hours).label("node_hours"),
+            func.sum(CostNodeHour.cpu_request_hours).label("cpu_request_hours"),
+            func.sum(CostNodeHour.cpu_usage_hours).label("cpu_usage_hours"),
+            func.sum(CostNodeHour.memory_request_gib_hours).label("mem_request"),
+            func.sum(CostNodeHour.memory_usage_gib_hours).label("mem_usage"),
+            func.sum(CostNodeHour.cost_usd).label("cost"),
+            func.sum(CostNodeHour.requested_cost_usd).label("requested_cost"),
+            func.sum(CostNodeHour.used_cost_usd).label("used_cost"),
+            func.sum(CostNodeHour.idle_cost_usd).label("idle_cost"),
         )
-        .filter(CostNode.instance_type.isnot(None), CostNode.last_seen >= start)
-        .group_by(CostNode.instance_type, CostNode.capacity_type)
+        .filter(CostNodeHour.period_start >= start, CostNodeHour.period_start < end)
+        .group_by(
+            CostNodeHour.node_name,
+            CostNodeHour.instance_type,
+            CostNodeHour.capacity_type,
+            CostNodeHour.cpu_capacity,
+            CostNodeHour.memory_gib,
+        )
         .all()
     )
+
     nodes: list[NodeRow] = []
     for row in rows:
-        hourly = node_hourly_price(
-            row.instance_type,
-            rates,
-            cpu_capacity=row.cpu_capacity,
-            memory_gib=row.memory_gib,
+        node_hours = float(row.node_hours or 0.0)
+        # Per-hour averages; node_hours is never zero for a stored row.
+        per_hour = 1.0 / node_hours if node_hours else 0.0
+        cost = float(row.cost) if row.cost is not None else None
+        requested_cost = (
+            float(row.requested_cost) if row.requested_cost is not None else None
         )
-        node_count: int = row.node_count
-        node_hours = node_count * hours_in_range
+        used_cost = float(row.used_cost) if row.used_cost is not None else None
+        idle_cost = float(row.idle_cost) if row.idle_cost is not None else None
         nodes.append(
             {
+                "name": row.node_name,
                 "instance_type": row.instance_type,
                 "capacity_type": row.capacity_type,
-                "count": node_count,
+                "cpu_capacity": row.cpu_capacity,
+                "memory_gib": row.memory_gib,
                 "node_hours": node_hours,
-                "hourly": hourly,
-                "cost": node_hours * hourly,
+                "cpu_requested": float(row.cpu_request_hours or 0.0) * per_hour,
+                "cpu_used": float(row.cpu_usage_hours or 0.0) * per_hour,
+                "memory_requested": float(row.mem_request or 0.0) * per_hour,
+                "memory_used": float(row.mem_usage or 0.0) * per_hour,
+                "cost": cost,
+                "requested_cost": requested_cost,
+                "used_cost": used_cost,
+                "idle_cost": idle_cost,
             }
         )
-    nodes.sort(key=lambda n: n["cost"], reverse=True)
+    nodes.sort(key=lambda n: (n["cost"] is None, -(n["cost"] or 0.0), n["name"]))
     return nodes
+
+
+def _platform_node_inventory() -> NodeInventoryStats:
+    latest: CostCollectionRun | None = (
+        CostCollectionRun.query.filter_by(status="succeeded")
+        .order_by(CostCollectionRun.period_start.desc())
+        .first()
+    )
+    stats = (latest.stats or {}) if latest is not None else {}
+    return {
+        "period_start": latest.period_start.isoformat() if latest is not None else None,
+        "error": stats.get("node_inventory_error"),
+        "nodes_unpriced": int(stats.get("nodes_unpriced") or 0),
+    }
 
 
 def _platform_unallocated(

@@ -12,7 +12,12 @@ from cabotage.server import db
 from cabotage.server.applets.cost.reports import CostScope, build_report
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
+from cabotage.server.models.cost import (
+    CostCollectionRun,
+    CostLineItem,
+    CostNode,
+    CostNodeHour,
+)
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -230,6 +235,32 @@ def _add_hour_cost(hour, cost, **item_kwargs):
 
 def _floor_hour(dt):
     return dt.replace(minute=0, second=0, microsecond=0)
+
+
+def _add_node_hour(run, name, *, cost, idle, cpu_request):
+    priced = cost is not None
+    row = CostNodeHour(
+        run_id=run.id,
+        period_start=run.period_start,
+        node_name=name,
+        instance_type="m8g.xlarge" if priced else None,
+        capacity_type="on-demand" if priced else None,
+        cpu_capacity=4.0 if priced else None,
+        memory_gib=16.0 if priced else None,
+        node_hours=1.0,
+        cpu_request_hours=cpu_request,
+        cpu_usage_hours=cpu_request / 2,
+        cpu_billed_hours=cpu_request,
+        memory_request_gib_hours=8.0,
+        memory_usage_gib_hours=4.0,
+        memory_billed_gib_hours=8.0,
+        cost_usd=cost,
+        requested_cost_usd=(cost - idle) if priced else None,
+        used_cost_usd=(cost - idle) / 2 if priced else None,
+        idle_cost_usd=idle,
+    )
+    db.session.add(row)
+    return row
 
 
 class TestBuildReportBasics:
@@ -955,7 +986,7 @@ class TestBuildReportBasics:
         report = build_report(CostScope(kind="platform"), "90d", now=NOW)
         assert report["freshness"]["missing_hours"] == 0
 
-    def test_platform_nodes_and_rates_only_count_recent_nodes(self, app):
+    def test_rates_only_list_recently_seen_node_types(self, app):
         suffix = uuid.uuid4().hex[:8]
         stale = CostNode(
             name=f"stale-{suffix}",
@@ -981,12 +1012,98 @@ class TestBuildReportBasics:
             CostNode.query.filter(CostNode.name.in_([stale.name, live.name])).delete()
             db.session.commit()
 
-        node_types = {n["instance_type"] for n in report["platform"]["nodes"]}
-        assert "m7i.large" in node_types
-        assert "r8g.xlarge" not in node_types
         rate_nodes = {n["instance_type"]: n["hourly"] for n in report["rates"]["nodes"]}
         assert "r8g.xlarge" not in rate_nodes
         assert rate_nodes["m7i.large"] > 0
+
+    def test_platform_nodes_sum_node_hours_in_range(self, app):
+        hour = _floor_hour(NOW) - datetime.timedelta(hours=2)
+        outside = _floor_hour(NOW) - datetime.timedelta(hours=30)
+        for period_start, cost in (
+            (hour, 1.0),
+            (hour - datetime.timedelta(hours=1), 1.0),
+        ):
+            run = _add_run(period_start)
+            _add_node_hour(run, "busy", cost=cost, idle=0.25, cpu_request=3.0)
+            _add_node_hour(run, "mystery", cost=None, idle=None, cpu_request=1.0)
+        _add_node_hour(_add_run(outside), "busy", cost=50.0, idle=50.0, cpu_request=0.0)
+        db.session.commit()
+
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+        nodes = {n["name"]: n for n in report["platform"]["nodes"]}
+
+        assert list(nodes) == ["busy", "mystery"]
+        busy = nodes["busy"]
+        assert busy["node_hours"] == pytest.approx(2.0)
+        assert busy["cost"] == pytest.approx(2.0)
+        assert busy["idle_cost"] == pytest.approx(0.5)
+        # Hour-weighted average, not the summed vCPU-hours.
+        assert busy["cpu_requested"] == pytest.approx(3.0)
+        assert busy["cpu_capacity"] == 4.0
+        mystery = nodes["mystery"]
+        assert mystery["cost"] is None
+        assert mystery["idle_cost"] is None
+        assert mystery["cpu_requested"] == pytest.approx(1.0)
+
+    def test_platform_nodes_keep_reused_names_apart(self, app):
+        """An EKS ip-name recycled onto a different machine is two nodes."""
+        name = "ip-10-0-0-1.us-east-2.compute.internal"
+        old = _add_node_hour(
+            _add_run(_floor_hour(NOW) - datetime.timedelta(hours=3)),
+            name,
+            cost=1.0,
+            idle=0.5,
+            cpu_request=1.0,
+        )
+        new = _add_node_hour(
+            _add_run(_floor_hour(NOW) - datetime.timedelta(hours=2)),
+            name,
+            cost=3.0,
+            idle=0.5,
+            cpu_request=12.0,
+        )
+        new.instance_type = "c8g.4xlarge"
+        new.cpu_capacity = 16.0
+        new.memory_gib = 32.0
+        db.session.commit()
+
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+        rows = {
+            n["instance_type"]: n
+            for n in report["platform"]["nodes"]
+            if n["name"] == name
+        }
+
+        assert set(rows) == {old.instance_type, "c8g.4xlarge"}
+        assert rows["c8g.4xlarge"]["cpu_capacity"] == 16.0
+        assert rows["c8g.4xlarge"]["cpu_requested"] == pytest.approx(12.0)
+        assert rows["c8g.4xlarge"]["cost"] == pytest.approx(3.0)
+        assert rows[old.instance_type]["cpu_capacity"] == 4.0
+        assert rows[old.instance_type]["cpu_requested"] == pytest.approx(1.0)
+
+    def test_platform_node_inventory_reports_latest_run(self, app):
+        _add_run(
+            _floor_hour(NOW) - datetime.timedelta(hours=3),
+            stats={"node_inventory_error": "old", "nodes_unpriced": 9},
+        )
+        latest = _floor_hour(NOW) - datetime.timedelta(hours=2)
+        _add_run(
+            latest,
+            stats={
+                "node_inventory_error": "listing nodes failed: 403 Forbidden",
+                "nodes_unpriced": 2,
+            },
+        )
+        _add_run(_floor_hour(NOW) - datetime.timedelta(hours=1), status="failed")
+        db.session.commit()
+
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+
+        assert report["platform"]["node_inventory"] == {
+            "period_start": latest.isoformat(),
+            "error": "listing nodes failed: 403 Forbidden",
+            "nodes_unpriced": 2,
+        }
 
     def test_tenant_scope_omits_install_wide_fields(
         self, app, org, project, environment, application
