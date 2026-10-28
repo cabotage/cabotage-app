@@ -25,6 +25,7 @@ from cabotage.server.applets.cost.constants import (
     ACTUALS_LOOKBACK_DAYS,
     ACTUALS_NETWORK_BUCKETS,
     ACTUALS_OTHER_BUCKET,
+    ACTUALS_SETTLED_DAYS,
     DEFAULT_ACTUALS_SERVICES,
     TRUE_UP_COMPONENT,
 )
@@ -321,9 +322,10 @@ def _spread(
         )
 
 
-def actuals_rate_overrides() -> dict[str, object]:
-    """``network_gb`` and ``fixed_hourly`` from the latest day of actuals
-    that has collected hours."""
+def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, object]:
+    """``network_gb`` and ``fixed_hourly`` from the latest settled day of
+    actuals that has collected hours."""
+    today = today or datetime.datetime.now(datetime.UTC).date()
     latest = (
         db.session.query(sa.func.max(CostAwsDaily.day))
         .join(
@@ -333,6 +335,9 @@ def actuals_rate_overrides() -> dict[str, object]:
                 sa.func.date(sa.func.timezone("UTC", CostCollectionRun.period_start))
                 == CostAwsDaily.day,
             ),
+        )
+        .filter(
+            CostAwsDaily.day <= today - datetime.timedelta(days=ACTUALS_SETTLED_DAYS)
         )
         .scalar()
     )

@@ -98,6 +98,9 @@ DEFAULT_VOLUME_TYPE = {"ebs.csi.aws.com": "gp3", "kubernetes.io/aws-ebs": "gp2"}
 #: Cost Explorer revises recent days, so each refresh re-fetches this many.
 ACTUALS_LOOKBACK_DAYS = 7
 
+#: Rates are derived from a day at least this old, once its costs have settled.
+ACTUALS_SETTLED_DAYS = 2
+
 #: Services counted as the cluster's bill. Excludes RDS, OpenSearch, etc.
 DEFAULT_ACTUALS_SERVICES = [
     "Amazon Elastic Compute Cloud - Compute",
