@@ -11,6 +11,7 @@
   --cost-backing: oklch(0.58 0.1 195);
   --cost-storage: var(--color-success);
   --cost-egress: var(--color-warning);
+  --cost-network: oklch(0.6 0.14 300);
   --cost-build: oklch(0.5 0.1 55);
   --cost-overhead: var(--text-faint);
   --cost-up: var(--color-error, #dc2626);
@@ -24,6 +25,7 @@
   --cost-backing: #33ffc8;
   --cost-storage: #c8ff33;
   --cost-egress: #ffcc33;
+  --cost-network: #ff66ff;
   --cost-build: #33ccff;
   --cost-overhead: rgba(51, 255, 51, 0.45);
 }
@@ -36,6 +38,7 @@
   --cost-backing: #e69f00;
   --cost-storage: #009e73;
   --cost-egress: #d55e00;
+  --cost-network: #56b4e9;
   --cost-build: #cc79a7;
   --cost-overhead: #8a8a8a;
 }
@@ -391,6 +394,7 @@
           <div class="cost-chip"><span class="cost-label">Run rate /mo</span><span class="cost-chip-value num" data-chip="runrate">—</span></div>
           <div class="cost-chip"><span class="cost-label">Efficiency</span><span class="cost-chip-value num" data-chip="efficiency">—</span></div>
         </div>
+        <div class="cost-note" id="coverage-note" hidden style="padding:0 0 0.375rem;text-align:left"></div>
         <div class="cost-legend" id="chart-legend"></div>
         <div class="cost-note" id="efficiency-callout" style="display:none;padding:0.375rem 0;text-align:left"></div>
         <div class="cost-plot" data-chart="main" style="height:210px"><div class="cost-skel h-full"></div></div>
@@ -464,7 +468,20 @@
     {# ── Platform-only sections (scope_kind == 'platform'); hidden unless report.platform is present. ── #}
     <section class="cost-card cost-platform-card" aria-label="Cluster compute reconciliation" id="platform-waterfall-section" hidden>
       <span class="cost-section-title">Where cluster compute goes</span>
+      <div class="cost-note" id="platform-waterfall-note" style="text-align:left"></div>
       <div class="cost-platform-waterfall" id="platform-waterfall"></div>
+    </section>
+
+    <section class="cost-card cost-platform-card" aria-label="AWS bill vs allocated" id="platform-aws-section" hidden>
+      <span class="cost-section-title">AWS bill vs. allocated</span>
+      <div class="cost-note" id="platform-aws-note" style="text-align:left"></div>
+      <div class="cost-table-scroll">
+        <table class="cost-meters-table">
+          <thead><tr><th>AWS charge</th><th class="num">Actual</th><th class="num">Share</th></tr></thead>
+          <tbody id="platform-aws-body"></tbody>
+          <tfoot id="platform-aws-foot"></tfoot>
+        </table>
+      </div>
     </section>
 
     <section class="cost-card cost-platform-card" aria-label="Capacity vs requested vs used" id="platform-capacity-section" hidden>
@@ -504,6 +521,17 @@
       </div>
     </section>
 
+    <section class="cost-card cost-platform-card" aria-label="Platform workloads" id="platform-components-section" hidden>
+      <span class="cost-section-title">Platform workloads</span>
+      <div class="cost-note" style="text-align:left">Pods that belong to no tenant. Their cost is part of shared overhead.</div>
+      <div class="cost-table-scroll">
+        <table class="cost-meters-table">
+          <thead><tr><th>Workload</th><th class="num">vCPU-hr</th><th class="num">GiB-hr</th><th class="num">Network GB</th><th class="num">Storage GiB-mo</th><th class="num">Cost</th></tr></thead>
+          <tbody id="platform-components-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <div id="breakdown-tables"></div>
 
     <section class="cost-card mb-3" aria-label="Meters">
@@ -534,6 +562,7 @@
     { key: 'backing_service', label: 'Backing services', color: 'var(--cost-backing)' },
     { key: 'storage', label: 'Storage', color: 'var(--cost-storage)' },
     { key: 'egress', label: 'Egress', color: 'var(--cost-egress)' },
+    { key: 'network', label: 'Network', color: 'var(--cost-network)' },
     { key: 'build', label: 'Build', color: 'var(--cost-build)' },
     { key: 'overhead', label: 'Overhead', color: 'var(--cost-overhead)' }
   ];
@@ -703,7 +732,7 @@
   function isCbTheme() { return currentTheme().indexOf('cb-') === 0; }
   var CB_PATTERNS = {
     compute: 'none', backing_service: 'diagonal', storage: 'dots',
-    egress: 'cross', build: 'horizontal', overhead: 'diagonal2'
+    egress: 'cross', network: 'vertical', build: 'horizontal', overhead: 'diagonal2'
   };
   function drawHatch(ctx, x, y, w, h, kind) {
     if (!kind || kind === 'none' || w <= 0 || h <= 0) return;
@@ -730,6 +759,8 @@
       }
     } else if (kind === 'horizontal') {
       for (var hy2 = y + 2; hy2 < y + h; hy2 += step) { ctx.beginPath(); ctx.moveTo(x, hy2); ctx.lineTo(x + w, hy2); ctx.stroke(); }
+    } else if (kind === 'vertical') {
+      for (var vx2 = x + 2; vx2 < x + w; vx2 += step) { ctx.beginPath(); ctx.moveTo(vx2, y); ctx.lineTo(vx2, y + h); ctx.stroke(); }
     }
     ctx.restore();
   }
@@ -1771,14 +1802,18 @@
   function renderPlatformSections(report) {
     var platform = report.platform;
     var waterfallSection = document.getElementById('platform-waterfall-section');
+    var awsSection = document.getElementById('platform-aws-section');
     var capacitySection = document.getElementById('platform-capacity-section');
     var row2 = document.getElementById('platform-row2');
     var nodesSection = document.getElementById('platform-nodes-section');
+    var componentsSection = document.getElementById('platform-components-section');
     if (!platform) {
-      waterfallSection.hidden = true; capacitySection.hidden = true; row2.hidden = true; nodesSection.hidden = true;
+      waterfallSection.hidden = true; awsSection.hidden = true; capacitySection.hidden = true;
+      row2.hidden = true; nodesSection.hidden = true; componentsSection.hidden = true;
       return;
     }
     renderPlatformWaterfall(platform.reconciliation, waterfallSection);
+    renderPlatformAws(platform.reconciliation && platform.reconciliation.aws, awsSection);
     renderPlatformCapacity(report, platform.capacity_series, capacitySection);
     // row2 must be unhidden BEFORE constructing the top-orgs uPlot chart — uPlot sizes itself
     // from el.clientWidth/Height at construction time, which read 0 while an ancestor is
@@ -1788,11 +1823,44 @@
     var hasUnallocated = renderPlatformUnallocated(platform.unallocated, platform.reconciliation);
     row2.hidden = !(hasTopOrgs || hasUnallocated);
     renderPlatformNodes(platform.nodes, platform.node_inventory, nodesSection);
+    renderPlatformComponents(platform.platform_components, componentsSection);
+  }
+  function renderPlatformAws(aws, section) {
+    if (!aws) { section.hidden = true; return; }
+    section.hidden = false;
+    var days = aws.days === 1 ? '1 day' : aws.days + ' days';
+    document.getElementById('platform-aws-note').textContent =
+      'Cost Explorer, gross usage before credits, ' + aws.first_day + ' to ' + aws.last_day + ' (' + days + ' with data).';
+    document.getElementById('platform-aws-body').innerHTML = (aws.buckets || []).map(function(b) {
+      return '<tr><td>' + esc(b.label) + '</td><td class="num">' + fmtMoney(b.cost) + '</td>' +
+        '<td class="num">' + (aws.actual ? fmtPct(b.cost / aws.actual) : '—') + '</td></tr>';
+    }).join('');
+    document.getElementById('platform-aws-foot').innerHTML =
+      '<tr><td>AWS actual</td><td class="num">' + fmtMoney(aws.actual) + '</td><td></td></tr>' +
+      '<tr><td>Allocated to tenants</td><td class="num">' + fmtMoney(aws.allocated) + '</td>' +
+        '<td class="num" title="Included in allocated: the daily correction from estimates to actuals">true-up ' + fmtMoney(aws.true_up) + '</td></tr>' +
+      '<tr><td>Not allocated</td><td class="num">' + fmtMoney(Math.abs(aws.difference) < 0.005 ? 0 : aws.difference) + '</td><td></td></tr>';
+  }
+  function renderPlatformComponents(components, section) {
+    var body = document.getElementById('platform-components-body');
+    components = components || [];
+    if (!components.length) { section.hidden = true; body.innerHTML = ''; return; }
+    section.hidden = false;
+    body.innerHTML = components.map(function(c) {
+      return '<tr><td>' + esc(c.name) + '</td><td class="num">' + fmtQty(c.cpu_billed_hours) + '</td>' +
+        '<td class="num">' + fmtQty(c.memory_billed_gib_hours) + '</td><td class="num">' + fmtQty(c.network_gb) + '</td>' +
+        '<td class="num">' + fmtQty(c.storage_gib_month) + '</td>' +
+        '<td class="num">' + fmtMoney(c.cost) + '<div class="cost-node-idle-share">' + fmtPct(c.share) + '</div></td></tr>';
+    }).join('');
   }
   function renderPlatformWaterfall(reconciliation, section) {
     var el = document.getElementById('platform-waterfall');
     if (!reconciliation) { section.hidden = true; return; }
     section.hidden = false;
+    var hours = reconciliation.hours || 0;
+    document.getElementById('platform-waterfall-note').textContent = hours
+      ? 'Estimates over the ' + hours + (hours === 1 ? ' hour' : ' hours') + ' in range with node pricing.'
+      : 'No hours in range have node pricing yet.';
     var total = reconciliation.total != null ? reconciliation.total : ((reconciliation.cluster_compute || 0) + (reconciliation.fixed_overhead || 0));
     var max = Math.max(total, 1);
     // Input side (what the cluster costs) uses neutral tones; output side (where it went) uses
@@ -2153,6 +2221,14 @@
     setText('[data-chip="projected"]', fmtMoney(kpis.projected_month));
     setText('[data-chip="runrate"]', fmtMoney(kpis.run_rate_monthly));
     setText('[data-chip="efficiency"]', kpis.efficiency == null ? '—' : fmtPct(kpis.efficiency));
+    var coverageNote = document.getElementById('coverage-note');
+    var coverage = kpis.coverage;
+    var missing = coverage ? coverage.completed_hours - coverage.covered_hours : 0;
+    coverageNote.hidden = !(missing > 0);
+    coverageNote.textContent = missing > 0
+      ? 'Month to date has cost data for ' + coverage.covered_hours + ' of ' + coverage.completed_hours +
+        ' hours. The projection fills the other ' + missing + ' at the run rate.'
+      : '';
   }
 
   // ── Range nav / URL state ──
