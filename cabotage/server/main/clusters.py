@@ -11,7 +11,8 @@ them as ``CABOTAGE_CLUSTERS``, a JSON array in switcher order::
 ``region`` is optional. ``color`` is optional and must be one of ``COLORS``,
 the theme accent presets; it becomes that install's default accent, so the
 whole UI takes the cluster's color unless a user picks another accent.
-Omitted colors are assigned by position so every cluster stays distinct.
+Omitted colors take the first preset no other cluster uses, so clusters stay
+distinct until all eight are taken.
 Each install finds itself in the list by request host. An install served
 under a host the list does not name sets ``CABOTAGE_CLUSTER_NAME``.
 
@@ -113,6 +114,13 @@ def parse_clusters(raw: object) -> tuple[Cluster, ...]:
         raise TypeError("CABOTAGE_CLUSTERS must be a JSON array of clusters")
 
     clusters: list[Cluster] = []
+    # Explicit colors first, so a default never repeats one an operator chose.
+    taken = {
+        item.get("color")
+        for item in cast(list[object], raw)
+        if isinstance(item, dict) and isinstance(item.get("color"), str)
+    }
+    spare = [color for color in COLORS if color not in taken]
     for index, item in enumerate(cast(list[object], raw)):
         if not isinstance(item, dict):
             raise TypeError(f"CABOTAGE_CLUSTERS[{index}] must be an object")
@@ -125,7 +133,9 @@ def parse_clusters(raw: object) -> tuple[Cluster, ...]:
             )
         if "url" not in entry:
             raise ValueError(f"CABOTAGE_CLUSTERS: {name!r} is missing url")
-        color = entry.get("color") or COLORS[index % len(COLORS)]
+        color = entry.get("color")
+        if not color:
+            color = spare.pop(0) if spare else COLORS[index % len(COLORS)]
         if not isinstance(color, str) or color not in COLORS:
             raise ValueError(
                 f"CABOTAGE_CLUSTERS: {name!r} color {color!r} must be one of "
