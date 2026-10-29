@@ -1,8 +1,9 @@
-from flask import Blueprint, current_app, has_request_context, render_template
+from flask import Blueprint, Response, current_app, has_request_context, render_template
 from flask_login import current_user
 from sqlalchemy import func
 
 from cabotage.server import db
+from cabotage.server.main.clusters import cluster_context
 from cabotage.server.main.legal import legal_home, legal_nav, render_legal_page
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.auth_associations import OrganizationMember
@@ -79,6 +80,19 @@ def inject_legal_links() -> dict[str, object]:
     if not has_request_context():
         return {}
     return {"legal_nav": legal_nav(), "legal_home": legal_home()}
+
+
+@main_blueprint.app_context_processor
+def inject_clusters() -> dict[str, object]:
+    if not has_request_context():
+        return {}
+    return cluster_context()
+
+
+@main_blueprint.route("/_cabotage/ping")
+def cluster_ping():
+    """Reachability probe for other clusters' switchers. No session, no DB."""
+    return Response(status=204, headers={"Cache-Control": "no-store"})
 
 
 @main_blueprint.route("/legal/")
