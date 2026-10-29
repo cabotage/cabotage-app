@@ -86,7 +86,7 @@ def inject_legal_links() -> dict[str, object]:
 def inject_clusters() -> dict[str, object]:
     if not has_request_context():
         return {}
-    return cluster_context()
+    return dict(cluster_context())
 
 
 @main_blueprint.route("/_cabotage/ping")

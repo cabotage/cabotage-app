@@ -24,8 +24,8 @@ clusters of their own, kept in their browser.
 
 import json
 import re
-from dataclasses import asdict, dataclass
-from typing import cast
+from dataclasses import dataclass
+from typing import TypedDict
 from urllib.parse import urlsplit
 
 from flask import Flask, current_app, request, url_for
@@ -74,9 +74,30 @@ class Cluster:
         ).replace("#", "%23")
 
 
-def _origin(name: str, url: object) -> str:
+class ClusterEntry(TypedDict):
+    name: str
+    url: str
+    region: str | None
+    color: str
+
+
+class ClusterSwitcher(TypedDict):
+    """The palette's data; main.js reads it from script#cluster-switcher-data."""
+
+    current: str | None
+    clusters: list[ClusterEntry]
+    colors: tuple[str, ...]
+    shared: list[str]
+
+
+class ClusterContext(TypedDict):
+    current_cluster: Cluster | None
+    cluster_switcher: ClusterSwitcher | None
+
+
+def _origin(name: str, url: str) -> str:
     """Canonical origin, spelled the way browsers and ``request.host`` spell it."""
-    parts = urlsplit(str(url))
+    parts = urlsplit(url)
     try:
         port = parts.port
     except ValueError:  # not a number, or out of range
@@ -101,10 +122,10 @@ def _origin(name: str, url: object) -> str:
     return f"{parts.scheme}://{hostname}:{port}"
 
 
-def parse_clusters(raw: object) -> tuple[Cluster, ...]:
+def parse_clusters(raw: object) -> list[Cluster]:
     """Parse ``CABOTAGE_CLUSTERS``; raise on anything ambiguous."""
     if not raw:
-        return ()
+        return []
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -112,19 +133,20 @@ def parse_clusters(raw: object) -> tuple[Cluster, ...]:
             raise ValueError(f"CABOTAGE_CLUSTERS is not valid JSON: {exc}") from exc
     if not isinstance(raw, list):
         raise TypeError("CABOTAGE_CLUSTERS must be a JSON array of clusters")
+    items: list[object] = raw
+
+    # Explicit colors first, so a default never repeats one an operator chose.
+    taken: set[str] = set()
+    for item in items:
+        if isinstance(item, dict) and isinstance(chosen := item.get("color"), str):
+            taken.add(chosen)
+    spare = [color for color in COLORS if color not in taken]
 
     clusters: list[Cluster] = []
-    # Explicit colors first, so a default never repeats one an operator chose.
-    taken = {
-        item.get("color")
-        for item in cast(list[object], raw)
-        if isinstance(item, dict) and isinstance(item.get("color"), str)
-    }
-    spare = [color for color in COLORS if color not in taken]
-    for index, item in enumerate(cast(list[object], raw)):
+    for index, item in enumerate(items):
         if not isinstance(item, dict):
             raise TypeError(f"CABOTAGE_CLUSTERS[{index}] must be an object")
-        entry = cast(dict[str, object], item)
+        entry: dict[object, object] = item
         name = entry.get("name")
         if not isinstance(name, str) or not _NAME.fullmatch(name):
             raise ValueError(
@@ -133,6 +155,9 @@ def parse_clusters(raw: object) -> tuple[Cluster, ...]:
             )
         if "url" not in entry:
             raise ValueError(f"CABOTAGE_CLUSTERS: {name!r} is missing url")
+        url = entry["url"]
+        if not isinstance(url, str):
+            raise TypeError(f"CABOTAGE_CLUSTERS: {name!r} url must be a string")
         color = entry.get("color")
         if not color:
             color = spare.pop(0) if spare else COLORS[index % len(COLORS)]
@@ -144,9 +169,7 @@ def parse_clusters(raw: object) -> tuple[Cluster, ...]:
         region = entry.get("region")
         if region is not None and not isinstance(region, str):
             raise ValueError(f"CABOTAGE_CLUSTERS: {name!r} region must be a string")
-        clusters.append(
-            Cluster(name, _origin(name, entry["url"]), region or None, color)
-        )
+        clusters.append(Cluster(name, _origin(name, url), region or None, color))
 
     names: set[str] = set()
     hosts: set[str] = set()
@@ -157,24 +180,26 @@ def parse_clusters(raw: object) -> tuple[Cluster, ...]:
             raise ValueError(f"CABOTAGE_CLUSTERS lists host {cluster.host!r} twice")
         names.add(cluster.name.lower())
         hosts.add(cluster.host)
-    return tuple(clusters)
+    return clusters
 
 
 def validate_cluster_config(app: Flask) -> None:
     """Fail at startup on a cluster list the switcher can't render correctly."""
     clusters = parse_clusters(app.config.get("CLUSTERS"))
-    own = cast(str | None, app.config.get("CLUSTER_NAME"))
+    own = app.config.get("CLUSTER_NAME")
+    if own is not None and not isinstance(own, str):
+        raise TypeError(f"CABOTAGE_CLUSTER_NAME={own!r} must be a string")
     if own and own not in {cluster.name for cluster in clusters}:
         raise ValueError(f"CABOTAGE_CLUSTER_NAME={own!r} is not in CABOTAGE_CLUSTERS")
-    access = cast(str | None, app.config.get("CLUSTER_SWITCHER_ACCESS"))
-    if access not in ACCESS_LEVELS:
+    access = app.config.get("CLUSTER_SWITCHER_ACCESS")
+    if not isinstance(access, str) or access not in ACCESS_LEVELS:
         raise ValueError(
             f"CABOTAGE_CLUSTER_SWITCHER_ACCESS={access!r} must be one of "
             + ", ".join(ACCESS_LEVELS)
         )
 
 
-def current_cluster(clusters: tuple[Cluster, ...]) -> Cluster | None:
+def current_cluster(clusters: list[Cluster]) -> Cluster | None:
     own = current_app.config.get("CLUSTER_NAME")
     if own:
         return next((c for c in clusters if c.name == own), None)
@@ -191,7 +216,7 @@ def can_switch() -> bool:
     return bool(getattr(current_user, "admin", False))
 
 
-def cluster_context() -> dict[str, object]:
+def cluster_context() -> ClusterContext:
     """Template context: where we are for everyone, the switcher for the allowed."""
     clusters = parse_clusters(current_app.config.get("CLUSTERS"))
     here = current_cluster(clusters)
@@ -201,7 +226,10 @@ def cluster_context() -> dict[str, object]:
         "current_cluster": here,
         "cluster_switcher": {
             "current": here.name if here else None,
-            "clusters": [asdict(cluster) for cluster in clusters],
+            "clusters": [
+                {"name": c.name, "url": c.url, "region": c.region, "color": c.color}
+                for c in clusters
+            ],
             "colors": COLORS,
             # Pages that exist on every cluster; a jump keeps the longest one
             # the current path starts with.
