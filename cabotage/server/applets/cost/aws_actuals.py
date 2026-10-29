@@ -17,11 +17,11 @@ import boto3
 import sqlalchemy as sa
 from flask import current_app
 from sqlalchemy import Row
-from sqlalchemy.orm import InstrumentedAttribute
 
 from cabotage.server import db
 from cabotage.server.applets.cost.constants import (
     ACTUALS_BUCKET_PATTERNS,
+    ACTUALS_EGRESS_BUCKETS,
     ACTUALS_FIXED_BUCKETS,
     ACTUALS_LOOKBACK_DAYS,
     ACTUALS_NETWORK_BUCKETS,
@@ -367,31 +367,26 @@ def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, obje
     buckets = {row.bucket: float(row.cost_usd) for row in daily}
     day_start = datetime.datetime.combine(latest, datetime.time(), datetime.UTC)
     day_end = day_start + datetime.timedelta(days=1)
-    hours: int = CostCollectionRun.query.filter(
-        CostCollectionRun.status == "succeeded",
-        CostCollectionRun.period_start >= day_start,
-        CostCollectionRun.period_start < day_end,
-    ).count()
 
+    # Each category is scaled to a day by the hours it was actually metered,
+    # so hours where e.g. Traefik returned nothing don't inflate its rate.
     overrides: dict[str, object] = {}
     per_gb = (
         ("network_gb", "network", buckets.get("cross_az", 0.0)),
         (
             "egress_gb",
             "egress",
-            buckets.get("internet_egress", 0.0) + buckets.get("inter_region", 0.0),
+            sum(buckets.get(b, 0.0) for b in ACTUALS_EGRESS_BUCKETS),
         ),
     )
     for rate_key, category, cost in per_gb:
-        gb = _line_item_sum(CostLineItem.quantity, category, day_start, day_end)
-        if gb > 0 and cost > 0 and hours:
+        gb, _, hours = _metered(category, day_start, day_end)
+        if gb > 0 and cost > 0:
             overrides[rate_key] = cost / (gb * 24 / hours)
 
-    storage_priced = _line_item_sum(
-        CostLineItem.cost_usd, "storage", day_start, day_end
-    )
+    _, storage_priced, storage_hours = _metered("storage", day_start, day_end)
     # Scale to a full day so a partly collected day isn't all "unattributed".
-    storage_priced_day = storage_priced * 24 / hours if hours else 0.0
+    storage_priced_day = storage_priced * 24 / storage_hours if storage_hours else 0.0
     fixed_hourly = {
         bucket: buckets[bucket] / 24
         for bucket in ACTUALS_FIXED_BUCKETS
@@ -404,20 +399,22 @@ def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, obje
     return overrides
 
 
-def _line_item_sum(
-    column: InstrumentedAttribute[float],
-    category: str,
-    start: datetime.datetime,
-    end: datetime.datetime,
-) -> float:
-    total = (
-        db.session.query(sa.func.coalesce(sa.func.sum(column), 0))
+def _metered(
+    category: str, start: datetime.datetime, end: datetime.datetime
+) -> tuple[float, float, int]:
+    """Quantity, cost and hours metered for ``category`` in ``[start, end)``."""
+    quantity, cost, hours = (
+        db.session.query(
+            sa.func.coalesce(sa.func.sum(CostLineItem.quantity), 0),
+            sa.func.coalesce(sa.func.sum(CostLineItem.cost_usd), 0),
+            sa.func.count(sa.distinct(CostLineItem.period_start)),
+        )
         .filter(
             CostLineItem.period_start >= start,
             CostLineItem.period_start < end,
             CostLineItem.run_id.isnot(None),
             CostLineItem.category == category,
         )
-        .scalar()
+        .one()
     )
-    return float(total or 0.0)
+    return float(quantity), float(cost), int(hours)
