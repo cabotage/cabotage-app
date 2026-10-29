@@ -1688,6 +1688,13 @@
       "severity": "error"
     },
     {
+      "column": 20,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 5,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unannotated-return",
@@ -1772,6 +1779,13 @@
       "severity": "error"
     },
     {
+      "column": 47,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 19,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-variable-type",
@@ -1786,6 +1800,20 @@
       "severity": "error"
     },
     {
+      "column": 32,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 20,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 28,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
@@ -1794,6 +1822,13 @@
     },
     {
       "column": 50,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 34,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -1815,6 +1850,27 @@
     },
     {
       "column": 13,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 13,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 36,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 38,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -1870,10 +1926,24 @@
       "severity": "error"
     },
     {
+      "column": 17,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "not-callable",
+      "concise_description": "Expected a callable, got `list[str]`",
+      "severity": "error"
+    },
+    {
       "column": 13,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unused-call-result",
       "concise_description": "Result of call expression is of type `Unknown | None` and is not used; assign to `_` if this is intentional",
+      "severity": "error"
+    },
+    {
+      "column": 49,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -1919,10 +1989,52 @@
       "severity": "error"
     },
     {
+      "column": 17,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 40,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 13,
       "path": "cabotage/celery/tasks/build.py",
       "name": "not-callable",
       "concise_description": "Expected a callable, got `list[str]`",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 21,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -2017,6 +2129,13 @@
       "severity": "error"
     },
     {
+      "column": 42,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 17,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
@@ -2056,6 +2175,13 @@
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unannotated-return",
+      "concise_description": "`__init__` is missing a return annotation",
       "severity": "error"
     },
     {
@@ -2311,6 +2437,13 @@
       "severity": "error"
     },
     {
+      "column": 33,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 65,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
@@ -2381,6 +2514,20 @@
       "severity": "error"
     },
     {
+      "column": 28,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "implicit-any-parameter",
+      "concise_description": "`build_release_buildkit` is missing an annotation for parameter `release`",
+      "severity": "error"
+    },
+    {
+      "column": 23,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 16,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-variable-type",
@@ -2392,6 +2539,13 @@
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-variable-type",
       "concise_description": "The type of `buildkit_image` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 9,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -2424,6 +2578,13 @@
     },
     {
       "column": 36,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 57,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -2514,6 +2675,13 @@
       "severity": "error"
     },
     {
+      "column": 32,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 25,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unused-call-result",
@@ -2546,6 +2714,20 @@
       "path": "cabotage/celery/tasks/build.py",
       "name": "unused-call-result",
       "concise_description": "Result of call expression is of type `int` and is not used; assign to `_` if this is intentional",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
       "severity": "error"
     },
     {
@@ -2766,6 +2948,13 @@
       "severity": "error"
     },
     {
+      "column": 29,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 5,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unannotated-return",
@@ -2885,6 +3074,13 @@
       "severity": "error"
     },
     {
+      "column": 25,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 5,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unannotated-return",
@@ -2976,6 +3172,13 @@
       "severity": "error"
     },
     {
+      "column": 29,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 66,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
@@ -3061,6 +3264,13 @@
     },
     {
       "column": 37,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 44,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -3676,7 +3886,21 @@
       "severity": "error"
     },
     {
-      "column": 17,
+      "column": 25,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 25,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 25,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -3691,6 +3915,27 @@
     },
     {
       "column": 17,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 17,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 28,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `image_id` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
+      "column": 44,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -3746,6 +3991,13 @@
       "severity": "error"
     },
     {
+      "column": 30,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-variable-type",
+      "concise_description": "The type of `deployment` is unknown; it is inferred as an implicit `Any`",
+      "severity": "error"
+    },
+    {
       "column": 47,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
@@ -3768,6 +4020,13 @@
     },
     {
       "column": 25,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
+      "column": 29,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -4160,62 +4419,6 @@
     },
     {
       "column": 17,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 13,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "not-callable",
-      "concise_description": "Expected a callable, got `list[str]`",
-      "severity": "error"
-    },
-    {
-      "column": 9,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "not-callable",
-      "concise_description": "Expected a callable, got `list[str]`",
-      "severity": "error"
-    },
-    {
-      "column": 20,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-variable-type",
-      "concise_description": "The type of `image_id` is unknown; it is inferred as an implicit `Any`",
-      "severity": "error"
-    },
-    {
-      "column": 28,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "bad-assignment",
-      "concise_description": "`Literal[True]` is not assignable to attribute `error` with type `Never`",
-      "severity": "error"
-    },
-    {
-      "column": 35,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "bad-assignment",
-      "concise_description": "`Literal['Failed to start deployment']` is not assignable to attribute `error_detail` with type `Never`",
-      "severity": "error"
-    },
-    {
-      "column": 46,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 39,
-      "path": "cabotage/celery/tasks/build.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 35,
       "path": "cabotage/celery/tasks/build.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",

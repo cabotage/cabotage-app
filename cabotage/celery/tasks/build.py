@@ -25,10 +25,10 @@ from github.GithubIntegration import GithubIntegration
 from kubernetes.client.exceptions import ApiException
 
 from cabotage.celery.tasks.deploy import (
-    _dispatch_deploy_failure,
     _safe_labels_from_application,
     run_deploy,
     run_job,
+    start_deployment,
 )
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
@@ -264,28 +264,6 @@ def _dispatch_release_failure(release, error_detail):
         log.warning("Failed to dispatch release failure notification", exc_info=True)
 
 
-def _dispatch_deploy_after_release_notification(
-    release: Release, deployment: Deployment, complete: bool = False
-) -> None:
-    """Notify for a deploy chained from a manual release (non auto-deploy flow)."""
-    try:
-        triggered_by = (release.release_metadata or {}).get("triggered_by")
-        dispatch_pipeline_notification.delay(
-            "pipeline.deploy",
-            "Deployment",
-            str(deployment.id),
-            str(release.application.project.organization_id),
-            str(release.application.id),
-            str(release.application_environment_id)
-            if release.application_environment_id
-            else None,
-            detail=f"Triggered by: {triggered_by}" if triggered_by else None,
-            complete=complete,
-        )
-    except Exception:
-        log.warning("Failed to dispatch chained deploy notification", exc_info=True)
-
-
 def _release_superseded(release: Release) -> str | None:
     """Why a Release & Deploy release should not go live, if anything newer exists."""
     app_env = release.application_environment
@@ -299,128 +277,6 @@ def _release_superseded(release: Release) -> str | None:
     if app_env.deployments.filter(Deployment.created > release.created).first():
         return "a deployment started after this release was created"
     return None
-
-
-def _deploy_built_release(release: Release, auto_deploy: bool) -> None:
-    """Create and start the deployment chained from a built release.
-
-    A failure here fails the deployment, never the release that already built.
-    """
-    metadata = release.release_metadata or {}
-    deployment_id = None
-    try:
-        deployment = Deployment(
-            application_id=release.application.id,
-            application_environment_id=release.application_environment_id,
-            release=release.asdict,
-            deploy_metadata=release.release_metadata,
-        )
-        db.session.add(deployment)
-        db.session.flush()
-        deployment_id = deployment.id
-        now = datetime.datetime.now(datetime.UTC).isoformat()
-        if auto_deploy:
-            activity = Activity(
-                verb="create",
-                object=deployment,
-                data={
-                    "user_id": "automation",
-                    "deployment_id": metadata.get("id", None),
-                    "description": metadata.get("description", None),
-                    "timestamp": now,
-                },
-            )
-        else:
-            activity = Activity(
-                verb="deploy",
-                object=deployment,
-                data={
-                    "user_id": metadata.get("triggered_by_user_id"),
-                    "timestamp": now,
-                },
-            )
-        db.session.add(activity)
-        db.session.commit()
-        image_id = metadata.get("source_image_id", str(release.id))
-        if auto_deploy:
-            try:
-                dispatch_autodeploy_notification(
-                    "deploying",
-                    image_id,
-                    release.application,
-                    release.application_environment,
-                    image_url=cabotage_url(release.application, f"images/{image_id}"),
-                    release_url=cabotage_url(
-                        release.application, f"releases/{release.id}"
-                    ),
-                    deploy_url=cabotage_url(
-                        release.application, f"deployments/{deployment.id}"
-                    ),
-                    image_metadata=release.release_metadata,
-                )
-            except Exception:
-                log.warning(
-                    "Failed to dispatch autodeploy deploying notification",
-                    exc_info=True,
-                )
-        if current_app.config["KUBERNETES_ENABLED"]:
-            if not auto_deploy:
-                _dispatch_deploy_after_release_notification(release, deployment)
-            run_deploy.delay(deployment_id=deployment.id)
-            return
-
-        from cabotage.celery.tasks.deploy import fake_deploy_release
-
-        fake_deploy_release(deployment)
-        deployment.complete = True
-        db.session.commit()
-        CheckRun.from_metadata(
-            release.release_metadata, release.application_environment
-        ).succeed(
-            details_url=cabotage_url(
-                release.application, f"deployments/{deployment.id}"
-            ),
-            Deployment=f"deployments/{deployment.id}",
-            Release=f"releases/{release.id}",
-        )
-        if not auto_deploy:
-            _dispatch_deploy_after_release_notification(
-                release, deployment, complete=True
-            )
-            return
-        try:
-            dispatch_autodeploy_notification(
-                "complete",
-                image_id,
-                release.application,
-                release.application_environment,
-                image_url=cabotage_url(release.application, f"images/{image_id}"),
-                release_url=cabotage_url(release.application, f"releases/{release.id}"),
-                deploy_url=cabotage_url(
-                    release.application, f"deployments/{deployment.id}"
-                ),
-                image_metadata=release.release_metadata,
-            )
-        except Exception:
-            log.warning(
-                "Failed to dispatch autodeploy completion notification",
-                exc_info=True,
-            )
-    except Exception:
-        db.session.rollback()
-        log.exception("Failed to start deployment for release %s", release.id)
-        failed = (
-            Deployment.query.filter_by(
-                id=deployment_id, complete=False, error=False
-            ).first()
-            if deployment_id
-            else None
-        )
-        if failed is not None:
-            failed.error = True
-            failed.error_detail = "Failed to start deployment"
-            db.session.commit()
-            _dispatch_deploy_failure(failed, failed.error_detail)
 
 
 def _build_namespace(app_env: ApplicationEnvironment) -> str:
@@ -2347,11 +2203,11 @@ def run_release_build(release_id: str):
             **release_links,
         )
 
-        metadata = release.release_metadata or {}
-        auto_deploy = bool(metadata.get("auto_deploy"))
-        deploy_after_release = bool(metadata.get("deploy_after_release"))
-
-        if not (release.built and auto_deploy):
+        if not (
+            release.built
+            and release.release_metadata
+            and release.release_metadata.get("auto_deploy", False)
+        ):
             try:
                 dispatch_pipeline_notification.delay(
                     "pipeline.release",
@@ -2370,14 +2226,110 @@ def run_release_build(release_id: str):
                     exc_info=True,
                 )
 
-        if release.built and auto_deploy:
-            _deploy_built_release(release, auto_deploy=True)
-        elif release.built and deploy_after_release:
+        if (
+            release.built
+            and release.release_metadata
+            and release.release_metadata.get("auto_deploy", False)
+        ):
+            deployment = Deployment(
+                application_id=release.application.id,
+                application_environment_id=release.application_environment_id,
+                release=release.asdict,
+                deploy_metadata=release.release_metadata,
+            )
+            db.session.add(deployment)
+            db.session.flush()
+            activity = Activity(
+                verb="create",
+                object=deployment,
+                data={
+                    "user_id": "automation",
+                    "deployment_id": release.release_metadata.get("id", None),
+                    "description": release.release_metadata.get("description", None),
+                    "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+                },
+            )
+            db.session.add(activity)
+            db.session.commit()
+            try:
+                image_id = release.release_metadata.get(
+                    "source_image_id", str(release.id)
+                )
+                dispatch_autodeploy_notification(
+                    "deploying",
+                    image_id,
+                    release.application,
+                    release.application_environment,
+                    image_url=cabotage_url(release.application, f"images/{image_id}"),
+                    release_url=cabotage_url(
+                        release.application, f"releases/{release.id}"
+                    ),
+                    deploy_url=cabotage_url(
+                        release.application, f"deployments/{deployment.id}"
+                    ),
+                    image_metadata=release.release_metadata,
+                )
+            except Exception:
+                log.warning(
+                    "Failed to dispatch autodeploy deploying notification",
+                    exc_info=True,
+                )
+            if current_app.config["KUBERNETES_ENABLED"]:
+                deployment_id = deployment.id
+                run_deploy.delay(deployment_id=deployment.id)
+                deployment = Deployment.query.filter_by(id=deployment_id).first()
+            else:
+                from cabotage.celery.tasks.deploy import fake_deploy_release
+
+                fake_deploy_release(deployment)
+                deployment.complete = True
+                db.session.commit()
+                CheckRun.from_metadata(
+                    release.release_metadata, release.application_environment
+                ).succeed(
+                    details_url=cabotage_url(
+                        release.application,
+                        f"deployments/{deployment.id}",
+                    ),
+                    Deployment=f"deployments/{deployment.id}",
+                    Release=f"releases/{release.id}",
+                )
+                try:
+                    dispatch_autodeploy_notification(
+                        "complete",
+                        image_id,
+                        release.application,
+                        release.application_environment,
+                        image_url=cabotage_url(
+                            release.application, f"images/{image_id}"
+                        ),
+                        release_url=cabotage_url(
+                            release.application, f"releases/{release.id}"
+                        ),
+                        deploy_url=cabotage_url(
+                            release.application, f"deployments/{deployment.id}"
+                        ),
+                        image_metadata=release.release_metadata,
+                    )
+                except Exception:
+                    log.warning(
+                        "Failed to dispatch autodeploy completion notification",
+                        exc_info=True,
+                    )
+
+        metadata = release.release_metadata or {}
+        if (
+            release.built
+            and metadata.get("deploy_after_release")
+            and not metadata.get("auto_deploy")
+        ):
             superseded = _release_superseded(release)
             if superseded:
                 log.info("Not deploying release %s: %s", release.id, superseded)
             else:
-                _deploy_built_release(release, auto_deploy=False)
+                _ = start_deployment(
+                    release, metadata, metadata.get("triggered_by_user_id")
+                )
     except Exception:
         db.session.rollback()
         if release is not None and not release.error:
