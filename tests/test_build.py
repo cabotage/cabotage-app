@@ -962,6 +962,56 @@ class TestRunReleaseBuild:
         assert len(deployments) == 1
         mock_run_deploy.delay.assert_called_once()
 
+    @patch("cabotage.celery.tasks.build.dispatch_autodeploy_notification")
+    @patch("cabotage.celery.tasks.build.dispatch_pipeline_notification")
+    @patch("cabotage.celery.tasks.build.run_deploy")
+    @patch("cabotage.celery.tasks.build.build_release_buildkit")
+    @patch("cabotage.celery.tasks.build.github_app")
+    def test_deploy_after_release_chains_deploy_with_pipeline_notifications(
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_deploy,
+        mock_pipeline_notify,
+        mock_autodeploy_notify,
+        app,
+        db_session,
+        release,
+    ):
+        """A manual Release & Deploy chains a deploy without entering auto-deploy flow."""
+        from cabotage.celery.tasks.build import run_release_build
+        from cabotage.server.models.projects import Deployment
+
+        release.release_metadata = {
+            "deploy_after_release": True,
+            "trigger": "manual_release_deploy",
+            "triggered_by": "alice",
+        }
+        db_session.add(release)
+        db_session.commit()
+
+        mock_build.return_value = {"release_id": "sha256:release-abc"}
+
+        with (
+            patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ),
+            patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls,
+        ):
+            mock_check_cls.from_metadata.return_value = MagicMock()
+            run_release_build(release_id=release.id)
+
+        deployment = Deployment.query.filter_by(
+            application_environment_id=release.application_environment_id,
+        ).one()
+        assert deployment.release["id"] == str(release.id)
+        assert deployment.trigger_type == "manual"
+        mock_run_deploy.delay.assert_called_once_with(deployment_id=deployment.id)
+        mock_autodeploy_notify.assert_not_called()
+        notified = [c.args[:3] for c in mock_pipeline_notify.delay.call_args_list]
+        assert ("pipeline.release", "Release", str(release.id)) in notified
+        assert ("pipeline.deploy", "Deployment", str(deployment.id)) in notified
+
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_no_auto_deploy_skips_deployment(
