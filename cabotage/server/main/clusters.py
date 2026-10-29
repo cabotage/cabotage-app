@@ -8,13 +8,17 @@ them as ``CABOTAGE_CLUSTERS``, a JSON array in switcher order::
      {"name": "pypi", "url": "https://cabotage.us-east-2.pypi.io",
       "region": "us-east-2", "color": "amber"}]
 
-``region`` is optional. ``color`` is optional and must be one of ``COLORS``;
-omitted colors are assigned by position so every cluster stays distinct.
+``region`` is optional. ``color`` is optional and must be one of ``COLORS``,
+the theme accent presets; it becomes that install's default accent, so the
+whole UI takes the cluster's color unless a user picks another accent.
+Omitted colors are assigned by position so every cluster stays distinct.
 Each install finds itself in the list by request host. An install served
 under a host the list does not name sets ``CABOTAGE_CLUSTER_NAME``.
 
-With no list configured, the switcher still works from clusters a user adds
-in their own browser; nothing is rendered until they add one.
+Everyone sees which cluster they are on. The list of other clusters and the
+jump palette go only to ``CABOTAGE_CLUSTER_SWITCHER_ACCESS``: ``admins``
+(the default) or every signed-in user (``users``). Those users can also add
+clusters of their own, kept in their browser.
 """
 
 import json
@@ -24,20 +28,23 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from flask import Flask, current_app, request, url_for
+from flask_login import current_user
 
-# Identity hues, never status. Rendered by the [data-cluster-color] tokens in main.css.
-COLORS = ("teal", "amber", "blue", "rose", "emerald", "sky", "orange", "slate")
-# Favicon fills: an SVG data URI can't read CSS custom properties.
-_FAVICON_FILL = {
-    "teal": "#2bb3a3",
-    "amber": "#e0a530",
-    "blue": "#4f8fe6",
-    "rose": "#e2647a",
-    "emerald": "#3fb871",
-    "sky": "#45b4e0",
-    "orange": "#e8803f",
-    "slate": "#8d8fa3",
+# The theme accent presets in _base.html, in the order of the accent picker.
+COLORS = ("purple", "blue", "teal", "rose", "amber", "emerald", "white", "dark")
+# Favicon fills: each preset's dark-theme accent text color (ACCENT_PRESETS in
+# _base.html), since an SVG data URI can't read CSS custom properties.
+FAVICON_FILL = {
+    "purple": "#a78bfa",
+    "blue": "#60a5fa",
+    "teal": "#2dd4bf",
+    "rose": "#fb7185",
+    "amber": "#fbbf24",
+    "emerald": "#34d399",
+    "white": "#e8e8e8",
+    "dark": "#888888",
 }
+ACCESS_LEVELS = ("admins", "users")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
 
 
@@ -54,7 +61,7 @@ class Cluster:
 
     @property
     def favicon(self) -> str:
-        fill = _FAVICON_FILL[self.color]
+        fill = FAVICON_FILL[self.color]
         svg = (
             "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'>"
             f"<rect x='1' y='1' width='14' height='14' rx='3.5' fill='{fill}'/></svg>"
@@ -136,6 +143,12 @@ def validate_cluster_config(app: Flask) -> None:
     own = cast(str | None, app.config.get("CLUSTER_NAME"))
     if own and own not in {cluster.name for cluster in clusters}:
         raise ValueError(f"CABOTAGE_CLUSTER_NAME={own!r} is not in CABOTAGE_CLUSTERS")
+    access = cast(str | None, app.config.get("CLUSTER_SWITCHER_ACCESS"))
+    if access not in ACCESS_LEVELS:
+        raise ValueError(
+            f"CABOTAGE_CLUSTER_SWITCHER_ACCESS={access!r} must be one of "
+            + ", ".join(ACCESS_LEVELS)
+        )
 
 
 def current_cluster(clusters: tuple[Cluster, ...]) -> Cluster | None:
@@ -146,10 +159,21 @@ def current_cluster(clusters: tuple[Cluster, ...]) -> Cluster | None:
     return next((c for c in clusters if c.host == host), None)
 
 
+def can_switch() -> bool:
+    """Whether the current user may see other clusters and open the palette."""
+    if not current_user.is_authenticated:
+        return False
+    if current_app.config.get("CLUSTER_SWITCHER_ACCESS") == "users":
+        return True
+    return bool(getattr(current_user, "admin", False))
+
+
 def cluster_context() -> dict[str, object]:
-    """Template context for the switcher: the configured list and where we are."""
+    """Template context: where we are for everyone, the switcher for the allowed."""
     clusters = parse_clusters(current_app.config.get("CLUSTERS"))
     here = current_cluster(clusters)
+    if not can_switch():
+        return {"current_cluster": here, "cluster_switcher": None}
     return {
         "current_cluster": here,
         "cluster_switcher": {
