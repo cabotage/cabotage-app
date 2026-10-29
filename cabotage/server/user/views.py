@@ -46,12 +46,15 @@ from cabotage.celery.tasks import (
     deploy_tailscale_operator,
     dispatch_pipeline_notification,
     process_github_hook,
-    run_deploy,
     run_image_build,
     run_release_build,
     teardown_tailscale_operator,
 )
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.deploy import (
+    resize_deployment,
+    scale_deployment,
+    start_deployment,
+)
 from cabotage.celery.tasks.github import discover_check_names
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
@@ -6546,66 +6549,17 @@ def application_scale_legacy(application_id):
 )
 @login_required
 def release_deploy(org_slug, project_slug, app_slug, release_id):
-    org, _project, application = _lookup_app_context(
+    _org, _project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
     release = Release.query.filter_by(
         id=release_id, application_id=application.id
     ).first_or_404()
-    deployment = Deployment(
-        application_id=release.application.id,
-        application_environment_id=release.application_environment_id,
-        release=release.asdict,
-        deploy_metadata={
-            "trigger": "manual_deploy",
-            "triggered_by": current_user.username,
-        },
+    deployment = start_deployment(
+        release,
+        {"trigger": "manual_deploy", "triggered_by": current_user.username},
+        str(current_user.id),
     )
-    db.session.add(deployment)
-    db.session.flush()
-    activity = Activity(
-        verb="deploy",
-        object=deployment,
-        data={
-            "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-        },
-    )
-    db.session.add(activity)
-    db.session.commit()
-    if current_app.config["KUBERNETES_ENABLED"]:
-        dispatch_pipeline_notification.delay(
-            "pipeline.deploy",
-            "Deployment",
-            str(deployment.id),
-            str(org.id),
-            str(application.id),
-            str(release.application_environment_id)
-            if release.application_environment_id
-            else None,
-            detail=f"Triggered by: {current_user.username}",
-        )
-        deployment_id = deployment.id
-        run_deploy.delay(deployment_id=deployment.id)
-        deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
-    else:
-        from cabotage.celery.tasks.deploy import fake_deploy_release
-
-        fake_deploy_release(deployment)
-        deployment.complete = True
-        db.session.commit()
-        dispatch_pipeline_notification.delay(
-            "pipeline.deploy",
-            "Deployment",
-            str(deployment.id),
-            str(org.id),
-            str(application.id),
-            str(release.application_environment_id)
-            if release.application_environment_id
-            else None,
-            detail=f"Triggered by: {current_user.username}",
-            complete=True,
-        )
     return redirect(
         url_for(
             "user.deployment_detail",
