@@ -638,6 +638,7 @@
                             Create Release
                           </button>
                         </form>
+                        {% if can_administer %}
                         <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
                               method="post"
                               class="run-drawer-cta"
@@ -652,6 +653,7 @@
                             Release &amp; Deploy
                           </button>
                         </form>
+                        {% endif %}
                       </div>
                     </div>
                   </div>
