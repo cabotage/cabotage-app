@@ -351,8 +351,9 @@ function initRawEditor() {
 
   // Client-side copy of the rules in _parse_raw_config (views.py): skip blank
   // and # lines, split at the first "=", trim the name, keep the value
-  // verbatim, no duplicate names; JSON must be an object of strings. Advisory
-  // only; the server re-parses and decides what is written.
+  // verbatim unless it starts with a double quote (then it may span lines and
+  // \" \\ \n are escapes), no duplicate names; JSON must be an object of
+  // strings. Advisory only; the server re-parses and decides what is written.
   // Returns {entries: [{name, value}]} or {error: message}.
   function parseEditor(fmt, text) {
     var entries = [];
@@ -377,21 +378,52 @@ function initRawEditor() {
     } else {
       var lines = text.split('\n');
       for (var n = 0; n < lines.length; n++) {
+        var start = n + 1;
         var trimmed = lines[n].trim();
         if (!trimmed || trimmed.charAt(0) === '#') continue;
         var eq = lines[n].indexOf('=');
-        if (eq === -1) return { error: 'Line ' + (n + 1) + ': expected KEY=VALUE.' };
+        if (eq === -1) return { error: 'Line ' + start + ': expected KEY=VALUE.' };
         var name = lines[n].slice(0, eq).trim();
-        if (seen[name.toUpperCase()]) return { error: 'Line ' + (n + 1) + ': duplicate variable name.' };
+        if (seen[name.toUpperCase()]) return { error: 'Line ' + start + ': duplicate variable name.' };
         seen[name.toUpperCase()] = true;
-        entries.push({ name: name, value: lines[n].slice(eq + 1) });
+        var value = lines[n].slice(eq + 1);
+        if (value.charAt(0) === '"') {
+          var rest = value.slice(1);
+          var chars = '';
+          var closed = false;
+          while (!closed) {
+            for (var i = 0; i < rest.length; i++) {
+              var ch = rest.charAt(i);
+              if (ch === '\\' && i + 1 < rest.length) {
+                var next = rest.charAt(i + 1);
+                chars += next === 'n' ? '\n' : next === '"' || next === '\\' ? next : '\\' + next;
+                i++;
+              } else if (ch === '"') {
+                if (rest.slice(i + 1).trim()) {
+                  return { error: 'Line ' + (n + 1) + ': unexpected text after closing quote.' };
+                }
+                closed = true;
+                break;
+              } else {
+                chars += ch;
+              }
+            }
+            if (!closed) {
+              if (n + 1 >= lines.length) return { error: 'Line ' + start + ': unterminated quote.' };
+              chars += '\n';
+              rest = lines[++n];
+            }
+          }
+          value = chars;
+        }
+        entries.push({ name: name, value: value });
       }
     }
     return { entries: entries };
   }
 
-  // Inverse of parseEditor. ENV cannot carry a line break inside a value;
-  // callers check hasLineBreak() before offering the ENV tab.
+  // Inverse of parseEditor. ENV values are quoted only when they must be, so
+  // ordinary values read back exactly as typed.
   function formatEditor(fmt, entries) {
     if (!entries.length) return '';
     if (fmt === 'json') {
@@ -403,15 +435,13 @@ function initRawEditor() {
     }
     return entries
       .map(function (e) {
-        return e.name + '=' + e.value;
+        var v = e.value;
+        if (v.charAt(0) === '"' || /[\r\n]/.test(v)) {
+          v = '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+        }
+        return e.name + '=' + v;
       })
       .join('\n');
-  }
-
-  function hasLineBreak(entries) {
-    return entries.some(function (e) {
-      return /[\r\n]/.test(e.value);
-    });
   }
 
   function storedEntries() {
@@ -533,9 +563,6 @@ function initRawEditor() {
         if (parsed.error) return setPreviewLine(tabError, parsed.error);
         entries = parsed.entries;
       }
-      if (tabId === 'env' && hasLineBreak(entries)) {
-        return setPreviewLine(tabError, 'A value contains a line break, which ENV cannot show. Keep editing as JSON.');
-      }
       setPreviewLine(tabError, '');
       tabs.forEach(function (t) {
         t.classList.toggle('raw-editor-tab-active', t.getAttribute('data-editor-tab') === tabId);
@@ -559,12 +586,6 @@ function initRawEditor() {
       }
     });
   });
-
-  // Start on JSON when a stored value has a line break, which ENV cannot show.
-  if (textarea && hasLineBreak(storedEntries())) {
-    var jsonTab = modal.querySelector('[data-editor-tab="json"]');
-    if (jsonTab) jsonTab.click();
-  }
 
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {

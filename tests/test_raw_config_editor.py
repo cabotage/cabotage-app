@@ -133,8 +133,27 @@ def test_env_paste_creates_variables(raw_editor):
     assert response.status_code == 302
     assert {name: config.value for name, config in _configs(application).items()} == {
         "JUNIOR_SLASH_COMMAND": "/pyper",
-        "QUOTED": '"keep=quotes" ',
+        "QUOTED": "keep=quotes",
     }
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ('MULTI="first\nsecond"', "first\nsecond"),
+        ('ESC="say \\"hi\\" \\\\ \\n"', 'say "hi" \\ \n'),
+        ("PLAIN=a \\n b", "a \\n b"),
+    ],
+)
+def test_env_double_quoted_values(raw_editor, raw, expected):
+    client, application, action, fields = raw_editor
+    with patch.object(
+        views.config_writer, "write_configuration", return_value=KEY_SLUGS
+    ):
+        response = client.post(action, data={**fields, "raw_text": raw})
+
+    assert response.status_code == 302
+    assert [c.value for c in _configs(application).values()] == [expected]
 
 
 def test_json_update_preserves_secure_placeholder(raw_editor):
@@ -268,7 +287,14 @@ def test_delete_missing_removes_only_omitted_baseline_rows(
 
 
 @pytest.mark.parametrize(
-    "raw", ["GOOD=1\nnot a pair", "GOOD=1\n1BAD=x", "GOOD=1\nCABOTAGE_SENTINEL=x"]
+    "raw",
+    [
+        "GOOD=1\nnot a pair",
+        "GOOD=1\n1BAD=x",
+        "GOOD=1\nCABOTAGE_SENTINEL=x",
+        'GOOD=1\nBAD="open',
+        'GOOD=1\nBAD="x" junk',
+    ],
 )
 def test_invalid_batch_writes_nothing(raw_editor, raw):
     client, application, action, fields = raw_editor

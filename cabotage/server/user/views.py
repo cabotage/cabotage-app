@@ -3995,11 +3995,47 @@ def _add_raw_config_entry(
     entries[name] = value
 
 
-def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
-    """Parse Raw Editor input into ``{name: value}``, keeping values verbatim.
+_ENV_ESCAPES = {'"': '"', "\\": "\\", "n": "\n"}
 
-    The editor's change preview (``submittedValues`` in main.js) mirrors the
-    line rules here; keep them in step.
+
+def _read_quoted_value(lines: list[str], lineno: int, rest: str) -> tuple[str, int]:
+    """Read a double-quoted ENV value, which may span lines.
+
+    ``rest`` is the text after the opening quote on 1-based line ``lineno``.
+    Supports the escapes ``\"``, ``\\`` and ``\n``; any other backslash is kept.
+    Returns the value and the line the closing quote was found on.
+    """
+    start = lineno
+    chars: list[str] = []
+    while True:
+        i = 0
+        while i < len(rest):
+            ch = rest[i]
+            if ch == "\\" and i + 1 < len(rest):
+                chars.append(_ENV_ESCAPES.get(rest[i + 1], "\\" + rest[i + 1]))
+                i += 2
+                continue
+            if ch == '"':
+                if rest[i + 1 :].strip():
+                    raise ValueError(
+                        f"Line {lineno}: unexpected text after closing quote."
+                    )
+                return "".join(chars), lineno
+            chars.append(ch)
+            i += 1
+        if lineno >= len(lines):
+            raise ValueError(f"Line {start}: unterminated quote.")
+        chars.append("\n")
+        rest = lines[lineno]
+        lineno += 1
+
+
+def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
+    """Parse Raw Editor input into ``{name: value}``.
+
+    Unquoted ENV values are kept verbatim; a value starting with a double quote
+    is read by ``_read_quoted_value``. The editor's preview and tab conversion
+    (``parseEditor`` in main.js) mirror these rules; keep them in step.
     """
     entries: dict[str, str] = {}
     seen_names: set[str] = set()
@@ -4017,15 +4053,20 @@ def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
             _add_raw_config_entry(entries, seen_names, name, value, f"JSON key {name}")
         return entries
 
-    for lineno, line in enumerate(raw_text.splitlines(), start=1):
+    lines = raw_text.splitlines()
+    lineno = 0
+    while lineno < len(lines):
+        lineno += 1
+        start = lineno
+        line = lines[lineno - 1]
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         name, sep, value = line.partition("=")
         if not sep:
             raise ValueError(f"Line {lineno}: expected KEY=VALUE.")
-        _add_raw_config_entry(
-            entries, seen_names, name.strip(), value, f"Line {lineno}"
-        )
+        if value.startswith('"'):
+            value, lineno = _read_quoted_value(lines, lineno, value[1:])
+        _add_raw_config_entry(entries, seen_names, name.strip(), value, f"Line {start}")
     return entries
 
 
