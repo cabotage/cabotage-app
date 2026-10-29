@@ -101,10 +101,10 @@ def _origin(name: str, url: object) -> str:
     return f"{parts.scheme}://{hostname}:{port}"
 
 
-def parse_clusters(raw: object) -> tuple[Cluster, ...]:
+def parse_clusters(raw: object) -> list[Cluster]:
     """Parse ``CABOTAGE_CLUSTERS``; raise on anything ambiguous."""
     if not raw:
-        return ()
+        return []
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -157,7 +157,7 @@ def parse_clusters(raw: object) -> tuple[Cluster, ...]:
             raise ValueError(f"CABOTAGE_CLUSTERS lists host {cluster.host!r} twice")
         names.add(cluster.name.lower())
         hosts.add(cluster.host)
-    return tuple(clusters)
+    return clusters
 
 
 def validate_cluster_config(app: Flask) -> None:
@@ -174,7 +174,7 @@ def validate_cluster_config(app: Flask) -> None:
         )
 
 
-def current_cluster(clusters: tuple[Cluster, ...]) -> Cluster | None:
+def current_cluster(clusters: list[Cluster]) -> Cluster | None:
     own = current_app.config.get("CLUSTER_NAME")
     if own:
         return next((c for c in clusters if c.name == own), None)
