@@ -152,7 +152,7 @@ def test_everyone_sees_which_cluster_they_are_on(app, client):
     assert "cluster-crumb-static" in body
     assert '<link rel="icon"' in body
     # The cluster's color is the default accent when the user hasn't picked one.
-    assert "localStorage.getItem('accent-color') || \"teal\"" in body
+    assert 'var defaultAccent = "teal";' in body
 
 
 def test_anonymous_visitors_never_get_the_cluster_list(app, client):
