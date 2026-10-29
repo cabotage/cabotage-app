@@ -72,10 +72,22 @@
         s.setProperty('--hover-overlay', 'rgba(' + p.hoverRgb + ', ' + (mode === 'dark' ? '0.03' : '0.05') + ')');
         s.setProperty('--hover-overlay-strong', 'rgba(' + p.hoverRgb + ', ' + (mode === 'dark' ? '0.06' : '0.1') + ')');
         s.setProperty('--shadow-primary-glow', 'rgba(' + p.glowRgb + ', ' + (mode === 'dark' ? '0.25' : '0.2') + ')');
+        paintClusterFavicon(name);
       }
       window.__applyAccent = applyAccent;
 
-      var accent = localStorage.getItem('accent-color') || 'purple';
+      // The tab icon is a tile in the accent, so a row of cluster tabs reads by color.
+      function paintClusterFavicon(name) {
+        var link = document.querySelector('link[data-cluster-favicon]');
+        var preset = ACCENT_PRESETS[name];
+        if (!link || !preset) return;
+        var svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect x='1' y='1' width='14' height='14' rx='3.5' fill='" + preset.dark.accentText + "'/></svg>";
+        link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+      }
+      window.__paintClusterFavicon = paintClusterFavicon;
+
+      // A cluster's configured color is its default accent; a user's own pick wins.
+      var accent = localStorage.getItem('accent-color') || {{ (current_cluster.color if current_cluster else 'purple') | tojson }};
       document.documentElement.setAttribute('data-accent', accent);
       applyAccent(accent, resolved);
 
@@ -86,10 +98,15 @@
     })();
     </script>
     <title>
+      {% if current_cluster %}{{ current_cluster.name }} · {% endif %}
       {% block title %}
         Cabotage
       {% endblock title %}
     </title>
+    {% if current_cluster %}
+      <link rel="icon" type="image/svg+xml" href="{{ current_cluster.favicon }}" data-cluster-favicon />
+      <script>window.__paintClusterFavicon(document.documentElement.getAttribute('data-accent'));</script>
+    {% endif %}
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -236,7 +253,9 @@
   <body class="bg-base-100 text-base-content font-sans antialiased">
 
     <div class="app-shell">
-      <header class="app-topbar" data-topbar>
+      <header class="app-topbar" data-topbar
+              {% if current_cluster %}data-cluster-color="current"{% endif %}>
+        <div class="cluster-horizon" data-cluster-horizon aria-hidden="true"></div>
         <div class="topbar-row flex items-center justify-between px-4 lg:px-6 h-14"
              data-topbar-row>
           <div class="flex items-center gap-4" data-topbar-left>
@@ -244,8 +263,39 @@
                class="flex items-center gap-2 text-base-content hover:text-accent transition-colors flex-shrink-0"
                aria-label="Cabotage home">
               <span class="inline-block w-7 h-7 bg-current" style="-webkit-mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat; mask: url('{{ url_for('static', filename='cabotage.svg') }}') center/contain no-repeat;" aria-hidden="true"></span>
-              <span class="font-semibold text-sm tracking-tight hidden sm:inline">Cabotage</span>
+              {% if not current_cluster %}
+                <span class="font-semibold text-sm tracking-tight hidden sm:inline">Cabotage</span>
+              {% endif %}
             </a>
+
+            {% if cluster_switcher %}
+              <div class="cluster-crumb-wrap" data-cluster-crumb {% if not current_cluster %}hidden{% endif %}>
+                <button type="button"
+                        class="cluster-crumb"
+                        data-cluster-open
+                        aria-haspopup="dialog"
+                        aria-keyshortcuts="Meta+J Control+J"
+                        title="Switch cluster (⌘J)">
+                  <span class="cluster-crumb-roll">
+                    <span class="cluster-crumb-face" data-cluster-face data-cluster-color="current">
+                      <span class="cluster-swatch" aria-hidden="true"></span>
+                      <span class="cluster-crumb-name" data-cluster-name>{{ current_cluster.name if current_cluster else request.host }}</span>
+                    </span>
+                  </span>
+                  <svg class="cluster-crumb-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m7 15 5 5 5-5" /><path d="m7 9 5-5 5 5" /></svg>
+                </button>
+                <span class="cluster-arrival" data-cluster-arrival aria-live="polite"></span>
+              </div>
+            {% elif current_cluster %}
+              <div class="cluster-crumb-wrap">
+                <span class="cluster-crumb cluster-crumb-static" title="This is the {{ current_cluster.name }} cluster">
+                  <span class="cluster-crumb-face" data-cluster-color="current">
+                    <span class="cluster-swatch" aria-hidden="true"></span>
+                    <span class="cluster-crumb-name">{{ current_cluster.name }}</span>
+                  </span>
+                </span>
+              </div>
+            {% endif %}
 
             {% block resource_path %}
             {% endblock resource_path %}
@@ -439,6 +489,13 @@
                   {% if security.two_factor or security.webauthn %}
                   <a href="{{ url_for('user.account_security') }}"
                      class="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">Two-Factor Auth</a>
+                  {% endif %}
+                  {% if cluster_switcher %}
+                  <button type="button"
+                          data-cluster-open
+                          class="flex items-center justify-between gap-4 w-full text-left px-3 py-1.5 text-xs rounded-md hover:bg-base-content/5 transition-colors">
+                    Switch Cluster<kbd class="cluster-kbd" data-cluster-kbd>⌘J</kbd>
+                  </button>
                   {% endif %}
                   <div class="border-t border-base-content/10 my-1"></div>
                   <a href="{{ url_for('security.logout') }}"
@@ -692,6 +749,9 @@
       </footer>
     </div>
 
+    {% if cluster_switcher %}
+      <script type="application/json" id="cluster-switcher-data">{{ cluster_switcher | tojson }}</script>
+    {% endif %}
     {% if not config.DEBUG %}
       <script src="{{ url_for('static', filename='main.min.js') }}"></script>
     {% else %}
