@@ -342,9 +342,9 @@ def _spread(
 
 
 def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, object]:
-    """``network_gb`` and ``fixed_hourly`` from the latest settled day of
-    actuals that has collected hours. ``network_gb`` spreads all cross-AZ
-    cost over tenant traffic, as the true-up does."""
+    """``network_gb``, ``egress_gb`` and ``fixed_hourly`` from the latest
+    settled day of actuals that has collected hours. Each per-GB rate spreads
+    its AWS charge over the tenant bytes we meter, as the true-up does."""
     today = today or datetime.datetime.now(datetime.UTC).date()
     latest = (
         db.session.query(sa.func.max(CostAwsDaily.day))
@@ -374,10 +374,18 @@ def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, obje
     ).count()
 
     overrides: dict[str, object] = {}
-    tenant_gb = _line_item_sum(CostLineItem.quantity, "network", day_start, day_end)
-    cross_az = buckets.get("cross_az", 0.0)
-    if tenant_gb > 0 and cross_az > 0 and hours:
-        overrides["network_gb"] = cross_az / (tenant_gb * 24 / hours)
+    per_gb = (
+        ("network_gb", "network", buckets.get("cross_az", 0.0)),
+        (
+            "egress_gb",
+            "egress",
+            buckets.get("internet_egress", 0.0) + buckets.get("inter_region", 0.0),
+        ),
+    )
+    for rate_key, category, cost in per_gb:
+        gb = _line_item_sum(CostLineItem.quantity, category, day_start, day_end)
+        if gb > 0 and cost > 0 and hours:
+            overrides[rate_key] = cost / (gb * 24 / hours)
 
     storage_priced = _line_item_sum(
         CostLineItem.cost_usd, "storage", day_start, day_end
