@@ -951,9 +951,19 @@ class TestCostCollector:
         )
         assert run.stats["network_gb_total"] == pytest.approx(2.5, rel=1e-6)
 
+    @pytest.mark.parametrize("actuals_enabled", [False, True])
     def test_platform_pod_is_named_component_not_unallocated(
-        self, app, org, project, environment, application, app_env
+        self,
+        app,
+        org,
+        project,
+        environment,
+        application,
+        app_env,
+        monkeypatch,
+        actuals_enabled,
     ):
+        monkeypatch.setitem(app.config, "COST_AWS_ACTUALS_ENABLED", actuals_enabled)
         namespace = org.k8s_identifier
         app_pod = "api-web-abc12-xyz34"
         platform_pod = "cilium-ab3f9"
@@ -997,10 +1007,11 @@ class TestCostCollector:
             0.35, rel=1e-6
         )
         assert platform[name]["network_gb"] == pytest.approx(1.0, rel=1e-6)
+        # With actuals, tenants carry the platform's network cost instead.
         expected_cost = (
             0.25 * run.rates["vcpu_hour"]
             + 0.35 * run.rates["memory_gib_hour"]
-            + 1.0 * run.rates["network_gb"]
+            + (0 if actuals_enabled else 1.0 * run.rates["network_gb"])
         )
         assert platform[name]["cost_usd"] == pytest.approx(expected_cost, rel=1e-6)
         assert run.stats["platform_cost"] == pytest.approx(expected_cost, rel=1e-6)

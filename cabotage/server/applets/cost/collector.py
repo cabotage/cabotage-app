@@ -363,11 +363,10 @@ def _collect(
             mem_b, _, _ = _billed_hours(
                 mem_usage.get(pod_key, {}), mem_request.get(pod_key, {})
             )
-            cost = (
-                cpu_b * rates["vcpu_hour"]
-                + mem_b * rates["memory_gib_hour"]
-                + network_gb * rates["network_gb"]
-            )
+            cost = cpu_b * rates["vcpu_hour"] + mem_b * rates["memory_gib_hour"]
+            # With actuals, tenants carry all cross-AZ cost by bytes instead.
+            if not current_app.config.get("COST_AWS_ACTUALS_ENABLED"):
+                cost += network_gb * rates["network_gb"]
             name = f"{namespace}/{_platform_pod_workload(pod_name)}"
             _add_platform(
                 platform_components,

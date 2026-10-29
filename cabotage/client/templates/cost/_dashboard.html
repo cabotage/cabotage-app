@@ -523,7 +523,11 @@
 
     <section class="cost-card cost-platform-card" aria-label="Platform workloads" id="platform-components-section" hidden>
       <span class="cost-section-title">Platform workloads</span>
-      <div class="cost-note" style="text-align:left">Pods that belong to no tenant. Their cost is part of shared overhead.</div>
+      {% if config.COST_AWS_ACTUALS_ENABLED %}
+      <div class="cost-note" style="text-align:left">Pods that belong to no tenant. Their compute and volumes are part of shared overhead; their network is charged to tenants by bytes.</div>
+      {% else %}
+      <div class="cost-note" style="text-align:left">Pods that belong to no tenant. Only their compute is part of shared overhead.</div>
+      {% endif %}
       <div class="cost-table-scroll">
         <table class="cost-meters-table">
           <thead><tr><th>Workload</th><th class="num">vCPU-hr</th><th class="num">GiB-hr</th><th class="num">Network GB</th><th class="num">Storage GiB-mo</th><th class="num">Cost</th></tr></thead>

@@ -9,7 +9,7 @@ import datetime
 import json
 import uuid
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -17,6 +17,7 @@ import boto3
 import sqlalchemy as sa
 from flask import current_app
 from sqlalchemy import Row
+from sqlalchemy.orm import InstrumentedAttribute
 
 from cabotage.server import db
 from cabotage.server.applets.cost.constants import (
@@ -187,11 +188,20 @@ def _config_list(value: object) -> list[str]:
 
 
 def true_up_day(day: datetime.date, buckets: Mapping[str, float]) -> None:
-    """Rewrite ``day``'s true-ups so its line items sum to its actuals."""
+    """Rewrite ``day``'s true-ups so its line items sum to its actuals, scaled
+    to the hours that were collected."""
     CostLineItem.query.filter(CostLineItem.aws_day == day).delete()
 
     day_start = datetime.datetime.combine(day, datetime.time(), datetime.UTC)
     day_end = day_start + datetime.timedelta(days=1)
+    hours: int = CostCollectionRun.query.filter(
+        CostCollectionRun.status == "succeeded",
+        CostCollectionRun.period_start >= day_start,
+        CostCollectionRun.period_start < day_end,
+    ).count()
+    if not hours:
+        return
+    scale = hours / 24
     rows: list[
         Row[
             tuple[
@@ -269,8 +279,8 @@ def true_up_day(day: datetime.date, buckets: Mapping[str, float]) -> None:
             if category in _DIRECT_CATEGORIES:
                 direct_weights[key] += cost
 
-    actual_network = sum(buckets.get(b, 0.0) for b in ACTUALS_NETWORK_BUCKETS)
-    actual_other = sum(
+    actual_network = scale * sum(buckets.get(b, 0.0) for b in ACTUALS_NETWORK_BUCKETS)
+    actual_other = scale * sum(
         cost for b, cost in buckets.items() if b not in ACTUALS_NETWORK_BUCKETS
     )
     _spread(
@@ -324,7 +334,8 @@ def _spread(
 
 def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, object]:
     """``network_gb`` and ``fixed_hourly`` from the latest settled day of
-    actuals that has collected hours."""
+    actuals that has collected hours. ``network_gb`` spreads all cross-AZ
+    cost over tenant traffic, as the true-up does."""
     today = today or datetime.datetime.now(datetime.UTC).date()
     latest = (
         db.session.query(sa.func.max(CostAwsDaily.day))
@@ -347,38 +358,23 @@ def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, obje
     buckets = {row.bucket: float(row.cost_usd) for row in daily}
     day_start = datetime.datetime.combine(latest, datetime.time(), datetime.UTC)
     day_end = day_start + datetime.timedelta(days=1)
-    runs: Sequence[CostCollectionRun] = CostCollectionRun.query.filter(
+    hours: int = CostCollectionRun.query.filter(
         CostCollectionRun.status == "succeeded",
         CostCollectionRun.period_start >= day_start,
         CostCollectionRun.period_start < day_end,
-    ).all()
-    hours = len(runs)
+    ).count()
 
     overrides: dict[str, object] = {}
-    network_hours = [
-        gb
-        for run in runs
-        if (gb := (run.stats or {}).get("network_gb_total")) is not None
-    ]
-    network_gb = sum(network_hours)
+    tenant_gb = _line_item_sum(CostLineItem.quantity, "network", day_start, day_end)
     cross_az = buckets.get("cross_az", 0.0)
-    if network_gb > 0 and cross_az > 0:
-        overrides["network_gb"] = cross_az / (network_gb * 24 / len(network_hours))
+    if tenant_gb > 0 and cross_az > 0 and hours:
+        overrides["network_gb"] = cross_az / (tenant_gb * 24 / hours)
 
-    storage_priced = (
-        db.session.query(
-            sa.func.coalesce(sa.func.sum(CostLineItem.cost_usd), Decimal(0))
-        )
-        .filter(
-            CostLineItem.period_start >= day_start,
-            CostLineItem.period_start < day_end,
-            CostLineItem.run_id.isnot(None),
-            CostLineItem.category == "storage",
-        )
-        .scalar()
+    storage_priced = _line_item_sum(
+        CostLineItem.cost_usd, "storage", day_start, day_end
     )
     # Scale to a full day so a partly collected day isn't all "unattributed".
-    storage_priced_day = float(storage_priced or 0.0) * 24 / hours if hours else 0.0
+    storage_priced_day = storage_priced * 24 / hours if hours else 0.0
     fixed_hourly = {
         bucket: buckets[bucket] / 24
         for bucket in ACTUALS_FIXED_BUCKETS
@@ -389,3 +385,22 @@ def actuals_rate_overrides(today: datetime.date | None = None) -> dict[str, obje
         fixed_hourly["unattributed_storage"] = unattributed_storage / 24
     overrides["fixed_hourly"] = fixed_hourly
     return overrides
+
+
+def _line_item_sum(
+    column: InstrumentedAttribute[float],
+    category: str,
+    start: datetime.datetime,
+    end: datetime.datetime,
+) -> float:
+    total = (
+        db.session.query(sa.func.coalesce(sa.func.sum(column), 0))
+        .filter(
+            CostLineItem.period_start >= start,
+            CostLineItem.period_start < end,
+            CostLineItem.run_id.isnot(None),
+            CostLineItem.category == category,
+        )
+        .scalar()
+    )
+    return float(total or 0.0)
