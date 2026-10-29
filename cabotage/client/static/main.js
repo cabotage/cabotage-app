@@ -2764,20 +2764,24 @@ function initAppShell() {
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
   var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
   // xterm needs concrete colors, so resolve the accent to rgb for the cursor and selection.
-  var accentRgb = (function() {
+  function terminalTheme() {
     var ctx = document.createElement('canvas').getContext('2d');
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
     ctx.fillRect(0, 0, 1, 1);
     var p = ctx.getImageData(0, 0, 1, 1).data;
-    return p[0] + ', ' + p[1] + ', ' + p[2];
-  })();
+    var rgb = p[0] + ', ' + p[1] + ', ' + p[2];
+    return { background: '#000000', foreground: '#e2e2e9', cursor: 'rgb(' + rgb + ')', selectionBackground: 'rgba(' + rgb + ', 0.3)' };
+  }
   var term = new Terminal({
     fontFamily: '"JetBrains Mono", "Cascadia Code", Menlo, monospace',
     fontSize: 13,
     cursorBlink: true,
     allowProposedApi: true,
-    theme: { background: '#000000', foreground: '#e2e2e9', cursor: 'rgb(' + accentRgb + ')', selectionBackground: 'rgba(' + accentRgb + ', 0.3)' }
+    theme: terminalTheme()
   });
+  // The accent picker and theme toggle rewrite --color-primary on <html> without a reload.
+  new MutationObserver(function() { term.options.theme = terminalTheme(); })
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-accent'] });
   var attachAddon = new AttachAddon.AttachAddon(socket, true);
   wrap(attachAddon, '_sendData', function(original, data) { original('\x00' + data); });
   var fitAddon = new FitAddon.FitAddon(socket, true);
