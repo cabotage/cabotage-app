@@ -963,8 +963,9 @@ class TestRunReleaseBuild:
         mock_run_deploy.delay.assert_called_once()
 
     @patch("cabotage.celery.tasks.build.dispatch_autodeploy_notification")
+    @patch("cabotage.celery.tasks.deploy.dispatch_pipeline_notification")
     @patch("cabotage.celery.tasks.build.dispatch_pipeline_notification")
-    @patch("cabotage.celery.tasks.build.run_deploy")
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_deploy_after_release_chains_deploy_with_pipeline_notifications(
@@ -972,7 +973,8 @@ class TestRunReleaseBuild:
         mock_github_app,
         mock_build,
         mock_run_deploy,
-        mock_pipeline_notify,
+        mock_release_notify,
+        mock_deploy_notify,
         mock_autodeploy_notify,
         app,
         db_session,
@@ -1009,9 +1011,12 @@ class TestRunReleaseBuild:
         assert deployment.trigger_type == "manual"
         mock_run_deploy.delay.assert_called_once_with(deployment_id=deployment.id)
         mock_autodeploy_notify.assert_not_called()
-        notified = [c.args[:3] for c in mock_pipeline_notify.delay.call_args_list]
-        assert ("pipeline.release", "Release", str(release.id)) in notified
-        assert ("pipeline.deploy", "Deployment", str(deployment.id)) in notified
+        assert ("pipeline.release", "Release", str(release.id)) in [
+            c.args[:3] for c in mock_release_notify.delay.call_args_list
+        ]
+        assert ("pipeline.deploy", "Deployment", str(deployment.id)) in [
+            c.args[:3] for c in mock_deploy_notify.delay.call_args_list
+        ]
         audit = Activity.query.filter_by(
             object_type="Deployment", object_id=deployment.id
         ).one()
@@ -1028,11 +1033,12 @@ class TestRunReleaseBuild:
             ),
             patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls,
             patch("cabotage.celery.tasks.build.dispatch_pipeline_notification"),
+            patch("cabotage.celery.tasks.deploy.dispatch_pipeline_notification"),
         ):
             mock_check_cls.from_metadata.return_value = MagicMock()
             run_release_build(release_id=release.id)
 
-    @patch("cabotage.celery.tasks.build.run_deploy")
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_deploy_after_release_skips_superseded_release(
@@ -1075,7 +1081,7 @@ class TestRunReleaseBuild:
         )
         mock_run_deploy.delay.assert_not_called()
 
-    @patch("cabotage.celery.tasks.build.run_deploy")
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_deploy_enqueue_failure_fails_deployment_not_release(
@@ -1096,7 +1102,7 @@ class TestRunReleaseBuild:
         mock_build.return_value = {"release_id": "sha256:release-abc"}
         mock_run_deploy.delay.side_effect = ConnectionError("broker down")
 
-        with patch("cabotage.celery.tasks.build._dispatch_deploy_failure") as failed:
+        with patch("cabotage.celery.tasks.deploy._dispatch_deploy_failure") as failed:
             self._build(release)
 
         db_session.refresh(release)
