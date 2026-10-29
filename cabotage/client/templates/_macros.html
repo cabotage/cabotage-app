@@ -134,7 +134,8 @@
         <div tabindex="0" role="button"
              class="tab-item {% if active in ('observe', 'pipeline', 'audit') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
-          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+          <span class="tab-label">Observe</span>
+          {{ icon('chevron-down', 'tab-caret') }}
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
           {% if config.MIMIR_URL %}
@@ -192,7 +193,8 @@
         <div tabindex="0" role="button"
              class="tab-item {% if active in ('observe', 'audit') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
-          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+          <span class="tab-label">Observe</span>
+          {{ icon('chevron-down', 'tab-caret') }}
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
           {% if config.MIMIR_URL %}
@@ -229,7 +231,8 @@
         <div tabindex="0" role="button"
              class="tab-item {% if active in ('observe', 'pipeline', 'audit') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
-          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+          <span class="tab-label">Observe</span>
+          {{ icon('chevron-down', 'tab-caret') }}
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
           {% if config.MIMIR_URL %}
@@ -272,7 +275,8 @@
         <div tabindex="0" role="button" title="Observe"
              class="tab-item {% if active in ('observe', 'logs', 'pipeline') %}tab-active{% endif %}">
           {{ icon('search', 'w-4 h-4') }}
-          <span class="tab-label">Observe {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+          <span class="tab-label">Observe</span>
+          {{ icon('chevron-down', 'tab-caret') }}
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
           {% if config.MIMIR_URL %}
@@ -301,7 +305,8 @@
         <div tabindex="0" role="button" title="Config"
              class="tab-item {% if active in ('config', 'ingress') %}tab-active{% endif %}">
           {{ icon('tool', 'w-4 h-4') }}
-          <span class="tab-label">Config {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+          <span class="tab-label">Config</span>
+          {{ icon('chevron-down', 'tab-caret') }}
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-48 p-2 shadow-lg border border-base-300">
           <li><a href="{{ url_for('user.application_config', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
@@ -332,7 +337,8 @@
         <div tabindex="0" role="button" title="Settings"
              class="tab-item {% if active in ('settings', 'env_settings') %}tab-active{% endif %}">
           {{ icon('settings', 'w-4 h-4') }}
-          <span class="tab-label">Settings {{ icon('chevron-down', 'w-3 h-3 opacity-40') }}</span>
+          <span class="tab-label">Settings</span>
+          {{ icon('chevron-down', 'tab-caret') }}
         </div>
         <ul tabindex="0" class="menu menu-md dropdown-content bg-base-100 rounded-box z-50 mt-1 w-52 p-2 shadow-lg border border-base-300">
           <li><a href="{{ url_for('user.project_application_settings', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=env_slug) }}"
