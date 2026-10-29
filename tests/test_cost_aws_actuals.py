@@ -337,8 +337,19 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
             quantity=100.0,
             meter="network",
         )
+        _item(
+            run,
+            org=org,
+            application=web,
+            category="egress",
+            cost=0.0,
+            quantity=10.0,
+            meter="egress",
+        )
     for bucket, cost in {
         "cross_az": 24.0,
+        "internet_egress": 40.0,
+        "inter_region": 8.0,
         "load_balancer": 4.8,
         "storage": 4.8,
         "compute": 100.0,
@@ -353,6 +364,8 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
 
     # $24 cross-AZ over 1,200 tenant GB in 12 hours, i.e. 2,400 GB for the day.
     assert overrides["network_gb"] == pytest.approx(0.01)
+    # $40 internet + $8 inter-region over 120 egress GB in 12 hours (240/day).
+    assert overrides["egress_gb"] == pytest.approx(0.2)
     # $4.80 EBS minus $2.40/day already priced as storage line items.
     assert overrides["fixed_hourly"] == {
         "load_balancer": pytest.approx(0.2),
@@ -360,6 +373,7 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
     }
     assert rates["fixed_hourly"] == overrides["fixed_hourly"]
     assert rates["network_gb"] == pytest.approx(0.01)
+    assert rates["egress_gb"] == pytest.approx(0.2)
     # A day later than settled: rates don't come from it.
     assert actuals_rate_overrides(today=TODAY - datetime.timedelta(days=1)) == {}
 
