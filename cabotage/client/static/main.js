@@ -3932,7 +3932,9 @@ function initClusterSwitcher() {
     });
     root.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') {
+        // The page's own Escape handlers (modals, tab nav blur) must not see it.
         e.preventDefault();
+        e.stopPropagation();
         if (state.adding) showList(); else close();
       }
     });
