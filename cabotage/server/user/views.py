@@ -46,12 +46,15 @@ from cabotage.celery.tasks import (
     deploy_tailscale_operator,
     dispatch_pipeline_notification,
     process_github_hook,
-    run_deploy,
     run_image_build,
     run_release_build,
     teardown_tailscale_operator,
 )
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.deploy import (
+    resize_deployment,
+    scale_deployment,
+    start_next_deployment,
+)
 from cabotage.celery.tasks.github import discover_check_names
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
@@ -3285,7 +3288,14 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         latest_image_error = variants["latest_image_error"]
         latest_release = variants["latest_release"]
         latest_release_built = variants["latest_release_built"]
-        latest_deployment = variants["latest_deployment"]
+        latest_deployment = next(
+            (
+                d
+                for d in all_deployments
+                if d.started_at is not None and not d.complete and not d.error
+            ),
+            variants["latest_deployment"],
+        )
         latest_deployment_completed = variants["latest_deployment_completed"]
         has_releases = variants["has_releases"]
 
@@ -5715,7 +5725,7 @@ def release_build_livelogs_legacy(ws, release_id):
     _stream_release_build_logs(ws, release)
 
 
-def _stream_deployment_logs(ws, deployment):
+def _stream_deployment_logs(ws: Server, deployment: Deployment) -> None:
     """Stream deploy logs for a deployment over a websocket."""
     deployment_id = deployment.id
     job_id = deployment.job_id
@@ -5732,7 +5742,8 @@ def _stream_deployment_logs(ws, deployment):
 
     if current_app.config["KUBERNETES_ENABLED"]:
         if job_id is None:
-            for _ in range(60):
+            waits = 0
+            while waits < 60 and ws.connected:
                 time.sleep(0.5)
                 dep = Deployment.query.filter_by(id=deployment_id).first()
                 if dep is None:
@@ -5747,6 +5758,8 @@ def _stream_deployment_logs(ws, deployment):
                         ws.send(f"  {line}")
                     ws.send("=================END OF LOGS=================")
                     return
+                if not dep.queued:
+                    waits += 1
                 db.session.remove()
             else:
                 ws.send("=================END OF LOGS=================")
@@ -6562,7 +6575,7 @@ def release_deploy(org_slug, project_slug, app_slug, release_id):
             detail=f"Triggered by: {current_user.username}",
         )
         deployment_id = deployment.id
-        run_deploy.delay(deployment_id=deployment.id)
+        start_next_deployment(deployment.application_environment_id)
         deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
     else:
         from cabotage.celery.tasks.deploy import fake_deploy_release

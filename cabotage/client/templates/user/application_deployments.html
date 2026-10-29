@@ -93,6 +93,8 @@
                 <span class="dpl-row-status-text dpl-row-status-ok">Ready</span>
               {% elif deployment.error %}
                 <span class="dpl-row-status-text dpl-row-status-err">Error</span>
+              {% elif deployment.queued %}
+                <span class="dpl-row-status-text dpl-row-status-queued">Queued</span>
               {% else %}
                 <span class="dpl-row-status-text dpl-row-status-run">Deploying</span>
               {% endif %}

@@ -26,8 +26,9 @@ from kubernetes.client.exceptions import ApiException
 
 from cabotage.celery.tasks.deploy import (
     _safe_labels_from_application,
-    run_deploy,
+    dispatch_deploy_started,
     run_job,
+    start_next_deployment,
 )
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
@@ -2235,36 +2236,14 @@ def run_release_build(release_id: str):
             )
             db.session.add(activity)
             db.session.commit()
-            try:
-                image_id = release.release_metadata.get(
-                    "source_image_id", str(release.id)
-                )
-                dispatch_autodeploy_notification(
-                    "deploying",
-                    image_id,
-                    release.application,
-                    release.application_environment,
-                    image_url=cabotage_url(release.application, f"images/{image_id}"),
-                    release_url=cabotage_url(
-                        release.application, f"releases/{release.id}"
-                    ),
-                    deploy_url=cabotage_url(
-                        release.application, f"deployments/{deployment.id}"
-                    ),
-                    image_metadata=release.release_metadata,
-                )
-            except Exception:
-                log.warning(
-                    "Failed to dispatch autodeploy deploying notification",
-                    exc_info=True,
-                )
             if current_app.config["KUBERNETES_ENABLED"]:
                 deployment_id = deployment.id
-                run_deploy.delay(deployment_id=deployment.id)
+                start_next_deployment(deployment.application_environment_id)
                 deployment = Deployment.query.filter_by(id=deployment_id).first()
             else:
                 from cabotage.celery.tasks.deploy import fake_deploy_release
 
+                dispatch_deploy_started(deployment)
                 fake_deploy_release(deployment)
                 deployment.complete = True
                 db.session.commit()
@@ -2548,7 +2527,7 @@ def run_omnibus_build(image_id: str):
     db.session.add(activity)
     db.session.commit()
     if current_app.config["KUBERNETES_ENABLED"]:
-        run_deploy.delay(deployment_id=deployment.id)
+        start_next_deployment(deployment.application_environment_id)
     else:
         from cabotage.celery.tasks.deploy import fake_deploy_release
 

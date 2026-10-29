@@ -4674,6 +4674,9 @@ a.obs-pod-link:hover {
 .dpl-row-status-run {
   color: var(--color-primary);
 }
+.dpl-row-status-queued {
+  color: var(--text-muted);
+}
 .dpl-row-dur {
   font-size: 0.6875rem;
   color: var(--text-faintest);

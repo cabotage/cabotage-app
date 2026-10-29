@@ -1201,6 +1201,10 @@
                 <span class="status-dot status-dot-error flex-shrink-0"
                       style="width:5px;
                              height:5px"></span>
+              {% elif dep.queued %}
+                <span class="status-dot status-dot-neutral flex-shrink-0"
+                      style="width:5px;
+                             height:5px"></span>
               {% else %}
                 <span class="status-dot status-dot-info status-dot-pulse flex-shrink-0"
                       style="width:5px;
@@ -1209,6 +1213,11 @@
               <code class="text-xs text-accent/70">v{{ release_by_id.get(dep.release.get('id', '')|string).version if release_by_id.get(dep.release.get('id', '')|string) else '?' }}</code>
               {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
                 <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
+              {% endif %}
+              {% if dep.queued %}
+                <span class="text-xs text-base-content/40">queued</span>
+              {% elif not dep.complete and not dep.error %}
+                <span class="text-xs text-info/70">deploying</span>
               {% endif %}
             <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
             {% if dep.complete %}<span class="text-base-content/15">({{ dep|duration }})</span>{% endif %}
@@ -1363,6 +1372,8 @@
             <span class="status-dot status-dot-success" style="width:6px;height:6px"></span>
           {% elif latest_deployment.error %}
             <span class="status-dot status-dot-error" style="width:6px;height:6px"></span>
+          {% elif latest_deployment.queued %}
+            <span class="status-dot status-dot-neutral" style="width:6px;height:6px"></span>
           {% else %}
             <span class="status-dot status-dot-info status-dot-pulse"
                   style="width:6px;
@@ -1380,7 +1391,7 @@
             {% elif latest_deployment.error %}
               Failed
             {% else %}
-              In progress
+              {{ 'Queued' if latest_deployment.queued else 'In progress' }}
             {% endif %}
             {% if _deploy_release %}
               <code class="text-accent ml-1">v{{ _deploy_release.version }}</code>

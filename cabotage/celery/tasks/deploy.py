@@ -1,12 +1,16 @@
+import datetime
+import hashlib
 import logging
 import secrets
 import time
+import uuid
 from base64 import b64encode
 from datetime import UTC
 from typing import TYPE_CHECKING, cast
 
 import kubernetes.client
 import kubernetes.watch
+import sqlalchemy as sa
 import yaml
 from celery import shared_task
 from flask import current_app
@@ -104,6 +108,32 @@ def _dispatch_deploy_failure(deployment, error_detail):
             )
     except Exception:
         log.warning("Failed to dispatch deploy failure notification", exc_info=True)
+
+
+def dispatch_deploy_started(deployment: Deployment) -> None:
+    """Send the auto-deploy "deploying" notification once a deploy starts."""
+    if not (
+        deployment.deploy_metadata and deployment.deploy_metadata.get("auto_deploy")
+    ):
+        return
+    try:
+        app = deployment.application
+        release_id = deployment.release.get("id") if deployment.release else None
+        image_id = deployment.deploy_metadata.get("source_image_id", str(release_id))
+        dispatch_autodeploy_notification(
+            "deploying",
+            image_id,
+            app,
+            deployment.application_environment,
+            image_url=cabotage_url(app, f"images/{image_id}"),
+            release_url=cabotage_url(app, f"releases/{release_id}"),
+            deploy_url=cabotage_url(app, f"deployments/{deployment.id}"),
+            image_metadata=deployment.deploy_metadata,
+        )
+    except Exception:
+        log.warning(
+            "Failed to dispatch autodeploy deploying notification", exc_info=True
+        )
 
 
 @shared_task()
@@ -2731,6 +2761,7 @@ def deploy_release(deployment: Deployment):
     deployment.job_id = job_id
     db.session.add(deployment)
     db.session.commit()
+    dispatch_deploy_started(deployment)
     deploy_log = []
 
     deployment_id_str = str(deployment.id)
@@ -3449,17 +3480,82 @@ def remove_none(obj):
         return obj
 
 
+def _advisory_lock_key(scope: str, application_environment_id: uuid.UUID) -> int:
+    digest = hashlib.sha256(f"{scope}:{application_environment_id}".encode()).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
+def try_deploy_execution_lock(application_environment_id: uuid.UUID) -> bool:
+    """False if a run_deploy task is still running for this environment."""
+    key = _advisory_lock_key("deploy-exec", application_environment_id)
+    return bool(
+        db.session.execute(sa.select(sa.func.pg_try_advisory_xact_lock(key))).scalar()
+    )
+
+
+def start_next_deployment(application_environment_id: uuid.UUID) -> None:
+    """Start the oldest queued deployment if none is running."""
+    lock_key = _advisory_lock_key("deploy-queue", application_environment_id)
+    db.session.execute(sa.select(sa.func.pg_advisory_xact_lock(lock_key)))
+    pending = Deployment.query.filter(
+        Deployment.application_environment_id == application_environment_id,
+        Deployment.complete.is_(False),
+        Deployment.error.is_(False),
+    )
+    deployment: Deployment | None = None
+    if pending.filter(Deployment.started_at.isnot(None)).first() is None:
+        deployment = (
+            pending.filter(Deployment.started_at.is_(None))
+            .order_by(Deployment.created)
+            .first()
+        )
+        if deployment is not None:
+            deployment.started_at = datetime.datetime.now(UTC).replace(tzinfo=None)
+    db.session.commit()
+    if deployment is not None:
+        run_deploy.delay(deployment_id=deployment.id)
+
+
 @shared_task(acks_late=True)
-def run_deploy(deployment_id=None):
-    deployment = Deployment.query.filter_by(id=deployment_id).first()
+def run_deploy(deployment_id: uuid.UUID | str | None = None) -> None:
+    deployment: Deployment | None = Deployment.query.filter_by(id=deployment_id).first()
     if deployment is None:
         raise KeyError(f"Deployment with ID {deployment_id} not found!")
+    application_environment_id = deployment.application_environment_id
     error_detail = ""
     try:
-        deploy_release(deployment)
+        # Locked while this task runs. Postgres drops the lock when this backend
+        # exits. Short keepalives let it notice a vanished worker node in about
+        # a minute instead of the OS default (~2 hours).
+        with db.engine.connect() as conn:
+            _ = conn.execute(
+                sa.select(
+                    sa.func.set_config("tcp_keepalives_idle", "30", True),
+                    sa.func.set_config("tcp_keepalives_interval", "10", True),
+                    sa.func.set_config("tcp_keepalives_count", "3", True),
+                )
+            )
+            lock_key = _advisory_lock_key("deploy-exec", application_environment_id)
+            _ = conn.execute(sa.select(sa.func.pg_advisory_xact_lock(lock_key)))
+            db.session.refresh(deployment)
+            # Skip if the reaper already gave up on this deployment.
+            if not (deployment.complete or deployment.error):
+                _ = deploy_release(deployment)
     except DeployError as exc:
         error_detail = str(exc)
         print(error_detail)
         print(exc)
     except Exception:
+        db.session.rollback()
         raise
+    finally:
+        # Never let promotion failures mask this deploy's outcome; the reaper
+        # restarts idle queues.
+        try:
+            start_next_deployment(application_environment_id)
+        except Exception:
+            db.session.rollback()
+            log.exception(
+                "Failed to start next deployment for environment %s",
+                application_environment_id,
+            )

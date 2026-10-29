@@ -2,6 +2,7 @@ import datetime
 import logging
 
 import kubernetes.client
+import sqlalchemy as sa
 from celery import shared_task
 from flask import current_app
 
@@ -9,6 +10,10 @@ from cabotage._types import (
     K8S_OBJECT_HAS_STATUS,
     K8S_POD_HAS_START_TIME,
     assume_not_none,
+)
+from cabotage.celery.tasks.deploy import (
+    start_next_deployment,
+    try_deploy_execution_lock,
 )
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
@@ -81,7 +86,7 @@ def _dispatch_reap_failure(obj, obj_type, notification_type):
 
 
 @shared_task()
-def reap_stale_builds():
+def reap_stale_builds() -> None:
     """Find stuck image builds, release builds, and deploys with no heartbeat."""
     redis_client = get_redis_client(current_app.config["CELERY_BROKER_URL"])
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=90)
@@ -176,15 +181,19 @@ def reap_stale_builds():
                     )
             _dispatch_reap_failure(release, "Release", "pipeline.release")
 
-    # Deployments: complete=False, error=False, updated < cutoff, no heartbeat
+    # Deployments: started, complete=False, error=False, updated < cutoff, no
+    # heartbeat, and no run_deploy task still running for the environment
     stuck_deployments = Deployment.query.filter(
-        Deployment.complete == False,
-        Deployment.error == False,
+        Deployment.started_at.isnot(None),
+        Deployment.complete.is_(False),
+        Deployment.error.is_(False),
         Deployment.updated < cutoff,
     ).all()
     for deployment in stuck_deployments:
         key = heartbeat_key("deploy", str(deployment.id))
-        if not redis_client.exists(key):
+        if not redis_client.exists(key) and try_deploy_execution_lock(
+            deployment.application_environment_id
+        ):
             deployment.error = True
             deployment.error_detail = "Reaped: deploy timed out with no progress"
             if deployment.job_id:
@@ -222,6 +231,21 @@ def reap_stale_builds():
             _dispatch_reap_failure(deployment, "Deployment", "pipeline.deploy")
 
     db.session.commit()
+
+    # Kick any environment that has deploys waiting; start_next_deployment
+    # does nothing if one is already running there.
+    if current_app.config["KUBERNETES_ENABLED"]:
+        queued_app_env_ids = db.session.scalars(
+            sa.select(Deployment.application_environment_id)
+            .where(
+                Deployment.started_at.is_(None),
+                Deployment.complete.is_(False),
+                Deployment.error.is_(False),
+            )
+            .distinct()
+        ).all()
+        for application_environment_id in queued_app_env_ids:
+            start_next_deployment(application_environment_id)
 
 
 @shared_task()

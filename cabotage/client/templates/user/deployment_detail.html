@@ -48,6 +48,8 @@
               <span class="text-success">Complete</span>
             {% elif deployment.error %}
               <span class="text-error">Failed</span>
+            {% elif deployment.queued %}
+              <span class="text-base-content/60">Queued</span>
             {% else %}
               <span class="text-info">Deploying...</span>
             {% endif %}
@@ -131,6 +133,8 @@
                   <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-success"></span> Complete</span>
                 {% elif deployment.error %}
                   <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-error"></span> Error</span>
+                {% elif deployment.queued %}
+                  <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-neutral"></span> Queued</span>
                 {% else %}
                   <span class="inline-flex items-center gap-1.5"><span class="status-dot status-dot-info status-dot-pulse"></span> Deploying</span>
                 {% endif %}
