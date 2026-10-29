@@ -276,7 +276,7 @@ def test_true_up_spreads_network_by_gb_and_the_rest_by_direct_cost(app, org, app
     assert CostLineItem.query.filter(CostLineItem.aws_day.isnot(None)).count() == 0
 
 
-def test_network_true_up_falls_back_to_egress_usage(app, org, apps):
+def test_egress_true_up_settles_over_egress_bytes(app, org, apps):
     web, api = apps
     run = _run(DAY_START)
     _item(run, org=org, application=web, category="compute", cost=1.0)
@@ -292,11 +292,25 @@ def test_network_true_up_falls_back_to_egress_usage(app, org, apps):
     db.session.commit()
 
     refresh_actuals(
-        FakeCostExplorer([_page({DAY: {"USE2-DataTransfer-Out-Bytes": 2.9 * 24}})]),
+        FakeCostExplorer(
+            [
+                _page(
+                    {
+                        DAY: {
+                            "USE2-DataTransfer-Out-Bytes": 2.9 * 24,
+                            "USE2-DataTransfer-Regional-Bytes": 1.0 * 24,
+                        }
+                    }
+                )
+            ]
+        ),
         today=TODAY,
     )
 
-    assert _true_ups("network") == {(api.id, DAY_START): pytest.approx(2.0)}
+    # Egress is settled over egress bytes: $2.90 actual vs $0.90 estimated.
+    assert _true_ups("egress") == {(api.id, DAY_START): pytest.approx(2.0)}
+    # No pod network was metered, so cross-AZ falls back to egress bytes.
+    assert _true_ups("network") == {(api.id, DAY_START): pytest.approx(1.0)}
 
 
 def test_true_ups_survive_recollecting_their_hour(app, org, apps):
@@ -357,6 +371,10 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
         db.session.add(
             CostAwsDaily(day=DAY, bucket=bucket, cost_usd=cost, fetched_at=DAY_START)
         )
+    # Collected hours where nothing was metered (e.g. Traefik returned
+    # nothing) don't dilute the day.
+    for hour in range(12, 16):
+        _run(DAY_START + datetime.timedelta(hours=hour))
     db.session.commit()
 
     overrides = actuals_rate_overrides(today=TODAY)
