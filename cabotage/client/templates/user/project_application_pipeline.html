@@ -20,12 +20,12 @@
 
 {% block content %}
 <style>
-/* Stages are one hue stepping toward the foreground: build → release → deploy.
+/* Stages are the accent stepping toward the foreground: build → release → deploy.
    Status colors stay reserved for outcomes. */
 .pipe {
-  --pipe-image: var(--color-info);
-  --pipe-release: color-mix(in oklab, var(--color-info) 62%, var(--text-bright));
-  --pipe-deploy: color-mix(in oklab, var(--color-info) 30%, var(--text-bright));
+  --pipe-image: var(--color-primary);
+  --pipe-release: color-mix(in oklab, var(--color-primary) 62%, var(--text-bright));
+  --pipe-deploy: color-mix(in oklab, var(--color-primary) 30%, var(--text-bright));
   --pipe-ok: var(--color-success);
   --pipe-fail: var(--color-error);
   --pipe-run: var(--color-warning);

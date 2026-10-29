@@ -60,8 +60,8 @@
 
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
     {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
-    {{ stat_card(total_pods.n, 'Pods', 'layers', 'secondary') }}
-    {{ stat_card(proj_deploy_count, 'Deployments', 'deploy', 'success') }}
+    {{ stat_card(total_pods.n, 'Pods', 'layers', 'primary') }}
+    {{ stat_card(proj_deploy_count, 'Deployments', 'deploy', 'primary') }}
     {% if errored_count.n > 0 %}{{ stat_card(errored_count.n, 'Errors', 'alert-triangle', 'error') }}{% endif %}
   </div>
 
@@ -96,12 +96,10 @@
     {% if resource.type == 'postgres' %}
       {% set res_url = url_for('user.environment_postgres_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug, resource_slug=resource.slug) %}
       {% set icon_name = 'database' %}
-      {% set color = 'secondary' %}
       {% set type_label = 'PostgreSQL' %}
     {% elif resource.type == 'redis' %}
       {% set res_url = url_for('user.environment_redis_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug, resource_slug=resource.slug) %}
       {% set icon_name = 'zap' %}
-      {% set color = 'warning' %}
       {% set type_label = 'Redis' %}
     {% endif %}
     {% if resource.provisioning_status == 'ready' %}
@@ -125,7 +123,7 @@
          url=res_url,
          status=status,
          meta_items=meta,
-         color=color,
+         color='primary',
          icon_name=icon_name,
     ) }}
   {% endmacro %}

@@ -38,8 +38,7 @@
         project_count=proj_count,
         app_count=app_count.n,
         member_count=org.members|length,
-        last_deploy=last_deploy_by_org.get(org.id),
-        color_index=loop.index0
+        last_deploy=last_deploy_by_org.get(org.id)
         ) }}
       {% endfor %}
     </div>

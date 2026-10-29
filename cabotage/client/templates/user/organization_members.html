@@ -20,7 +20,7 @@
 
 {% block content %}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-      {{ stat_card(member_count, 'Members', 'users', 'secondary') }}
+      {{ stat_card(member_count, 'Members', 'users', 'primary') }}
     </div>
 
     <div class="flex items-center justify-between mb-3">
@@ -51,7 +51,7 @@
                   {{ icon('shield', 'w-4 h-4') }}
                 </div>
               {% else %}
-                <div class="w-8 h-8 rounded-full bg-secondary/10 text-secondary flex items-center justify-center flex-shrink-0">
+                <div class="w-8 h-8 rounded-full bg-base-content/5 text-base-content/50 flex items-center justify-center flex-shrink-0">
                   {{ icon('user', 'w-4 h-4') }}
                 </div>
               {% endif %}

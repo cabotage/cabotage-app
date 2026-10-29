@@ -34,7 +34,7 @@
                 url=url_for('user.project_environment', org_slug=project.organization.slug, project_slug=project.slug, env_slug=env.slug),
         status='running' if app_count > 0 else '',
         meta_items=meta,
-        color='secondary'
+        color='primary'
         ) }}
       {% endfor %}
     </div>
