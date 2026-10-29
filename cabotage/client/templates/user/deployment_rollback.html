@@ -1,0 +1,298 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon, app_resource_path %}
+
+{% set app = application %}
+{% set org_slug = app.project.organization.slug %}
+{% set project_slug = app.project.slug %}
+{% set app_slug = app.slug %}
+{% set tr = plan.target_release %}
+{% set cr = plan.current_release %}
+
+{% macro release_card(label, deployment, release, tone) %}
+  <div class="card bg-base-200 border border-base-300 rollback-side rollback-side-{{ tone }}">
+    <div class="card-body !p-4">
+      <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider mb-3">{{ label }}</h2>
+      {% if release %}
+        <p class="text-lg font-semibold">
+          <a href="{{ url_for('user.release_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, release_id=release.id) }}"
+             class="font-mono text-accent hover:text-accent/80">v{{ release.version }}</a>
+        </p>
+        <div class="flex flex-col gap-2 mt-3">
+          {% set sha = release.commit_sha %}
+          <div class="deploy-meta-row">
+            <span class="deploy-meta-label">Commit</span>
+            <span class="deploy-meta-value">
+              {% if sha and sha != 'null' and app.github_repository %}
+                <a href="https://github.com/{{ app.github_repository }}/commit/{{ sha }}"
+                   class="inline-flex items-center gap-1.5 text-accent hover:text-accent/80"
+                   target="_blank"
+                   rel="noopener"><code class="text-xs">{{ sha[:12] }}</code>{{ icon('external-link', 'w-3 h-3 text-base-content/30') }}</a>
+              {% elif sha and sha != 'null' %}
+                <code class="text-xs text-base-content/60">{{ sha[:12] }}</code>
+              {% else %}
+                <span class="text-base-content/30">None</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="deploy-meta-row">
+            <span class="deploy-meta-label">Image</span>
+            <span class="deploy-meta-value">
+              {% if release.image_snapshot %}
+                <a href="{{ url_for('user.image_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, image_id=release.image_snapshot.id) }}"
+                   class="hover:text-accent"><code class="text-xs text-base-content/60">#{{ release.image_snapshot.tag }}</code></a>
+              {% else %}
+                <span class="text-base-content/30">None</span>
+              {% endif %}
+            </span>
+          </div>
+          <div class="deploy-meta-row">
+            <span class="deploy-meta-label">Deployed</span>
+            <span class="deploy-meta-value text-base-content/70">
+              {% if deployment %}
+                <a href="{{ url_for('user.deployment_detail', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
+                   class="hover:text-accent"><time data-timestamp="{{ deployment.created|isoformat_utc }}">{{ deployment.created|humanize }}</time></a>
+              {% else %}
+                <span class="text-base-content/30">Not yet</span>
+              {% endif %}
+            </span>
+          </div>
+          {% set meta = (deployment.deploy_metadata if deployment else none) or {} %}
+          <div class="deploy-meta-row">
+            <span class="deploy-meta-label">By</span>
+            <span class="deploy-meta-value text-base-content/70">
+              {% if meta.get('triggered_by') %}
+                {{ meta.get('triggered_by') }}
+              {% elif meta.get('auto_deploy') %}
+                Auto-deploy
+              {% else %}
+                <span class="text-base-content/30">Unknown</span>
+              {% endif %}
+            </span>
+          </div>
+        </div>
+      {% else %}
+        <p class="text-sm text-base-content/40">Nothing is deployed.</p>
+      {% endif %}
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro ledger_toggle(name, revert_label, keep_label, legend) %}
+  <fieldset class="rb-toggle">
+    <legend class="rb-visually-hidden">{{ legend }}</legend>
+    <label>
+      <input type="radio" name="{{ name }}" value="n" form="rollback-form" checked>
+      <span>{{ revert_label }}</span>
+    </label>
+    <label>
+      <input type="radio" name="{{ name }}" value="y" form="rollback-form">
+      <span>{{ keep_label }}</span>
+    </label>
+  </fieldset>
+{% endmacro %}
+
+{% macro ledger_row(item, was, revert, keep=none, tone='neutral', counted=true) %}
+  <li class="rb-row" data-tone="{{ tone }}"{% if keep %} data-keepable{% endif %}{% if counted %} data-rb-counted{% endif %}>
+    <span class="rb-item"><code>{{ item }}</code></span>
+    <span class="rb-was">{{ was }}</span>
+    <span class="rb-arrow" aria-hidden="true">{{ icon('arrow-right', 'w-3 h-3') }}</span>
+    <span class="rb-effect">
+      <span class="rb-effect-revert">{{ revert }}</span>
+      {% if keep %}<span class="rb-effect-keep">{{ keep }}</span>{% endif %}
+    </span>
+  </li>
+{% endmacro %}
+
+{% block title %}
+  Roll back - {{ app_slug }} - Cabotage
+{% endblock title %}
+
+{% block resource_path %}
+  {{ app_resource_path(application, 'Roll back', env=environment|default(none)) }}
+{% endblock resource_path %}
+
+{% block content %}
+
+  <div class="mb-6">
+    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="deploy-status-orb rollback-orb">{{ icon('rotate-ccw', 'w-5 h-5') }}</div>
+        <div>
+          <h1 class="text-xl font-semibold text-base-content">
+            Roll back{% if tr %} to <span class="font-mono text-accent">v{{ tr.version }}</span>{% endif %}
+          </h1>
+          <p class="text-sm text-base-content/40 mt-0.5">Redeploys a release that is already built. No image or release build runs.</p>
+        </div>
+      </div>
+      <a href="{{ url_for('user.application_deployments', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+         class="btn btn-ghost btn-sm gap-1.5">
+        {{ icon('arrow-left', 'w-3.5 h-3.5') }}
+        Deployments
+      </a>
+    </div>
+  </div>
+
+  {% if plan.blockers %}
+    <div class="deploy-error-banner mb-6" role="alert">
+      <div class="flex items-start gap-3">
+        <div class="flex-shrink-0 mt-0.5">{{ icon('alert-triangle', 'w-4 h-4 text-error') }}</div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-error">Can't roll back to this deployment</p>
+          <ul class="text-xs text-base-content/60 mt-1.5 list-disc pl-4 flex flex-col gap-0.5">
+            {% for blocker in plan.blockers %}<li>{{ blocker }}</li>{% endfor %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-4 items-stretch mb-6">
+    {{ release_card('Live now', plan.current, cr, 'current') }}
+    <div class="hidden md:flex items-center text-base-content/30">{{ icon('chevron-right', 'w-5 h-5') }}</div>
+    {{ release_card('After rollback', plan.target, tr, 'target') }}
+  </div>
+
+  {% if tr %}
+    {% set config_changes = plan.config_removed|length + plan.config_added|length + plan.config_changed|length %}
+    {% set change_count = config_changes + plan.hosts_removed|length + plan.hosts_added|length + plan.ingresses_changed|length + plan.processes_stopped|length + plan.processes_started|length %}
+    <div class="card bg-base-200 border border-base-300 mb-6">
+      <div class="card-body !p-4">
+        <div class="rb-ledger" data-rb-ledger>
+          <div class="rb-head">
+            <h2 class="text-xs font-medium text-base-content/40 uppercase tracking-wider">What this rollback does</h2>
+            <span class="rb-colhead rb-col-was">{% if cr %}Live v{{ cr.version }}{% else %}Live{% endif %}</span>
+            <span aria-hidden="true"></span>
+            <span class="rb-colhead rb-col-effect">
+              After v{{ tr.version }}
+              <span class="rb-count" aria-live="polite"><span data-rb-count>{{ change_count }}</span> <span data-rb-count-noun>{{ 'change' if change_count == 1 else 'changes' }}</span></span>
+            </span>
+          </div>
+
+          <section class="rb-group">
+            <div class="rb-group-head">
+              <h3 class="rb-group-title">Configuration</h3>
+              {% if not config_changes %}<span class="rb-group-note">Same variables and values</span>{% endif %}
+            </div>
+            {% if config_changes %}
+              <ul class="rb-rows">
+                {% for name in plan.config_removed %}{{ ledger_row(name, 'set', 'removed', tone='removed') }}{% endfor %}
+                {% for name in plan.config_added %}{{ ledger_row(name, 'not set', 'added back') }}{% endfor %}
+                {% for name in plan.config_changed %}{{ ledger_row(name, 'live value', 'v' ~ tr.version ~ ' value') }}{% endfor %}
+              </ul>
+              <p class="rb-footnote">Edits made after v{{ tr.version }} wait for the next release.</p>
+            {% endif %}
+          </section>
+
+          {% if plan.routing_changes %}
+            <section class="rb-group">
+              <div class="rb-group-head">
+                <h3 class="rb-group-title">Routing</h3>
+                <span class="rb-group-aside">{{ ledger_toggle('keep_routing', 'Revert', 'Keep live', 'Routing after the rollback') }}</span>
+              </div>
+              <ul class="rb-rows">
+                {% for host in plan.hosts_removed %}{{ ledger_row(host, 'routed', 'stops routing', keep='keeps routing', tone='removed') }}{% endfor %}
+                {% for host in plan.hosts_added %}{{ ledger_row(host, 'not routed', 'routes again', keep='stays unrouted') }}{% endfor %}
+                {% for name in plan.ingresses_changed %}{{ ledger_row('ingress ' ~ name, 'live settings', 'v' ~ tr.version ~ ' settings', keep='live settings') }}{% endfor %}
+              </ul>
+            </section>
+          {% endif %}
+
+          {% if plan.processes_stopped or plan.processes_started %}
+            <section class="rb-group">
+              <div class="rb-group-head">
+                <h3 class="rb-group-title">Processes</h3>
+                {% if plan.processes_stopped %}
+                  <span class="rb-group-aside">{{ ledger_toggle('keep_scale', 'Clear scale', 'Keep scale', 'Scale of stopped processes') }}</span>
+                {% endif %}
+              </div>
+              <ul class="rb-rows">
+                {% for proc in plan.processes_stopped %}{{ ledger_row(proc.name, proc.count ~ ' × ' ~ proc.pod_class, 'stops, scale cleared', keep='stops, scale kept', tone='removed') }}{% endfor %}
+                {% for proc in plan.processes_started %}{{ ledger_row(proc.name, 'not running', 'starts ' ~ proc.count ~ ' × ' ~ proc.pod_class, tone='idle' if proc.count == 0 else 'neutral') }}{% endfor %}
+              </ul>
+              {% if plan.processes_stopped %}
+                <p class="rb-footnote">Kept scale comes back when a later deploy runs the process again.</p>
+              {% endif %}
+              {% if plan.processes_started|selectattr('count', 'equalto', 0)|list %}
+                <p class="rb-footnote">Processes starting at 0 replicas stay idle until you scale them.</p>
+              {% endif %}
+            </section>
+          {% endif %}
+
+          {% if plan.release_commands %}
+            <section class="rb-group">
+              <div class="rb-group-head">
+                <h3 class="rb-group-title">Release commands</h3>
+              </div>
+              <ul class="rb-rows">
+                {% for name in plan.release_commands %}{{ ledger_row(name, 'ran', 'runs again', counted=false) }}{% endfor %}
+              </ul>
+              <p class="rb-footnote">Rolling back does not undo database migrations. Check that v{{ tr.version }} works with the current schema.</p>
+            </section>
+          {% endif %}
+
+          {% if app_env.effective_auto_deploy_branch %}
+            <section class="rb-group">
+              <div class="rb-group-head">
+                <h3 class="rb-group-title">Auto-deploy</h3>
+                <span class="rb-group-note">The next push to <code>{{ app_env.effective_auto_deploy_branch }}</code> deploys over this rollback.</span>
+              </div>
+            </section>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <form method="post"
+        id="rollback-form"
+        action="{{ url_for('user.deployment_rollback', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=plan.target.id) }}"
+        class="flex items-center justify-end gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <a href="{{ url_for('user.application_deployments', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, env_slug=environment.slug if environment else none) }}"
+       class="btn btn-ghost btn-sm">Cancel</a>
+    <button type="submit"
+            class="btn btn-warning btn-sm gap-1.5 rollback-confirm"
+            {% if not plan.allowed %}disabled{% endif %}>
+      {{ icon('rotate-ccw', 'w-3.5 h-3.5') }}
+      Roll back{% if tr %} to v{{ tr.version }}{% endif %}
+    </button>
+  </form>
+
+{% endblock content %}
+
+{% block js %}
+  <script>
+    (function () {
+      var ledger = document.querySelector('[data-rb-ledger]');
+      if (!ledger) return;
+      var out = ledger.querySelector('[data-rb-count]');
+      var noun = ledger.querySelector('[data-rb-count-noun]');
+      var reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+      var keptSelector = '.rb-group:has(.rb-toggle input[value="y"]:checked) [data-rb-counted][data-keepable]';
+      var shown = Number(out.textContent);
+      var frame = 0;
+
+      function count() {
+        return ledger.querySelectorAll('[data-rb-counted]').length - ledger.querySelectorAll(keptSelector).length;
+      }
+      function render(n) {
+        out.textContent = n;
+        noun.textContent = n === 1 ? 'change' : 'changes';
+      }
+      function tally(to) {
+        var from = Number(out.textContent);
+        shown = to;
+        cancelAnimationFrame(frame);
+        if (from === to || reduce.matches) return render(to);
+        var start = performance.now();
+        (function step(now) {
+          var t = Math.min(1, (now - start) / 360);
+          render(Math.round(from + (to - from) * (1 - Math.pow(2, -10 * t))));
+          if (t < 1) frame = requestAnimationFrame(step);
+        })(start);
+      }
+      ledger.addEventListener('change', function () { tally(count()); });
+      if (count() !== shown) render(count());
+    })();
+  </script>
+{% endblock js %}

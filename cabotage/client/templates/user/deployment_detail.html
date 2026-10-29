@@ -42,7 +42,13 @@
           {% endif %}
         </div>
         <div>
-          <h1 class="text-xl font-semibold text-base-content">Deployment</h1>
+          <h1 class="text-xl font-semibold text-base-content flex items-center gap-2">
+            Deployment
+            {% if is_active %}<span class="dpl-badge dpl-badge-active">Active</span>{% endif %}
+            {% if deployment.trigger_type == 'rollback' %}
+              <span class="dpl-badge dpl-badge-rollback">{{ icon('rotate-ccw', 'w-2.5 h-2.5') }} Rollback</span>
+            {% endif %}
+          </h1>
           <p class="text-sm text-base-content/40 mt-0.5">
             {% if deployment.complete %}
               <span class="text-success">Complete</span>
@@ -66,6 +72,13 @@
               Try Again
             </button>
           </form>
+        {% endif %}
+        {% if can_roll_back %}
+          <a href="{{ url_for('user.deployment_rollback', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
+             class="btn btn-ghost btn-sm gap-1.5 text-warning hover:bg-warning/10">
+            {{ icon('rotate-ccw', 'w-3.5 h-3.5') }}
+            Roll back to this
+          </a>
         {% endif %}
         {% if config.LOKI_URL %}
           <a href="{{ url_for('user.deployment_logs_view', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug, deployment_id=deployment.id) }}"
@@ -140,6 +153,16 @@
               <div class="deploy-meta-row">
                 <span class="deploy-meta-label">Job ID</span>
                 <code class="deploy-meta-value text-base-content/50 text-xs">{{ deployment.job_id }}</code>
+              </div>
+            {% endif %}
+            {% if deployment.trigger_type == 'rollback' %}
+              {% set rb = deployment.deploy_metadata %}
+              <div class="deploy-meta-row">
+                <span class="deploy-meta-label">Rollback</span>
+                <span class="deploy-meta-value text-base-content/70">
+                  {% if rb.get('rollback_from_version') %}v{{ rb.get('rollback_from_version') }} → {% endif %}v{{ rb.get('rollback_to_version') }}
+                  <span class="text-base-content/40">by {{ rb.get('triggered_by', '?') }}{% if rb.get('ingresses_from_release_id') %} · kept live routing{% endif %}{% if rb.get('keep_scale') %} · kept scale{% endif %}</span>
+                </span>
               </div>
             {% endif %}
             {% if deployment.release_object and deployment.release_object.commit_sha and deployment.release_object.commit_sha != 'null' %}

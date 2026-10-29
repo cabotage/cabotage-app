@@ -38,6 +38,7 @@ from cabotage.server.models.projects import (
     Image,
     Release,
 )
+from cabotage.server.rollback import rollback_summary
 from cabotage.utils.github import cabotage_url
 
 log = logging.getLogger(__name__)
@@ -758,6 +759,9 @@ def _dispatch_pipeline_notification_impl(
 
     app_path = _format_app_path(application, app_env) if application else None
     url = _detail_url(application, object_type, object_id) if application else None
+    if detail is None and object_type == "Deployment":
+        deployment = Deployment.query.filter_by(id=object_id).first()
+        detail = rollback_summary(deployment.deploy_metadata) if deployment else None
     message = format_pipeline_message(
         notification_type, app_path, detail, error=error, complete=complete, url=url
     )
@@ -958,8 +962,11 @@ def _reconcile_pipeline_notification(sent):
 
     app_path = _format_app_path(application, app_env)
     url = _detail_url(application, sent.object_type, sent.object_id)
+    detail = (
+        rollback_summary(obj.deploy_metadata) if isinstance(obj, Deployment) else None
+    )
     message = format_pipeline_message(
-        ntype, app_path, detail=None, error=error, complete=complete, url=url
+        ntype, app_path, detail=detail, error=error, complete=complete, url=url
     )
     send_notification.delay(
         str(sent.organization_id),

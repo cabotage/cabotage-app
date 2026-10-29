@@ -11,7 +11,6 @@ import yaml
 from celery import shared_task
 from flask import current_app
 from kubernetes.client.exceptions import ApiException
-from sqlalchemy.orm.attributes import flag_modified
 
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
@@ -40,6 +39,11 @@ from cabotage.server.models.utils import (
     readable_k8s_hostname,
     repair_ingress_hostname,
     safe_k8s_name,
+)
+from cabotage.server.rollback import (
+    deployed_ingresses,
+    prune_stale_scale,
+    restore_parked_scale,
 )
 from cabotage.utils.build_log_stream import (
     _HEARTBEAT_TTL,
@@ -1146,6 +1150,13 @@ def _repair_ingress_hostnames(ingress: Ingress) -> bool:
             existing.add(repaired)
         changed = True
     return changed
+
+
+def _deployment_ingress_snapshots(deployment, app_env, hostnames_changed):
+    """Ingress snapshots to apply: the deployment's, or live after hostname repair."""
+    if hostnames_changed:
+        return [IngressSnapshot(ing.asdict) for ing in app_env.ingresses]
+    return [IngressSnapshot(data) for data in deployed_ingresses(deployment).values()]
 
 
 def render_ingress_object(
@@ -2879,16 +2890,9 @@ def deploy_release(deployment: Deployment):
                 db.session.commit()
                 db.session.refresh(app_env)
             networking_api_instance = kubernetes.client.NetworkingV1Api(api_client)
-            if changed or not release_obj.ingresses:
-                # Re-snapshot from live DB after hostname reconciliation,
-                # or for old releases without serialized ingresses.
-                ingress_snapshots = [
-                    IngressSnapshot(ing.asdict) for ing in app_env.ingresses
-                ]
-            else:
-                ingress_snapshots = [
-                    IngressSnapshot(data) for data in release_obj.ingresses.values()
-                ]
+            ingress_snapshots = _deployment_ingress_snapshots(
+                deployment, app_env, changed
+            )
             ensure_ingresses(
                 networking_api_instance,
                 namespace=namespace.metadata.name,
@@ -2968,6 +2972,10 @@ def deploy_release(deployment: Deployment):
                 raise DeployError(f"Release command {release_command} failed!")
             else:
                 log(f"Release command {release_command} complete!")
+        restored = restore_parked_scale(deployment)
+        if restored:
+            db.session.commit()
+            log(f"Restored scale parked by a rollback for: {', '.join(restored)}")
         for process_name in deployment.release_object.processes:
             _pc = deployment.application_environment.process_counts or {}
             log(
@@ -3067,25 +3075,16 @@ def deploy_release(deployment: Deployment):
             log=log,
         )
 
-        # Prune stale keys from process_counts and process_pod_classes
-        app_env = deployment.application_environment
-        active_set = set(active_process_names) | set(active_job_names)
-        pc = dict(app_env.process_counts or {})
-        ppc = dict(app_env.process_pod_classes or {})
-        stale_pc = set(pc.keys()) - active_set
-        stale_ppc = set(ppc.keys()) - active_set
-        if stale_pc or stale_ppc:
-            for k in stale_pc:
-                del pc[k]
-            for k in stale_ppc:
-                del ppc[k]
-            app_env.process_counts = pc
-            app_env.process_pod_classes = ppc
-            flag_modified(app_env, "process_counts")
-            flag_modified(app_env, "process_pod_classes")
+        pruned = prune_stale_scale(
+            deployment, {*active_process_names, *active_job_names}
+        )
+        if pruned:
             db.session.commit()
-            if log is not None:
-                log(f"Pruned stale process keys: {stale_pc | stale_ppc}")
+            kept = (deployment.deploy_metadata or {}).get("parked_scale")
+            log(
+                f"{'Parked' if kept else 'Pruned'} scale for processes no longer "
+                f"in the release: {', '.join(pruned)}"
+            )
 
         for postdeploy_command in deployment.release_object.postdeploy_commands:
             log(f"Running postdeploy command {postdeploy_command}")
@@ -3350,14 +3349,7 @@ def fake_deploy_release(deployment):
             db.session.commit()
             db.session.refresh(app_env)
         release_obj = deployment.release_object
-        if changed or not release_obj.ingresses:
-            ingress_snapshots = [
-                IngressSnapshot(ing.asdict) for ing in app_env.ingresses
-            ]
-        else:
-            ingress_snapshots = [
-                IngressSnapshot(data) for data in release_obj.ingresses.values()
-            ]
+        ingress_snapshots = _deployment_ingress_snapshots(deployment, app_env, changed)
         for ingress in ingress_snapshots:
             ingress_obj = render_ingress(release_obj, ingress)
             if ingress_obj:

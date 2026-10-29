@@ -1207,7 +1207,9 @@
                              height:5px"></span>
               {% endif %}
               <code class="text-xs text-accent/70">v{{ release_by_id.get(dep.release.get('id', '')|string).version if release_by_id.get(dep.release.get('id', '')|string) else '?' }}</code>
-              {% if dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
+              {% if dep.trigger_type == 'rollback' %}
+                <span class="dpl-badge dpl-badge-rollback" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('rotate-ccw', 'w-2 h-2') }} rollback</span>
+              {% elif dep.deploy_metadata and dep.deploy_metadata.get('trigger', '').startswith('manual') %}
                 <span class="dpl-badge dpl-badge-manual" title="by {{ dep.deploy_metadata.get('triggered_by', '?') }}">{{ icon('user', 'w-2 h-2') }} manual</span>
               {% endif %}
             <span class="activity-time text-xs text-base-content/25"><time data-timestamp="{{ dep.updated|isoformat_utc }}">{{ dep.updated|humanize }}</time>
