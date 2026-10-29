@@ -61,9 +61,17 @@ def test_env_json_string_is_accepted():
     assert [c.name for c in clusters] == ["psfhosted", "pypi"]
 
 
-def test_url_is_normalized_to_its_origin():
-    (cluster,) = parse_clusters([{"name": "a", "url": "HTTPS://Cabotage.Example.com/"}])
-    assert cluster.url == "https://cabotage.example.com"
+@pytest.mark.parametrize(
+    "url, origin",
+    [
+        ("HTTPS://Cabotage.Example.com/", "https://cabotage.example.com"),
+        ("https://cabotage.example.com:443", "https://cabotage.example.com"),
+        ("http://127.0.0.1:8840", "http://127.0.0.1:8840"),
+    ],
+)
+def test_url_is_normalized_to_its_origin(url, origin):
+    (cluster,) = parse_clusters([{"name": "a", "url": url}])
+    assert cluster.url == origin
 
 
 def test_missing_colors_are_assigned_distinctly_by_position():
@@ -83,6 +91,11 @@ def test_missing_colors_are_assigned_distinctly_by_position():
         ([{"name": "a"}], "missing url"),
         ([{"name": "a", "url": "https://a.example.com/projects"}], "bare http"),
         ([{"name": "a", "url": "ftp://a.example.com"}], "bare http"),
+        ([{"name": "a", "url": "https://a.example.com:abc"}], "bare http"),
+        ([{"name": "a", "url": "https://a.example.com:70000"}], "bare http"),
+        ([{"name": "a", "url": "https://user:pw@a.example.com"}], "bare http"),
+        ([{"name": "a", "url": "https://a\\@b.example.com"}], "bare http"),
+        ([{"name": "a", "url": "https://exämple.com"}], "bare http"),
         ([{"name": "a", "url": "https://a.example.com", "color": "violet"}], "color"),
         (
             [
