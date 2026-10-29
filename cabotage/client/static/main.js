@@ -3916,14 +3916,16 @@ function initSecuritySettings() {
 /* ====================================================================== */
 
 var CLUSTER_STORE_KEY = 'cabotage-clusters';
+var CLUSTER_PICKS_KEY = 'cabotage-cluster-colors';
 var CLUSTER_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
 
-// A jump lands with #from-cluster=<name>. Consume it before initTabs reads the hash.
+// A jump lands with #from-cluster=<name>&colors=<name>:<color>:<ms>,…, carrying the
+// accents picked on each cluster. Consume it before initTabs reads the hash.
 var _clusterArrival = (function () {
-  var m = /^#from-cluster=([A-Za-z0-9._-]{1,40})$/.exec(window.location.hash);
+  var m = /^#from-cluster=([A-Za-z0-9._-]{1,40})(?:&colors=([A-Za-z0-9._:,-]{0,4000}))?$/.exec(window.location.hash);
   if (!m) return null;
   history.replaceState(history.state, '', window.location.pathname + window.location.search);
-  return m[1];
+  return { from: m[1], colors: m[2] || '' };
 })();
 
 function initClusterSwitcher() {
@@ -3973,9 +3975,37 @@ function initClusterSwitcher() {
     })));
   }
 
+  // Accents picked on the other listed clusters, as "name:color:ms,…". Each install only
+  // sees its own localStorage, so jumps carry these along; the newest pick wins.
+  function parsePicks(text) {
+    var picks = {};
+    String(text || '').split(',').forEach(function (entry) {
+      var p = entry.split(':'), at = Number(p[2]);
+      if (p[0] === data.current || !data.clusters.some(function (c) { return c.name === p[0]; })) return;
+      if (data.colors.indexOf(p[1]) < 0 || !(at >= 0 && at <= Date.now())) return;
+      if (!picks[p[0]] || picks[p[0]].at < at) picks[p[0]] = { color: p[1], at: at };
+    });
+    return picks;
+  }
+
+  function writePicks(picks) {
+    localStorage.setItem(CLUSTER_PICKS_KEY, Object.keys(picks).map(function (name) {
+      return name + ':' + picks[name].color + ':' + picks[name].at;
+    }).join(','));
+  }
+
+  // What a jump carries: the picks known here, plus this cluster's own color as of now,
+  // default included, so it replaces anything older relayed about this cluster.
+  function outgoingPicks() {
+    var mine = localStorage.getItem('accent-color') || document.documentElement.getAttribute('data-accent-default');
+    var own = data.current ? data.current + ':' + mine + ':' + Date.now() : '';
+    return [own, localStorage.getItem(CLUSTER_PICKS_KEY)].filter(Boolean).join(',');
+  }
+
   function clusters() {
+    var picks = parsePicks(localStorage.getItem(CLUSTER_PICKS_KEY));
     var configured = data.clusters.map(function (c) {
-      return { name: c.name, url: c.url, region: c.region, color: c.color, personal: false };
+      return { name: c.name, url: c.url, region: c.region, color: (picks[c.name] || c).color, personal: false };
     });
     var taken = configured.map(function (c) { return c.url; });
     var list = configured.concat(readPersonal().filter(function (c) {
@@ -4203,7 +4233,7 @@ function initClusterSwitcher() {
         className: 'cp-row' + (here ? ' cp-row-current' : ''), role: 'option', id: id, 'data-index': i,
         'aria-disabled': here ? 'true' : null,
       }, [
-        // Here, the swatch is the accent actually in use; elsewhere, the cluster's configured one.
+        // Here, the swatch is the accent actually in use; elsewhere, the one picked there, or the configured one.
         h('span', { className: 'cluster-swatch', 'data-cluster-color': here ? 'current' : c.color, 'aria-hidden': 'true' }),
         h('span', { className: 'cp-name' }, [c.name, c.region ? h('span', { className: 'cp-region', text: c.region }) : null]),
         dest,
@@ -4408,24 +4438,33 @@ function initClusterSwitcher() {
   // ---- Handoff: the jump itself --------------------------------------------
   function jump(c, newTab) {
     var url = c.url + destPath(state.mode);
+    var here = currentIn(clusters());
+    // Only operator-listed clusters share this list and consume the marker; personal ones may run anything.
+    var marker = here && !c.personal ? '#from-cluster=' + encodeURIComponent(here.name) + '&colors=' + outgoingPicks() : '';
     if (newTab) {
-      window.open(url, '_blank', 'noopener');
+      follow(url + marker, true);
       close();
       return;
     }
-    var here = currentIn(clusters());
-    // Only operator-listed clusters share this list and consume the marker; personal ones may run anything.
-    var marker = here && !c.personal ? '#from-cluster=' + encodeURIComponent(here.name) : '';
     close(false);
     if (!reduceMotion.matches) playHandoff(c);
     // Two frames so the handoff paints before the browser starts unloading.
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        window.location.assign(url + marker);
+        follow(url + marker, false);
         // Still here means the jump stalled or was stopped: show where we really are.
         setTimeout(resetHandoff, 5000);
       });
     });
+  }
+
+  // The page's referrer policy is same-origin; a jump sends its origin so the
+  // destination can tell a real jump from a crafted link.
+  function follow(href, newTab) {
+    var a = h('a', { href: href, referrerpolicy: 'origin', target: newTab ? '_blank' : null, rel: newTab ? 'noopener' : null, hidden: true });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   var EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
@@ -4466,7 +4505,7 @@ function initClusterSwitcher() {
 
   function arrive() {
     if (!_clusterArrival) return;
-    var from = clusters().filter(function (c) { return c.name === _clusterArrival && !isCurrent(c); })[0];
+    var from = clusters().filter(function (c) { return c.name === _clusterArrival.from && !isCurrent(c); })[0];
     if (!from) return;
     var label = document.querySelector('[data-cluster-arrival]');
     if (label) {
@@ -4502,6 +4541,10 @@ function initClusterSwitcher() {
     });
   });
 
+  var sender = _clusterArrival && data.clusters.filter(function (c) { return c.name === _clusterArrival.from; })[0];
+  if (sender && originOf(document.referrer) === sender.url) {
+    writePicks(parsePicks([localStorage.getItem(CLUSTER_PICKS_KEY), _clusterArrival.colors].join(',')));
+  }
   syncCrumb();
   arrive();
 }

@@ -35,7 +35,9 @@ cabotage_app_extra_config = {
 Cabotage won't start if the list has a mistake.
 
 The color becomes the cluster's default theme color. People can still pick
-their own in the theme menu.
+their own in the theme menu. Pick once on each cluster: jumping through the
+switcher carries your picks along, so every cluster's switcher shows them.
+Opening a cluster some other way, like a bookmark, carries nothing.
 
 ## What people see
 
