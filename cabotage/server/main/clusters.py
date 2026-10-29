@@ -46,6 +46,8 @@ FAVICON_FILL = {
 }
 ACCESS_LEVELS = ("admins", "users")
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,39}")
+_HOSTNAME = re.compile(r"[a-z0-9]([a-z0-9.-]*[a-z0-9])?")
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 @dataclass(frozen=True)
@@ -72,10 +74,19 @@ class Cluster:
 
 
 def _origin(name: str, url: object) -> str:
+    """Canonical origin, spelled the way browsers and ``request.host`` spell it."""
     parts = urlsplit(str(url))
+    try:
+        port = parts.port
+    except ValueError:  # not a number, or out of range
+        port = 0
+    hostname = parts.hostname or ""
     if (
-        parts.scheme not in ("http", "https")
-        or not parts.netloc
+        port == 0
+        or parts.scheme not in ("http", "https")
+        or not _HOSTNAME.fullmatch(hostname)
+        or parts.username is not None
+        or parts.password is not None
         or parts.path not in ("", "/")
         or parts.query
         or parts.fragment
@@ -84,7 +95,9 @@ def _origin(name: str, url: object) -> str:
             f"CABOTAGE_CLUSTERS: {name!r} url {url!r} must be a bare http(s) origin "
             "like https://cabotage.example.com"
         )
-    return f"{parts.scheme}://{parts.netloc.lower()}"
+    if port is None or port == _DEFAULT_PORTS[parts.scheme]:
+        return f"{parts.scheme}://{hostname}"
+    return f"{parts.scheme}://{hostname}:{port}"
 
 
 def parse_clusters(raw: object) -> tuple[Cluster, ...]:
