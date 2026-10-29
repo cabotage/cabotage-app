@@ -322,9 +322,213 @@ function initRawEditor() {
   var backdrop = modal.querySelector('.raw-editor-backdrop');
   var textarea = document.getElementById('raw-editor-textarea');
   var formatInput = document.getElementById('raw-editor-format');
+  var baselineInput = document.getElementById('raw-editor-baseline');
   var copyBtn = document.getElementById('raw-editor-copy');
+  var deleteCheck = document.getElementById('raw-editor-delete');
+  var preview = document.getElementById('raw-editor-preview');
+  var previewAdd = document.getElementById('raw-editor-preview-add');
+  var previewUpdate = document.getElementById('raw-editor-preview-update');
+  var previewDelete = document.getElementById('raw-editor-preview-delete');
+  var submitLabel = document.getElementById('raw-editor-submit-label');
+  var tabError = document.getElementById('raw-editor-tab-error');
   var tabs = modal.querySelectorAll('[data-editor-tab]');
   var panels = modal.querySelectorAll('[data-editor-panel]');
+
+  // Existing app-level variables; secrets carry the **secure** placeholder.
+  var configs = [];
+  var dataEl = document.getElementById('env-export-data');
+  if (dataEl) {
+    try {
+      configs = JSON.parse(dataEl.textContent);
+      // Tell the server what the editor was filled from so untouched lines
+      // are skipped even if someone else changed them meanwhile.
+      if (baselineInput) baselineInput.value = dataEl.textContent;
+    } catch (e) {
+      configs = [];
+    }
+  }
+
+  // Client-side copy of the rules in _parse_raw_config (views.py): skip blank
+  // and # lines, split at the first "=", trim the name, keep the value
+  // verbatim unless it starts with a double quote (then it may span lines and
+  // \" \\ \n are escapes), no duplicate names; JSON must be an object of
+  // strings. Advisory only; the server re-parses and decides what is written.
+  // Returns {entries: [{name, value}]} or {error: message}.
+  function parseEditor(fmt, text) {
+    var entries = [];
+    var seen = {};
+    if (fmt === 'json') {
+      var obj;
+      try {
+        obj = JSON.parse(text);
+      } catch (e) {
+        return { error: 'Invalid JSON.' };
+      }
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        return { error: 'JSON must be an object of "KEY": "VALUE" strings.' };
+      }
+      var keys = Object.keys(obj);
+      for (var i = 0; i < keys.length; i++) {
+        if (typeof obj[keys[i]] !== 'string') {
+          return { error: 'JSON must be an object of "KEY": "VALUE" strings.' };
+        }
+        entries.push({ name: keys[i], value: obj[keys[i]] });
+      }
+    } else {
+      var lines = text.split('\n');
+      for (var n = 0; n < lines.length; n++) {
+        var start = n + 1;
+        var trimmed = lines[n].trim();
+        if (!trimmed || trimmed.charAt(0) === '#') continue;
+        var eq = lines[n].indexOf('=');
+        if (eq === -1) return { error: 'Line ' + start + ': expected KEY=VALUE.' };
+        var name = lines[n].slice(0, eq).trim();
+        if (seen[name.toUpperCase()]) return { error: 'Line ' + start + ': duplicate variable name.' };
+        seen[name.toUpperCase()] = true;
+        var value = lines[n].slice(eq + 1);
+        if (value.charAt(0) === '"') {
+          var rest = value.slice(1);
+          var chars = '';
+          var closed = false;
+          while (!closed) {
+            for (var i = 0; i < rest.length; i++) {
+              var ch = rest.charAt(i);
+              if (ch === '\\' && i + 1 < rest.length) {
+                var next = rest.charAt(i + 1);
+                chars += next === 'n' ? '\n' : next === '"' || next === '\\' ? next : '\\' + next;
+                i++;
+              } else if (ch === '"') {
+                if (rest.slice(i + 1).trim()) {
+                  return { error: 'Line ' + (n + 1) + ': unexpected text after closing quote.' };
+                }
+                closed = true;
+                break;
+              } else {
+                chars += ch;
+              }
+            }
+            if (!closed) {
+              if (n + 1 >= lines.length) return { error: 'Line ' + start + ': unterminated quote.' };
+              chars += '\n';
+              rest = lines[++n];
+            }
+          }
+          value = chars;
+        }
+        entries.push({ name: name, value: value });
+      }
+    }
+    return { entries: entries };
+  }
+
+  // Inverse of parseEditor. ENV values are quoted only when they must be, so
+  // ordinary values read back exactly as typed.
+  function formatEditor(fmt, entries) {
+    if (!entries.length) return '';
+    if (fmt === 'json') {
+      var obj = {};
+      entries.forEach(function (e) {
+        obj[e.name] = e.value;
+      });
+      return JSON.stringify(obj, null, 2);
+    }
+    return entries
+      .map(function (e) {
+        var v = e.value;
+        if (v.charAt(0) === '"' || /[\r\n]/.test(v)) {
+          v = '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+        }
+        return e.name + '=' + v;
+      })
+      .join('\n');
+  }
+
+  function storedEntries() {
+    return configs.map(function (c) {
+      return { name: c.name, value: c.secret ? '**secure**' : c.value };
+    });
+  }
+
+  function buildText(fmt) {
+    return formatEditor(fmt, storedEntries());
+  }
+
+  // Fill once at load; the page reloads after every save, so this cannot
+  // go stale, and refilling on open would throw away edits after Cancel.
+  var generated = '';
+  if (textarea) {
+    generated = buildText(formatInput ? formatInput.value : 'env');
+    textarea.value = generated;
+  }
+
+  // {UPPER_NAME: {name, value}} for the current text, or null if it does not parse.
+  function submittedValues() {
+    var parsed = parseEditor(formatInput ? formatInput.value : 'env', textarea.value);
+    if (parsed.error) return null;
+    var values = {};
+    parsed.entries.forEach(function (e) {
+      values[e.name.toUpperCase()] = e;
+    });
+    return values;
+  }
+
+  function setPreviewLine(el, text) {
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = text ? '' : 'none';
+  }
+
+  function updatePreview() {
+    if (!preview || !textarea) return;
+    var stored = {};
+    configs.forEach(function (c) {
+      stored[c.name.toUpperCase()] = c;
+    });
+    var values = submittedValues();
+    var adds = [];
+    var updates = [];
+    var removed = [];
+    if (values !== null) {
+      Object.keys(values).forEach(function (key) {
+        var c = stored[key];
+        if (!c) adds.push(values[key].name);
+        else if (values[key].value !== c.value) updates.push(c.name);
+      });
+      configs.forEach(function (c) {
+        if (!values[c.name.toUpperCase()]) removed.push(c.name);
+      });
+    }
+    var ticked = deleteCheck && deleteCheck.checked;
+    var deleting = ticked && removed.length > 0;
+    var deleteText = '';
+    if (ticked) {
+      if (values === null) deleteText = 'Fix the text above to see what will be deleted.';
+      else deleteText = deleting ? 'Will delete: ' + removed.join(', ') : 'Nothing to delete.';
+    } else if (removed.length) {
+      deleteText = 'Removed but kept (tick to delete): ' + removed.join(', ');
+    }
+    setPreviewLine(previewAdd, adds.length ? 'Will add: ' + adds.join(', ') : '');
+    setPreviewLine(previewUpdate, updates.length ? 'Will update: ' + updates.join(', ') : '');
+    setPreviewLine(previewDelete, deleteText);
+    if (previewDelete) {
+      // Red only when something will actually be deleted; muted otherwise.
+      previewDelete.classList.toggle('text-error', deleting);
+      previewDelete.classList.toggle('text-base-content/50', !deleting);
+    }
+    preview.style.display = adds.length || updates.length || deleteText ? '' : 'none';
+    if (submitLabel) {
+      submitLabel.textContent = deleting
+        ? 'Update and delete ' + removed.length
+        : 'Update Variables';
+    }
+  }
+  if (deleteCheck) deleteCheck.addEventListener('change', updatePreview);
+  if (textarea) {
+    textarea.addEventListener('input', function () {
+      setPreviewLine(tabError, '');
+      updatePreview();
+    });
+  }
 
   function openModal() {
     modal.style.display = 'flex';
@@ -348,6 +552,17 @@ function initRawEditor() {
   tabs.forEach(function (tab) {
     tab.addEventListener('click', function () {
       var tabId = tab.getAttribute('data-editor-tab');
+      var fromId = formatInput ? formatInput.value : 'env';
+      if (tabId === fromId || !textarea) return;
+      // Untouched text is regenerated; edited text is converted if it parses,
+      // otherwise stay put and say why, so ENV is never submitted as JSON.
+      var entries = storedEntries();
+      if (textarea.value !== generated) {
+        var parsed = parseEditor(fromId, textarea.value);
+        if (parsed.error) return setPreviewLine(tabError, parsed.error);
+        entries = parsed.entries;
+      }
+      setPreviewLine(tabError, '');
       tabs.forEach(function (t) {
         t.classList.toggle('raw-editor-tab-active', t.getAttribute('data-editor-tab') === tabId);
       });
@@ -357,28 +572,24 @@ function initRawEditor() {
       if (formatInput) formatInput.value = tabId;
 
       if (textarea) {
+        var text = formatEditor(tabId, entries);
+        if (textarea.value === generated) generated = text;
+        textarea.value = text;
         if (tabId === 'json') {
           textarea.placeholder = '{\n  "DATABASE_URL": "postgres://...",\n  "REDIS_URL": "redis://..."\n}';
         } else {
           textarea.placeholder =
             '# Paste your environment variables here\nDATABASE_URL=postgres://...\nREDIS_URL=redis://...';
         }
+        updatePreview();
       }
     });
   });
 
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {
-      var dataEl = document.getElementById('env-export-data');
-      if (!dataEl) return;
       try {
-        var configs = JSON.parse(dataEl.textContent);
-        var lines = configs.map(function (c) {
-          if (c.secret) return c.name + '=**secure**';
-          return c.name + '=' + c.value;
-        });
-        var text = lines.join('\n');
-        navigator.clipboard.writeText(text).then(function () {
+        navigator.clipboard.writeText(buildText('env')).then(function () {
           var orig = copyBtn.innerHTML;
           copyBtn.textContent = 'Copied!';
           setTimeout(function () {
