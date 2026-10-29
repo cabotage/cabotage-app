@@ -66,14 +66,23 @@ def refresh_actuals(
     client: CostExplorerClient | None = None,
     today: datetime.date | None = None,
 ) -> list[datetime.date]:
-    """Re-fetch and re-true-up the trailing days. Returns days with actuals."""
+    """Re-fetch and re-true-up the trailing settled days. Returns days with
+    actuals."""
     config = current_app.config
     today = today or datetime.datetime.now(datetime.UTC).date()
     first_day = today - datetime.timedelta(days=ACTUALS_LOOKBACK_DAYS)
+    # Recent days are still filling in; truing up to them would undercount.
+    settled_end = today - datetime.timedelta(days=ACTUALS_SETTLED_DAYS - 1)
     if client is None:
         client = boto3.client("ce", region_name=CE_API_REGION)
 
-    by_day = fetch_daily_buckets(client, first_day, today, _actuals_filter(config))
+    by_day = {
+        day: buckets
+        for day, buckets in fetch_daily_buckets(
+            client, first_day, settled_end, _actuals_filter(config)
+        ).items()
+        if day < settled_end
+    }
 
     fetched_at = datetime.datetime.now(datetime.UTC)
     CostAwsDaily.query.filter(
