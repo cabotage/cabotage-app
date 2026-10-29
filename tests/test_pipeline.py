@@ -298,6 +298,43 @@ def test_manual_build_and_deploy_counts_full_pipeline(pipeline_app):
     assert stats["summary"]["run_p50"] == pytest.approx(150.0)
 
 
+def test_release_and_deploy_counts_release_but_not_reused_image(pipeline_app):
+    client, application, app_env, base = pipeline_app
+    now = datetime.datetime(2000, 1, 10, 12)
+    old = now - datetime.timedelta(days=5)
+    t0 = now - datetime.timedelta(minutes=30)
+
+    # Release & Deploy reuses an image built days earlier.
+    img = _make_image(application, app_env, old, old + datetime.timedelta(seconds=100))
+    rel = _make_release(
+        application, app_env, img, t0, t0 + datetime.timedelta(seconds=20)
+    )
+    _make_deployment(
+        application,
+        app_env,
+        rel,
+        t0 + datetime.timedelta(seconds=20),
+        t0 + datetime.timedelta(seconds=50),
+        deploy_metadata={
+            "deploy_after_release": True,
+            "trigger": "manual_release_deploy",
+            "triggered_by": "alice",
+        },
+    )
+
+    day = _iso_day(now)
+    response = client.get(f"{base}/runs?since={day}&until={day}")
+    assert response.status_code == 200
+    run = response.get_json()["runs"][0]
+    assert run["image_duration"] is None
+    assert run["release_duration"] == pytest.approx(20.0)
+    assert run["deploy_duration"] == pytest.approx(30.0)
+    assert run["total_duration"] == pytest.approx(50.0)
+
+    stats = client.get(f"{base}/stats?since={day}&until={day}").get_json()
+    assert stats["summary"]["run_p50"] == pytest.approx(50.0)
+
+
 def test_overlapping_image_release_build_time_counted_once(pipeline_app):
     client, application, app_env, base = pipeline_app
     now = datetime.datetime(2000, 1, 10, 12)

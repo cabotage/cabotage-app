@@ -962,6 +962,159 @@ class TestRunReleaseBuild:
         assert len(deployments) == 1
         mock_run_deploy.delay.assert_called_once()
 
+    @patch("cabotage.celery.tasks.build.dispatch_autodeploy_notification")
+    @patch("cabotage.celery.tasks.deploy.dispatch_pipeline_notification")
+    @patch("cabotage.celery.tasks.build.dispatch_pipeline_notification")
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
+    @patch("cabotage.celery.tasks.build.build_release_buildkit")
+    @patch("cabotage.celery.tasks.build.github_app")
+    def test_deploy_after_release_chains_deploy_with_pipeline_notifications(
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_deploy,
+        mock_release_notify,
+        mock_deploy_notify,
+        mock_autodeploy_notify,
+        app,
+        db_session,
+        release,
+    ):
+        """A manual Release & Deploy chains a deploy without entering auto-deploy flow."""
+        from cabotage.celery.tasks.build import run_release_build
+        from cabotage.server.models.projects import Deployment
+
+        release.release_metadata = {
+            "deploy_after_release": True,
+            "trigger": "manual_release_deploy",
+            "triggered_by": "alice",
+            "triggered_by_user_id": "alice-id",
+        }
+        db_session.add(release)
+        db_session.commit()
+
+        mock_build.return_value = {"release_id": "sha256:release-abc"}
+
+        with (
+            patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ),
+            patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls,
+        ):
+            mock_check_cls.from_metadata.return_value = MagicMock()
+            run_release_build(release_id=release.id)
+
+        deployment = Deployment.query.filter_by(
+            application_environment_id=release.application_environment_id,
+        ).one()
+        assert deployment.release["id"] == str(release.id)
+        assert deployment.trigger_type == "manual"
+        mock_run_deploy.delay.assert_called_once_with(deployment_id=deployment.id)
+        mock_autodeploy_notify.assert_not_called()
+        assert ("pipeline.release", "Release", str(release.id)) in [
+            c.args[:3] for c in mock_release_notify.delay.call_args_list
+        ]
+        assert ("pipeline.deploy", "Deployment", str(deployment.id)) in [
+            c.args[:3] for c in mock_deploy_notify.delay.call_args_list
+        ]
+        audit = Activity.query.filter_by(
+            object_type="Deployment", object_id=deployment.id
+        ).one()
+        assert audit.verb == "deploy"
+        assert audit.data["user_id"] == "alice-id"
+
+    @staticmethod
+    def _build(release):
+        from cabotage.celery.tasks.build import run_release_build
+
+        with (
+            patch(
+                "cabotage.celery.tasks.build.get_redis_client", side_effect=Exception
+            ),
+            patch("cabotage.celery.tasks.build.CheckRun") as mock_check_cls,
+            patch("cabotage.celery.tasks.build.dispatch_pipeline_notification"),
+            patch("cabotage.celery.tasks.deploy.dispatch_pipeline_notification"),
+        ):
+            mock_check_cls.from_metadata.return_value = MagicMock()
+            run_release_build(release_id=release.id)
+
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
+    @patch("cabotage.celery.tasks.build.build_release_buildkit")
+    @patch("cabotage.celery.tasks.build.github_app")
+    def test_deploy_after_release_skips_superseded_release(
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_deploy,
+        app,
+        db_session,
+        application,
+        app_env,
+        built_image,
+        release,
+    ):
+        """An older Release & Deploy that finishes last must not go live over a newer release."""
+        from cabotage.server.models.projects import Deployment
+
+        release.release_metadata = {"deploy_after_release": True}
+        newer = Release(
+            application_id=application.id,
+            application_environment_id=app_env.id,
+            _repository_name=REPOSITORY_NAME,
+            image=built_image.asdict,
+            configuration={},
+            image_changes={},
+            configuration_changes={},
+        )
+        db_session.add_all([release, newer])
+        db_session.commit()
+        assert newer.version > release.version
+        mock_build.return_value = {"release_id": "sha256:release-abc"}
+
+        self._build(release)
+
+        db_session.refresh(release)
+        assert release.built is True
+        assert (
+            Deployment.query.filter_by(application_environment_id=app_env.id).count()
+            == 0
+        )
+        mock_run_deploy.delay.assert_not_called()
+
+    @patch("cabotage.celery.tasks.deploy.run_deploy")
+    @patch("cabotage.celery.tasks.build.build_release_buildkit")
+    @patch("cabotage.celery.tasks.build.github_app")
+    def test_deploy_enqueue_failure_fails_deployment_not_release(
+        self,
+        mock_github_app,
+        mock_build,
+        mock_run_deploy,
+        app,
+        db_session,
+        release,
+    ):
+        """If the chained deploy cannot be queued, the built release stays good."""
+        from cabotage.server.models.projects import Deployment
+
+        release.release_metadata = {"deploy_after_release": True}
+        db_session.add(release)
+        db_session.commit()
+        mock_build.return_value = {"release_id": "sha256:release-abc"}
+        mock_run_deploy.delay.side_effect = ConnectionError("broker down")
+
+        with patch("cabotage.celery.tasks.deploy._dispatch_deploy_failure") as failed:
+            self._build(release)
+
+        db_session.refresh(release)
+        assert release.built is True
+        assert release.error is False
+        deployment = Deployment.query.filter_by(
+            application_environment_id=release.application_environment_id
+        ).one()
+        assert deployment.error is True
+        assert deployment.complete is False
+        failed.assert_called_once()
+
     @patch("cabotage.celery.tasks.build.build_release_buildkit")
     @patch("cabotage.celery.tasks.build.github_app")
     def test_no_auto_deploy_skips_deployment(

@@ -225,15 +225,14 @@ function initThemeToggle() {
       };
       meta.content = metaColors[resolved] || '#0f0f17';
     }
-    var accent = localStorage.getItem('accent-color') || 'purple';
-    if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') {
-      accent = 'white';
-      localStorage.setItem('accent-color', accent);
-      document.documentElement.setAttribute('data-accent', accent);
-      document.querySelectorAll('.accent-opt').forEach(function (b) {
-        b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
-      });
-    }
+    var root = document.documentElement;
+    var accent = localStorage.getItem('accent-color') || root.getAttribute('data-accent-default') || 'purple';
+    // Terminal only takes the mono accents. Not saved, so leaving terminal brings back the user's pick or the cluster's color.
+    if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') accent = 'white';
+    root.setAttribute('data-accent', accent);
+    document.querySelectorAll('.accent-opt').forEach(function (b) {
+      b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
+    });
     if (window.__applyAccent) window.__applyAccent(accent, resolved);
   }
 
@@ -296,7 +295,7 @@ function initAccentPicker() {
     });
   }
 
-  var current = localStorage.getItem('accent-color') || 'purple';
+  var current = document.documentElement.getAttribute('data-accent') || 'purple';
   markActive(current);
 
   document.querySelectorAll('.accent-opt').forEach(function (opt) {
@@ -1978,8 +1977,7 @@ function initTimestampsAndDeployForm() {
     startTimestampTicker();
   }
 
-  var deployForm = document.querySelector('[data-full-deploy-form]');
-  if (deployForm) {
+  document.querySelectorAll('[data-full-deploy-form]').forEach(function (deployForm) {
     deployForm.addEventListener('submit', function () {
       var btn = deployForm.querySelector('button[type="submit"]');
       if (btn) {
@@ -1987,7 +1985,7 @@ function initTimestampsAndDeployForm() {
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Deploying\u2026';
       }
     });
-  }
+  });
 }
 
 /* Structured Live Log (build/release/deploy) */
@@ -3377,6 +3375,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initTfSelect();
   initSecuritySettings();
   initHdrActionTips();
+  initClusterSwitcher();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
@@ -3910,4 +3909,599 @@ function initSecuritySettings() {
       });
     });
   });
+}
+
+/* ====================================================================== */
+/* Cluster switcher: ⌘J jump palette across Cabotage installs             */
+/* ====================================================================== */
+
+var CLUSTER_STORE_KEY = 'cabotage-clusters';
+var CLUSTER_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+
+// A jump lands with #from-cluster=<name>. Consume it before initTabs reads the hash.
+var _clusterArrival = (function () {
+  var m = /^#from-cluster=([A-Za-z0-9._-]{1,40})$/.exec(window.location.hash);
+  if (!m) return null;
+  history.replaceState(history.state, '', window.location.pathname + window.location.search);
+  return m[1];
+})();
+
+function initClusterSwitcher() {
+  var dataEl = document.getElementById('cluster-switcher-data');
+  if (!dataEl) return;
+  var data = JSON.parse(dataEl.textContent);
+  var crumbWrap = document.querySelector('[data-cluster-crumb]');
+  var face = document.querySelector('[data-cluster-face]');
+  var topbar = document.querySelector('[data-topbar]');
+  var horizon = document.querySelector('[data-cluster-horizon]');
+  var appShell = document.querySelector('.app-shell');
+  var isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  var shortcut = isMac ? '⌘J' : 'Ctrl J';
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var DEST_ORDER = ['shared', 'exact', 'home'];
+  var DEST_LABEL = { shared: 'Nearest shared page', exact: 'Same page', home: 'Home' };
+
+  document.querySelectorAll('[data-cluster-kbd]').forEach(function (k) { k.textContent = shortcut; });
+  document.querySelectorAll('.cluster-crumb').forEach(function (b) { b.title = 'Switch cluster (' + shortcut + ')'; });
+
+  // ---- Data ----------------------------------------------------------------
+  function originOf(value) {
+    var raw = String(value || '').trim();
+    if (!raw) return null;
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) raw = 'https://' + raw;
+    try {
+      var u = new URL(raw);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+      return u.origin;
+    } catch {
+      return null;
+    }
+  }
+
+  function readPersonal() {
+    var list;
+    try { list = JSON.parse(localStorage.getItem(CLUSTER_STORE_KEY) || '[]'); } catch { return []; }
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (c) {
+      return c && CLUSTER_NAME_RE.test(c.name) && originOf(c.url) === c.url && data.colors.indexOf(c.color) >= 0;
+    });
+  }
+
+  function writePersonal(list) {
+    localStorage.setItem(CLUSTER_STORE_KEY, JSON.stringify(list.map(function (c) {
+      return { name: c.name, url: c.url, color: c.color };
+    })));
+  }
+
+  function clusters() {
+    var configured = data.clusters.map(function (c) {
+      return { name: c.name, url: c.url, region: c.region, color: c.color, personal: false };
+    });
+    var taken = configured.map(function (c) { return c.url; });
+    var list = configured.concat(readPersonal().filter(function (c) {
+      return taken.indexOf(c.url) < 0;
+    }).map(function (c) {
+      return { name: c.name, url: c.url, region: null, color: c.color, personal: true };
+    }));
+    var here = currentIn(list);
+    if (!here) {
+      // An install outside the operators' list still appears, so "you are here" is never missing.
+      list.unshift({ name: window.location.host, url: window.location.origin, region: null, color: 'current', personal: false, unnamed: true });
+    }
+    return list;
+  }
+
+  function currentIn(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (data.current ? list[i].name === data.current && !list[i].personal : list[i].url === window.location.origin) return list[i];
+    }
+    return null;
+  }
+
+  function isCurrent(c) {
+    return c.unnamed || (data.current ? c.name === data.current && !c.personal : c.url === window.location.origin);
+  }
+
+  function destPath(mode) {
+    if (mode === 'home') return '/';
+    if (mode === 'exact') return window.location.pathname + window.location.search;
+    var path = window.location.pathname, best = '/';
+    data.shared.forEach(function (root) {
+      var r = root.replace(/\/$/, '');
+      if ((path === r || path.indexOf(r + '/') === 0) && root.length > best.length) best = root;
+    });
+    return best;
+  }
+
+  function syncCrumb() {
+    var others = clusters().filter(function (c) { return !isCurrent(c); });
+    if (crumbWrap) crumbWrap.hidden = !data.current && others.length === 0;
+  }
+
+  // ---- Live link: preconnect + reachability --------------------------------
+  var reach = {};
+  var preconnected = {};
+  var pingTimer = null;
+
+  function warm(c) {
+    if (preconnected[c.url]) return;
+    preconnected[c.url] = true;
+    var link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = c.url;
+    document.head.appendChild(link);
+  }
+
+  function ping(c) {
+    if (window.location.protocol === 'https:' && c.url.indexOf('http:') === 0) {
+      reach[c.url] = { unchecked: true };
+      return;
+    }
+    var started = performance.now();
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 4000);
+    // no-cors: an opaque answer proves the host is up, and needs no CORS on older installs.
+    fetch(c.url + '/_cabotage/ping', { mode: 'no-cors', cache: 'no-store', credentials: 'omit', signal: ctl ? ctl.signal : undefined })
+      .then(function () { reach[c.url] = { ms: Math.round(performance.now() - started) }; })
+      .catch(function () { reach[c.url] = { down: true }; })
+      .then(function () { clearTimeout(timer); paintReach(c); });
+  }
+
+  function pingAll() {
+    clusters().forEach(function (c) {
+      if (isCurrent(c)) return;
+      warm(c);
+      ping(c);
+    });
+  }
+
+  // ---- DOM helpers ---------------------------------------------------------
+  function h(tag, attrs, children) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') el.textContent = attrs[k];
+      else if (k === 'className') el.className = attrs[k];
+      else if (attrs[k] === true) el.setAttribute(k, '');
+      else if (attrs[k] !== false && attrs[k] != null) el.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (child) {
+      if (child != null) el.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+    });
+    return el;
+  }
+  function svg(paths, cls) {
+    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('fill', 'none');
+    s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-linecap', 'round');
+    s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    if (cls) s.setAttribute('class', cls);
+    s.innerHTML = paths;
+    return s;
+  }
+  function kbd(text) { return h('kbd', { text: text }); }
+  var ICON_SEARCH = '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>';
+  var ICON_PLUS = '<path d="M12 5v14M5 12h14"/>';
+  var ICON_X = '<path d="M18 6 6 18M6 6l12 12"/>';
+  var ICON_BACK = '<path d="m15 18-6-6 6-6"/>';
+  var ICON_FROM = '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>';
+
+  // ---- Palette -------------------------------------------------------------
+  var root, input, listEl, scopeBtn, addForm, footNote;
+  var state = { open: false, query: '', sel: 0, mode: 'shared', rows: [], adding: false, returnFocus: null };
+
+  function build() {
+    input = h('input', {
+      type: 'text', className: 'cp-input', role: 'combobox', 'aria-expanded': 'true',
+      'aria-controls': 'cp-list', 'aria-autocomplete': 'list', placeholder: 'Jump to cluster…',
+      autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Filter clusters',
+    });
+    scopeBtn = h('button', { type: 'button', className: 'cp-scope', title: 'Where the jump lands (Tab)' });
+    listEl = h('div', { className: 'cp-list', id: 'cp-list', role: 'listbox', 'aria-label': 'Clusters' });
+    footNote = h('span', { className: 'cp-foot-note' });
+    addForm = buildAddForm();
+    var palette = h('div', { className: 'cluster-palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Jump to cluster' }, [
+      h('div', { className: 'cp-search' }, [svg(ICON_SEARCH, 'cp-search-icon'), input, scopeBtn]),
+      listEl,
+      addForm,
+      h('div', { className: 'cp-foot' }, [
+        footNote,
+        h('span', { className: 'cp-keys' }, [
+          h('span', {}, [kbd('↑'), kbd('↓'), ' move']),
+          h('span', {}, [kbd('tab'), ' lands on']),
+          h('span', {}, [kbd('↵'), ' jump']),
+          h('span', {}, [kbd(isMac ? '⌘↵' : 'Ctrl ↵'), ' new tab']),
+        ]),
+      ]),
+    ]);
+    root = h('div', { className: 'cluster-palette-root', hidden: true }, [h('div', { className: 'cp-scrim', 'data-cp-close': true }), palette]);
+    document.body.appendChild(root);
+
+    input.addEventListener('input', function () {
+      state.query = input.value;
+      state.sel = 0;
+      renderList();
+    });
+    input.addEventListener('keydown', onListKey);
+    scopeBtn.addEventListener('click', function () { cycleMode(1); input.focus(); });
+    root.addEventListener('click', function (e) {
+      if (e.target.closest('[data-cp-close]')) { close(); return; }
+      var remove = e.target.closest('[data-cp-remove]');
+      if (remove) { removePersonal(remove.getAttribute('data-cp-remove')); return; }
+      var row = e.target.closest('.cp-row');
+      if (row) activate(Number(row.getAttribute('data-index')), e.metaKey || e.ctrlKey);
+    });
+    listEl.addEventListener('mousemove', function (e) {
+      var row = e.target.closest('.cp-row');
+      if (!row) return;
+      var i = Number(row.getAttribute('data-index'));
+      if (i !== state.sel) { state.sel = i; paintSelection(); }
+    });
+    root.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        // The page's own Escape handlers (modals, tab nav blur) must not see it.
+        e.preventDefault();
+        e.stopPropagation();
+        if (state.adding) showList(); else close();
+      }
+    });
+  }
+
+  function visibleRows() {
+    var q = state.query.trim().toLowerCase();
+    var rows = clusters().filter(function (c) {
+      if (!q) return true;
+      var host = c.url.replace(/^https?:\/\//, '');
+      return c.name.toLowerCase().indexOf(q) >= 0 || host.indexOf(q) >= 0 || (c.region || '').toLowerCase().indexOf(q) >= 0;
+    }).map(function (c) { return { cluster: c }; });
+    rows.push({ action: 'add' });
+    return rows;
+  }
+
+  function renderList() {
+    state.rows = visibleRows();
+    var firstJumpable = 0;
+    for (var k = 0; k < state.rows.length; k++) {
+      if (state.rows[k].cluster && !isCurrent(state.rows[k].cluster)) { firstJumpable = k; break; }
+    }
+    if (state.sel === -1) state.sel = firstJumpable;
+    if (state.sel >= state.rows.length) state.sel = state.rows.length - 1;
+
+    var path = destPath(state.mode);
+    listEl.textContent = '';
+    var number = 0;
+    state.rows.forEach(function (row, i) {
+      var id = 'cp-opt-' + i;
+      if (row.action === 'add') {
+        if (state.query && state.rows.length === 1) {
+          listEl.appendChild(h('div', { className: 'cp-empty', text: 'No cluster matches “' + state.query.trim() + '”.' }));
+        }
+        listEl.appendChild(h('div', { className: 'cp-row cp-row-action', role: 'option', id: id, 'data-index': i }, [
+          h('span', { className: 'cp-action-icon' }, [svg(ICON_PLUS)]),
+          h('span', { className: 'cp-name', text: 'Add a cluster…' }),
+          h('span', { className: 'cp-dest', text: 'Saved in this browser' }),
+        ]));
+        return;
+      }
+      var c = row.cluster;
+      var here = isCurrent(c);
+      number += 1;
+      var host = c.url.replace(/^https?:\/\//, '');
+      var dest = here
+        ? h('span', { className: 'cp-dest', text: 'You are here' })
+        : h('span', { className: 'cp-dest' }, [c.url.slice(0, c.url.length - host.length), h('span', { className: 'cp-host', text: host }), h('b', { text: path })]);
+      var meta = h('span', { className: 'cp-meta' }, [
+        c.personal ? h('span', { className: 'cp-tag', text: 'personal' }) : null,
+        here ? h('span', { className: 'cp-tag', text: 'current' }) : h('span', { className: 'cp-reach', 'data-reach': c.url }),
+        c.personal ? h('button', { type: 'button', className: 'cp-remove', tabindex: '-1', 'data-cp-remove': c.url, 'aria-label': 'Remove ' + c.name, title: 'Remove ' + c.name + ' (' + (isMac ? '⌘⌫' : 'Ctrl ⌫') + ')' }, [svg(ICON_X)]) : null,
+        h('span', { className: 'cp-num', text: number <= 9 ? String(number) : '' }),
+      ]);
+      listEl.appendChild(h('div', {
+        className: 'cp-row' + (here ? ' cp-row-current' : ''), role: 'option', id: id, 'data-index': i,
+        'aria-disabled': here ? 'true' : null,
+      }, [
+        // Here, the swatch is the accent actually in use; elsewhere, the cluster's configured one.
+        h('span', { className: 'cluster-swatch', 'data-cluster-color': here ? 'current' : c.color, 'aria-hidden': 'true' }),
+        h('span', { className: 'cp-name' }, [c.name, c.region ? h('span', { className: 'cp-region', text: c.region }) : null]),
+        dest,
+        meta,
+      ]));
+      if (!here) paintReach(c);
+    });
+    scopeBtn.textContent = '';
+    scopeBtn.appendChild(document.createTextNode(DEST_LABEL[state.mode] + ' '));
+    scopeBtn.appendChild(kbd('tab'));
+    footNote.textContent = data.clusters.length ? 'Clusters come from your operators' : 'Clusters you add live in this browser';
+    paintSelection();
+  }
+
+  function paintSelection() {
+    listEl.querySelectorAll('.cp-row').forEach(function (row) {
+      row.setAttribute('aria-selected', String(Number(row.getAttribute('data-index')) === state.sel));
+    });
+    var selected = document.getElementById('cp-opt-' + state.sel);
+    if (selected) {
+      input.setAttribute('aria-activedescendant', selected.id);
+      selected.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function paintReach(c) {
+    if (!listEl) return;
+    var r = reach[c.url];
+    listEl.querySelectorAll('[data-reach]').forEach(function (el) {
+      if (el.getAttribute('data-reach') !== c.url) return;
+      var row = el.closest('.cp-row');
+      row.classList.toggle('cp-row-down', !!(r && r.down));
+      el.className = 'cp-reach' + (r ? (r.down ? ' is-down' : r.unchecked ? ' is-unchecked' : ' is-up') : ' is-pending');
+      el.textContent = !r ? '' : r.down ? 'unreachable' : r.unchecked ? 'not checked' : r.ms + ' ms';
+      el.title = !r ? 'Checking…' : r.down ? 'No answer within 4 seconds' : r.unchecked ? 'An https page can’t probe an http cluster' : 'Round trip from this browser';
+    });
+  }
+
+  function cycleMode(step) {
+    var i = DEST_ORDER.indexOf(state.mode);
+    state.mode = DEST_ORDER[(i + step + DEST_ORDER.length) % DEST_ORDER.length];
+    renderList();
+  }
+
+  function move(step) {
+    var n = state.rows.length;
+    if (!n) return;
+    state.sel = (state.sel + step + n) % n;
+    paintSelection();
+  }
+
+  function onListKey(e) {
+    if (e.isComposing) return;
+    var k = e.key;
+    if (k === 'ArrowDown') { e.preventDefault(); move(1); }
+    else if (k === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (k === 'Tab') { e.preventDefault(); cycleMode(e.shiftKey ? -1 : 1); }
+    else if (k === 'Enter') { e.preventDefault(); activate(state.sel, e.metaKey || e.ctrlKey); }
+    else if (k === 'Backspace' && (e.metaKey || e.ctrlKey)) {
+      var row = state.rows[state.sel];
+      if (row && row.cluster && row.cluster.personal) { e.preventDefault(); removePersonal(row.cluster.url); }
+    } else if (/^[1-9]$/.test(k) && !state.query && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      var jumpable = state.rows.filter(function (r) { return r.cluster; });
+      var target = jumpable[Number(k) - 1];
+      if (target) { e.preventDefault(); activate(state.rows.indexOf(target), false); }
+    }
+  }
+
+  function activate(index, newTab) {
+    var row = state.rows[index];
+    if (!row) return;
+    if (row.action === 'add') { showAdd(); return; }
+    if (isCurrent(row.cluster)) { close(); return; }
+    jump(row.cluster, newTab);
+  }
+
+  function open() {
+    if (state.open) return;
+    if (!root) build();
+    state.open = true;
+    state.query = '';
+    state.sel = -1;
+    state.mode = 'shared';
+    state.returnFocus = document.activeElement;
+    input.value = '';
+    showList();
+    root.hidden = false;
+    if (appShell) appShell.inert = true;
+    document.querySelectorAll('[data-cluster-open][aria-haspopup]').forEach(function (b) { b.setAttribute('aria-expanded', 'true'); });
+    input.focus();
+    pingAll();
+    pingTimer = setInterval(pingAll, 5000);
+  }
+
+  function close(restoreFocus) {
+    if (!state.open) return;
+    state.open = false;
+    root.hidden = true;
+    if (appShell) appShell.inert = false;
+    clearInterval(pingTimer);
+    document.querySelectorAll('[data-cluster-open][aria-haspopup]').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+    if (restoreFocus !== false && state.returnFocus && state.returnFocus.focus) state.returnFocus.focus();
+  }
+
+  // ---- Personal clusters ---------------------------------------------------
+  function buildAddForm() {
+    var swatches = h('div', { className: 'cp-swatches', role: 'radiogroup', 'aria-label': 'Color' });
+    data.colors.forEach(function (color) {
+      swatches.appendChild(h('label', { className: 'cp-swatch-opt', title: color }, [
+        h('input', { type: 'radio', name: 'color', value: color, 'aria-label': color }),
+        h('span', { className: 'cluster-swatch', 'data-cluster-color': color, 'aria-hidden': 'true' }),
+      ]));
+    });
+    var form = h('form', { className: 'cp-add', hidden: true, novalidate: true }, [
+      h('div', { className: 'cp-add-head' }, [
+        h('button', { type: 'button', className: 'cp-back', 'data-cp-back': true, 'aria-label': 'Back to clusters' }, [svg(ICON_BACK)]),
+        h('span', { text: 'Add a cluster' }),
+      ]),
+      h('label', { className: 'cp-field' }, [h('span', { text: 'URL' }), h('input', { name: 'url', type: 'url', inputmode: 'url', placeholder: 'https://cabotage.example.com', autocomplete: 'off', spellcheck: 'false', required: true })]),
+      h('label', { className: 'cp-field' }, [h('span', { text: 'Name' }), h('input', { name: 'name', type: 'text', autocomplete: 'off', spellcheck: 'false', maxlength: '40' })]),
+      h('div', { className: 'cp-field' }, [h('span', { text: 'Color' }), swatches]),
+      h('p', { className: 'cp-add-error', role: 'alert' }),
+      h('div', { className: 'cp-add-actions' }, [
+        h('span', { className: 'cp-add-note', text: 'Saved in this browser, for ' + window.location.host + ' only.' }),
+        h('button', { type: 'button', className: 'btn btn-ghost btn-sm', 'data-cp-back': true, text: 'Cancel' }),
+        h('button', { type: 'submit', className: 'btn btn-primary btn-sm', text: 'Add cluster' }),
+      ]),
+    ]);
+    var urlField = form.querySelector('input[name="url"]');
+    var nameField = form.querySelector('input[name="name"]');
+    form.addEventListener('click', function (e) { if (e.target.closest('[data-cp-back]')) showList(); });
+    urlField.addEventListener('input', function () {
+      var origin = originOf(urlField.value);
+      nameField.placeholder = origin ? suggestName(origin) : '';
+    });
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var err = form.querySelector('.cp-add-error');
+      var origin = originOf(urlField.value);
+      var name = (nameField.value || (origin ? suggestName(origin) : '')).trim();
+      var list = clusters();
+      var clash = origin && list.filter(function (c) { return c.url === origin; })[0];
+      var problem = !origin ? 'Enter the cluster’s address, like https://cabotage.example.com.'
+        : clash ? 'Already listed as ' + clash.name + '.'
+        : !CLUSTER_NAME_RE.test(name) ? 'Names use letters, digits, “.”, “_” and “-”, up to 40 characters.'
+        : list.some(function (c) { return c.name.toLowerCase() === name.toLowerCase(); }) ? 'A cluster named ' + name + ' already exists.'
+        : null;
+      err.textContent = problem || '';
+      if (problem) { (origin && !clash ? nameField : urlField).focus(); return; }
+      var personal = readPersonal();
+      personal.push({ name: name, url: origin, color: form.querySelector('input[name="color"]:checked').value });
+      writePersonal(personal);
+      syncCrumb();
+      showList();
+      state.query = '';
+      input.value = '';
+      renderList();
+      pingAll();
+    });
+    return form;
+  }
+
+  function suggestName(origin) {
+    var host = origin.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+    if (/^[\d.]+$/.test(host) || host.indexOf('.') < 0) return host.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40);
+    var labels = host.split('.');
+    return labels[labels.length - 2].slice(0, 40);
+  }
+
+  function showAdd() {
+    state.adding = true;
+    listEl.hidden = true;
+    input.closest('.cp-search').hidden = true;
+    root.querySelector('.cp-foot').hidden = true;
+    addForm.hidden = false;
+    addForm.reset();
+    addForm.querySelector('input[name="name"]').placeholder = '';
+    addForm.querySelector('.cp-add-error').textContent = '';
+    var used = clusters().map(function (c) { return c.color; });
+    var free = data.colors.filter(function (c) { return used.indexOf(c) < 0; })[0] || data.colors[0];
+    addForm.querySelector('input[value="' + free + '"]').checked = true;
+    addForm.querySelector('input[name="url"]').focus();
+  }
+
+  function showList() {
+    state.adding = false;
+    addForm.hidden = true;
+    listEl.hidden = false;
+    input.closest('.cp-search').hidden = false;
+    root.querySelector('.cp-foot').hidden = false;
+    renderList();
+    input.focus();
+  }
+
+  function removePersonal(url) {
+    writePersonal(readPersonal().filter(function (c) { return c.url !== url; }));
+    syncCrumb();
+    renderList();
+    input.focus();
+  }
+
+  // ---- Handoff: the jump itself --------------------------------------------
+  function jump(c, newTab) {
+    var url = c.url + destPath(state.mode);
+    if (newTab) {
+      window.open(url, '_blank', 'noopener');
+      close();
+      return;
+    }
+    var here = currentIn(clusters());
+    // Only operator-listed clusters share this list and consume the marker; personal ones may run anything.
+    var marker = here && !c.personal ? '#from-cluster=' + encodeURIComponent(here.name) : '';
+    close(false);
+    if (!reduceMotion.matches) playHandoff(c);
+    // Two frames so the handoff paints before the browser starts unloading.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        window.location.assign(url + marker);
+        // Still here means the jump stalled or was stopped: show where we really are.
+        setTimeout(resetHandoff, 5000);
+      });
+    });
+  }
+
+  var EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  function playHandoff(c) {
+    document.body.classList.add('cluster-leaving');
+    if (face) {
+      var next = face.cloneNode(true);
+      next.removeAttribute('data-cluster-face');
+      next.setAttribute('data-cluster-color', c.color);
+      next.querySelector('[data-cluster-name]').textContent = c.name;
+      next.classList.add('cluster-crumb-face-next');
+      face.parentNode.appendChild(next);
+      face.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-105%)', opacity: 0 }], { duration: 280, easing: EASE_OUT, fill: 'forwards' });
+      next.animate([{ transform: 'translateY(105%)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 340, delay: 40, easing: EASE_OUT, fill: 'both' });
+    }
+    if (horizon) {
+      var sweep = h('div', { className: 'cluster-horizon-sweep', 'data-cluster-color': c.color });
+      horizon.appendChild(sweep);
+      // Runs to 85% and holds; the destination's arrival finishes the line.
+      sweep.animate([
+        { transform: 'scaleX(0)' },
+        { transform: 'scaleX(0.6)', offset: 0.4 },
+        { transform: 'scaleX(0.85)' },
+      ], { duration: 1400, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+    }
+  }
+
+  function resetHandoff() {
+    document.body.classList.remove('cluster-leaving');
+    document.querySelectorAll('.cluster-crumb-face-next, .cluster-horizon-sweep').forEach(function (el) { el.remove(); });
+    if (face && face.getAnimations) face.getAnimations().forEach(function (a) { a.cancel(); });
+  }
+
+  // Back/forward cache restores the page mid-handoff; put it back the way it was.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) resetHandoff();
+  });
+
+  function arrive() {
+    if (!_clusterArrival) return;
+    var from = clusters().filter(function (c) { return c.name === _clusterArrival && !isCurrent(c); })[0];
+    if (!from) return;
+    var label = document.querySelector('[data-cluster-arrival]');
+    if (label) {
+      label.textContent = '';
+      label.appendChild(svg(ICON_FROM));
+      label.appendChild(h('span', { text: 'from ' + from.name }));
+      label.classList.add('is-on');
+      setTimeout(function () { label.classList.remove('is-on'); }, 4200);
+    }
+    if (horizon && !reduceMotion.matches) {
+      // Finish the line the previous cluster started.
+      horizon.animate([{ transform: 'scaleX(0.85)' }, { transform: 'scaleX(1)' }], { duration: 420, easing: EASE_OUT });
+    }
+  }
+
+  // ---- Wiring --------------------------------------------------------------
+  document.addEventListener('keydown', function (e) {
+    if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'j' || e.key === 'J')) {
+      e.preventDefault();
+      if (state.open) close(); else open();
+    }
+  });
+  // Intent to switch: open the connections now, so pings and the jump land warm.
+  function warmAll() {
+    clusters().forEach(function (c) { if (!isCurrent(c)) warm(c); });
+  }
+  document.querySelectorAll('[data-cluster-open]').forEach(function (b) {
+    b.addEventListener('pointerenter', warmAll, { once: true });
+    b.addEventListener('focus', warmAll, { once: true });
+    b.addEventListener('click', function () {
+      if (document.activeElement && document.activeElement.blur && b.closest('.dropdown')) document.activeElement.blur();
+      open();
+    });
+  });
+
+  syncCrumb();
+  arrive();
 }

@@ -2,7 +2,7 @@ import logging
 import secrets
 import time
 from base64 import b64encode
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import kubernetes.client
@@ -33,6 +33,7 @@ from cabotage.server.models.projects import (
     IngressHost,
     IngressSnapshot,
     _ingress_hostname_pairs,
+    activity_plugin,
     pod_classes,
 )
 from cabotage.server.models.utils import (
@@ -104,6 +105,69 @@ def _dispatch_deploy_failure(deployment, error_detail):
             )
     except Exception:
         log.warning("Failed to dispatch deploy failure notification", exc_info=True)
+
+
+def start_deployment(
+    release: Release, deploy_metadata: dict[str, object], user_id: str | None
+) -> Deployment:
+    """Deploy `release` the way the Deploy button does.
+
+    If the deploy cannot be started, the deployment is marked failed instead of
+    raising, so callers never leave a deployment that will never run.
+    """
+    deployment = Deployment(
+        application_id=release.application_id,
+        application_environment_id=release.application_environment_id,
+        release=release.asdict,
+        deploy_metadata=deploy_metadata,
+    )
+    db.session.add(deployment)
+    db.session.flush()
+    db.session.add(
+        activity_plugin.activity_cls(
+            verb="deploy",
+            object=deployment,
+            data={"user_id": user_id, "timestamp": datetime.now(UTC).isoformat()},
+        )
+    )
+    db.session.commit()
+
+    application = release.application
+    triggered_by = deploy_metadata.get("triggered_by")
+    notification = (
+        "pipeline.deploy",
+        "Deployment",
+        str(deployment.id),
+        str(application.project.organization_id),
+        str(application.id),
+        str(release.application_environment_id)
+        if release.application_environment_id
+        else None,
+    )
+    detail = f"Triggered by: {triggered_by}" if triggered_by else None
+    try:
+        if current_app.config["KUBERNETES_ENABLED"]:
+            dispatch_pipeline_notification.delay(*notification, detail=detail)
+            run_deploy.delay(deployment_id=deployment.id)
+        else:
+            fake_deploy_release(deployment)
+            deployment.complete = True
+            db.session.commit()
+            dispatch_pipeline_notification.delay(
+                *notification, detail=detail, complete=True
+            )
+    except Exception:
+        db.session.rollback()
+        log.exception("Failed to start deployment %s", deployment.id)
+        failed = Deployment.query.filter_by(
+            id=deployment.id, complete=False, error=False
+        ).first()
+        if failed is not None:
+            failed.error = True
+            failed.error_detail = "Failed to start deployment"
+            db.session.commit()
+            _dispatch_deploy_failure(failed, failed.error_detail)
+    return deployment
 
 
 @shared_task()

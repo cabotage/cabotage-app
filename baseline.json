@@ -4425,6 +4425,13 @@
       "severity": "error"
     },
     {
+      "column": 58,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 5,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unannotated-return",
