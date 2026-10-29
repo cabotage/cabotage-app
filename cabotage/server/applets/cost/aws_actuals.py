@@ -254,10 +254,12 @@ def true_up_day(day: datetime.date, buckets: Mapping[str, float]) -> None:
         .all()
     )
 
-    estimated_network = 0.0
+    estimated = {"network": 0.0, "egress": 0.0}
     estimated_other = 0.0
-    network_weights: defaultdict[_ScopeHour, float] = defaultdict(float)
-    egress_weights: defaultdict[_ScopeHour, float] = defaultdict(float)
+    weights: dict[str, defaultdict[_ScopeHour, float]] = {
+        "network": defaultdict(float),
+        "egress": defaultdict(float),
+    }
     direct_weights: defaultdict[_ScopeHour, float] = defaultdict(float)
     for (
         period_start,
@@ -280,24 +282,28 @@ def true_up_day(day: datetime.date, buckets: Mapping[str, float]) -> None:
         )
         cost = float(total_cost or 0.0)
         if category in _NETWORK_CATEGORIES:
-            estimated_network += cost
-            weights = network_weights if category == "network" else egress_weights
-            weights[key] += float(quantity or 0.0)
+            estimated[category] += cost
+            weights[category][key] += float(quantity or 0.0)
         else:
             estimated_other += cost
             if category in _DIRECT_CATEGORIES:
                 direct_weights[key] += cost
 
-    actual_network = scale * sum(buckets.get(b, 0.0) for b in ACTUALS_NETWORK_BUCKETS)
+    actual = {
+        "network": scale * buckets.get("cross_az", 0.0),
+        "egress": scale * sum(buckets.get(b, 0.0) for b in ACTUALS_EGRESS_BUCKETS),
+    }
     actual_other = scale * sum(
         cost for b, cost in buckets.items() if b not in ACTUALS_NETWORK_BUCKETS
     )
-    _spread(
-        day,
-        "network",
-        actual_network - estimated_network,
-        network_weights if _total(network_weights) > 0 else egress_weights,
-    )
+    for category, fallback in (("network", "egress"), ("egress", "network")):
+        own = weights[category]
+        _spread(
+            day,
+            category,
+            actual[category] - estimated[category],
+            own if _total(own) > 0 else weights[fallback],
+        )
     _spread(day, "overhead", actual_other - estimated_other, direct_weights)
 
 
