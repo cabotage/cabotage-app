@@ -225,7 +225,7 @@ function initThemeToggle() {
       };
       meta.content = metaColors[resolved] || '#0f0f17';
     }
-    var accent = localStorage.getItem('accent-color') || 'purple';
+    var accent = document.documentElement.getAttribute('data-accent') || 'purple';
     if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') {
       accent = 'white';
       localStorage.setItem('accent-color', accent);
@@ -296,7 +296,7 @@ function initAccentPicker() {
     });
   }
 
-  var current = localStorage.getItem('accent-color') || 'purple';
+  var current = document.documentElement.getAttribute('data-accent') || 'purple';
   markActive(current);
 
   document.querySelectorAll('.accent-opt').forEach(function (opt) {
