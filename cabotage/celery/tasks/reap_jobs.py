@@ -52,7 +52,7 @@ def _parse_datetime(value):
         return None
     if isinstance(value, datetime.datetime):
         return value
-    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return datetime.datetime.fromisoformat(value)
 
 
 def _extract_resources(job):

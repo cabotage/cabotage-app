@@ -7,6 +7,7 @@ dependencies = [
     "authlib",
     "backoff",
     "bleach",
+    "boto3>=1.43.115",
     "celery",
     "celery-redbeat",
     "croniter",
@@ -36,7 +37,7 @@ dependencies = [
     "qrcode",
     "redis",
     "sentry-sdk[flask]",
-    "setuptools>=84.0.0,<85",
+    "setuptools>=84.1.0,<85",
     "sqlalchemy",
     "sqlalchemy-continuum",
     "sqlalchemy-utils",
@@ -66,6 +67,7 @@ dev = [
     "typing-extensions",
     "types-simple-websocket>=1.1.0.20260512",
     "prek>=0.5.3",
+    "boto3-stubs[ce,pricing]>=1.43.115",
 ]
 
 [tool.pytest.ini_options]
@@ -92,18 +94,14 @@ exclude-newer = "1 week"
 # FIXME: temporary "fix" to update ruff without a huge diff
 # these require either an unsafe or manual fix
 ignore = [
-    "RUF012",   # mutable-class-default
     "BLE001",   # blind-except
     "DTZ001",   # call-datetime-without-tzinfo
-    "EXE002",   # shebang-missing-executable-file
     "TRY002",   # raise-vanilla-class
-    "RUF015",   # unnecessary-iterable-allocation-for-first-element
-    "UP031",    # printf-string-formatting
-    "ISC004",   # implicit-string-concatenation-in-collection-literal
-    "FURB192",  # sorted-min-max
-    "DTZ005",   # call-datetime-now-without-tzinfo
-    "FURB162",  # fromisoformat-replace-z
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"cabotage/server/config.py" = ["RUF012"]    # config class is never instantiated
+"cabotage/server/models/*" = ["RUF012"]     # ClassVar conflicts with DeclarativeBase typing
 
 [tool.pyrefly]
 preset = "all"

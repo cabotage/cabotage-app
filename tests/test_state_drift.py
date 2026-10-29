@@ -2074,7 +2074,7 @@ class TestIngressChangeDetails:
         }
         diff = DictDiffer(new, old, ignored_keys=["id"])
         details = self._compute_ingress_change_details(diff)
-        settings_detail = [d for d in details["web"] if "settings" in d][0]
+        settings_detail = next(d for d in details["web"] if "settings" in d)
         assert "enabled" in settings_detail
         assert "session_affinity" in settings_detail
 

@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path, danger_zone_delete %}
+{% from "_macros.html" import render_field_compact, icon, resource_path, app_tab_nav, app_resource_path, danger_zone_delete, info_popup, info_popup_row %}
 
 {% set org_slug = application.project.organization.slug %}
 {% set project_slug = application.project.slug %}
@@ -77,22 +77,11 @@
                              gap:0.375rem">
                 Repository
                 {% if form.github_repository.description %}
-                  <div class="info-popup-anchor" style="display:inline-flex">
+                  <div class="info-popup-anchor">
                     {{ icon('info', 'w-3 h-3 text-base-content/25 cursor-help') }}
-                    <div class="info-popup"
-                         style="min-width:14rem;
-                                white-space:normal;
-                                text-transform:none;
-                                letter-spacing:0;
-                                font-weight:400">
-                      <div class="info-popup-header">
-                        {{ icon('info', 'w-3 h-3 info-popup-header-icon') }}
-                        <span class="info-popup-header-text">Repository</span>
-                      </div>
-                      <div class="info-popup-body">
-                        <div class="text-xs" style="line-height:1.5;padding:0.5rem 0.75rem">{{ form.github_repository.description }}</div>
-                      </div>
-                    </div>
+                    {% call info_popup('Repository') %}
+                      {% call info_popup_row() %}{{ form.github_repository.description }}{% endcall %}
+                    {% endcall %}
                   </div>
                 {% endif %}
               </legend>
@@ -116,6 +105,9 @@
           </div>
           <div id="github_repository_private_field" class="mt-2">
             {{ render_field_compact(form.github_repository_is_private, label='Private Repository') }}
+          </div>
+          <div class="mt-2">
+            {{ render_field_compact(form.branch_deploys_enabled, label='Include in Branch Deploys') }}
           </div>
           <div class="mt-2">
             {{ render_field_compact(form.branch_deploy_watch_paths, placeholder='src/**', label='Watch Paths', extra_class='auto-grow') }}

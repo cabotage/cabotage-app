@@ -232,3 +232,13 @@ class Config(metaclass=MetaFlaskEnv):
     ALERTMANAGER_URL = None
     ALERTMANAGER_VERIFY = None
     PROXY_FIX_NUM_PROXIES = 1
+    SHOW_COST_ESTIMATES = False
+    COST_AWS_PRICING_ENABLED = False
+    COST_AWS_REGION = "us-east-2"
+    COST_AWS_PRICING_API_REGION = "us-east-1"
+    COST_STORAGE_CLASS = None
+    COST_AWS_ACTUALS_ENABLED = False
+    COST_AWS_ACTUALS_TAG = None
+    COST_AWS_ACCOUNT_ID = None
+    # JSON array of Cost Explorer service names.
+    COST_AWS_ACTUALS_SERVICES = None

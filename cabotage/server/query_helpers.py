@@ -10,10 +10,14 @@ from typing import TYPE_CHECKING
 from sqlalchemy import and_, case, func, or_
 
 from cabotage.server import db
+from cabotage.server.models.auth import Organization
 from cabotage.server.models.projects import (
+    Application,
     ApplicationEnvironment,
     Deployment,
+    Environment,
     Image,
+    Project,
     Release,
 )
 
@@ -554,3 +558,43 @@ def split_image_processes(
     postdeploy_cmds = {k: v for k, v in all_procs.items() if k.startswith("postdeploy")}
     job_procs = {k: v for k, v in all_procs.items() if k.startswith("job")}
     return service_procs, release_cmds, postdeploy_cmds, job_procs
+
+
+def organization_or_404(org_slug: str) -> Organization:
+    """Live organization by slug; no permission check."""
+    organization: Organization = (
+        Organization.query.filter_by(slug=org_slug)
+        .filter(Organization.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return organization
+
+
+def project_or_404(organization: Organization, project_slug: str) -> Project:
+    """Live project by slug within `organization`; no permission check."""
+    project: Project = (
+        Project.query.filter_by(organization_id=organization.id, slug=project_slug)
+        .filter(Project.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return project
+
+
+def environment_or_404(project: Project, env_slug: str) -> Environment:
+    """Live environment by slug within `project`; no permission check."""
+    environment: Environment = (
+        Environment.query.filter_by(project_id=project.id, slug=env_slug)
+        .filter(Environment.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return environment
+
+
+def application_or_404(project: Project, app_slug: str) -> Application:
+    """Live application by slug within `project`; no permission check."""
+    application: Application = (
+        Application.query.filter_by(project_id=project.id, slug=app_slug)
+        .filter(Application.deleted_at.is_(None))
+        .first_or_404()
+    )
+    return application

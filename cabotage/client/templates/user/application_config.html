@@ -1,5 +1,5 @@
 {% extends "_base.html" %}
-{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path %}
+{% from "_macros.html" import icon, resource_path, status_badge, app_tab_nav, app_resource_path, info_popup, info_popup_row %}
 
 {% set app = application %}
 {% set org_slug = app.project.organization.slug %}
@@ -82,82 +82,42 @@
               {% if cfg.buildtime %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-build">{{ icon('box', 'w-3 h-3') }} Build</span>
-                  <div class="info-popup">
-                    <div class="info-popup-header">
-                      {{ icon('box', 'w-3 h-3 info-popup-header-icon') }}
-                      <span class="info-popup-header-text">Build-time Variable</span>
-                    </div>
-                    <div class="info-popup-body">
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">Injected during <strong>docker build</strong> as a build arg. Available only at image build time — not at runtime.</span>
-                      </div>
-                    </div>
-                  </div>
+                  {% call info_popup('Build-time Variable', 'box') %}
+                    {% call info_popup_row() %}Injected during <strong>docker build</strong> as a build arg. Available only at image build time — not at runtime.{% endcall %}
+                  {% endcall %}
                 </div>
               {% endif %}
               {% if cfg.secret %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-secret">{{ icon('lock', 'w-3 h-3') }} Secret</span>
-                  <div class="info-popup">
-                    <div class="info-popup-header">
-                      {{ icon('shield', 'w-3 h-3 info-popup-header-icon') }}
-                      <span class="info-popup-header-text">Secret Variable</span>
-                    </div>
-                    <div class="info-popup-body">
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">Stored encrypted and delivered via <strong>Vault</strong> at runtime. The value is never displayed after being set.</span>
-                      </div>
-                    </div>
-                  </div>
+                  {% call info_popup('Secret Variable', 'shield') %}
+                    {% call info_popup_row() %}Stored encrypted and delivered via <strong>Vault</strong> at runtime. The value is never displayed after being set.{% endcall %}
+                  {% endcall %}
                 </div>
               {% endif %}
               {% if is_shared %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-shared">{{ icon('globe', 'w-3 h-3') }} shared</span>
-                  <div class="info-popup">
-                    <div class="info-popup-header">
-                      {{ icon('globe', 'w-3 h-3 info-popup-header-icon') }}
-                      <span class="info-popup-header-text">Shared Variable</span>
-                    </div>
-                    <div class="info-popup-body">
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">Defined at the environment level and shared across applications.</span>
-                      </div>
-                    </div>
-                  </div>
+                  {% call info_popup('Shared Variable', 'globe') %}
+                    {% call info_popup_row() %}Defined at the environment level and shared across applications.{% endcall %}
+                  {% endcall %}
                 </div>
               {% elif '${shared.' in cfg.value %}
                 {% set _ref_name = cfg.value.strip().replace('${shared.', '').replace('}', '') %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-shared">{{ icon('link', 'w-3 h-3') }} shared ref</span>
-                  <div class="info-popup">
-                    <div class="info-popup-header">
-                      {{ icon('link', 'w-3 h-3 info-popup-header-icon') }}
-                      <span class="info-popup-header-text">Shared Reference</span>
-                    </div>
-                    <div class="info-popup-body">
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">References a shared environment variable via <code>{{ '${shared.VAR_NAME}' }}</code> syntax. Resolved at deploy time.</span>
-                      </div>
-                    </div>
-                  </div>
+                  {% call info_popup('Shared Reference', 'link') %}
+                    {% call info_popup_row() %}References a shared environment variable via <code>{{ '${shared.VAR_NAME}' }}</code> syntax. Resolved at deploy time.{% endcall %}
+                  {% endcall %}
                 </div>
                 <span class="text-xs text-base-content/30">via {{ _ref_name }}</span>
               {% endif %}
               {% if not is_shared and cfg.name|upper in overridden_shared_names %}
                 <div class="info-popup-anchor">
                   <span class="env-badge env-badge-neutral">{{ icon('alert-triangle', 'w-3 h-3') }} overrides shared</span>
-                  <div class="info-popup">
-                    <div class="info-popup-header">
-                      {{ icon('alert-triangle', 'w-3 h-3 info-popup-header-icon') }}
-                      <span class="info-popup-header-text">Overrides Shared Variable</span>
-                    </div>
-                    <div class="info-popup-body">
-                      <div class="info-popup-row">
-                        <span class="info-popup-desc">A shared environment variable with the same name is subscribed, but this app-level value takes precedence.</span>
-                      </div>
-                    </div>
-                  </div>
+                  {% call info_popup('Overrides Shared Variable', 'alert-triangle') %}
+                    {% call info_popup_row() %}A shared environment variable with the same name is subscribed, but this app-level value takes precedence.{% endcall %}
+                  {% endcall %}
                 </div>
               {% endif %}
               <div class="env-row-actions">

@@ -26,6 +26,19 @@ Activity = activity_plugin.activity_cls
 
 log = logging.getLogger(__name__)
 
+# Discord's 429 code for "Maximum number of edits to messages older than 1 hour
+# reached". Retrying it only burns more of the same bucket.
+DISCORD_OLD_MESSAGE_EDIT_LIMIT_CODE = 30046
+
+
+class DiscordRateLimitedError(Exception):
+    """Discord answered 429; the update can be retried after ``retry_after`` seconds."""
+
+    def __init__(self, retry_after: float) -> None:
+        super().__init__(f"Discord rate limited; retry after {retry_after}s")
+        self.retry_after: float = retry_after
+
+
 discord_oauth_bp = Blueprint(
     "discord_oauth", __name__, url_prefix="/integrations/discord"
 )
@@ -301,8 +314,14 @@ def _send_discord_message(channel_id, text, embeds=None, components=None):
         return None
 
 
-def _update_discord_message(channel_id, message_id, text, embeds=None, components=None):
-    """Update an existing Discord message."""
+def _update_discord_message(
+    channel_id: str, message_id: str, text, embeds=None, components=None
+):
+    """Update an existing Discord message.
+
+    Raises ``DiscordRateLimitedError`` on a retryable 429. Gives up quietly when
+    Discord refuses further edits to an old message.
+    """
     bot_token = current_app.config.get("DISCORD_BOT_TOKEN")
     if not bot_token:
         return
@@ -319,6 +338,23 @@ def _update_discord_message(channel_id, message_id, text, embeds=None, component
             json=payload,
             timeout=10,
         )
+        if resp.status_code == 429:
+            body: dict[str, object]
+            try:
+                body = resp.json()
+            except ValueError:
+                body = {}
+            if body.get("code") == DISCORD_OLD_MESSAGE_EDIT_LIMIT_CODE:
+                log.info(
+                    "Discord allows no more edits to message %s in %s; leaving it",
+                    message_id,
+                    channel_id,
+                )
+                return
+            retry_after = body.get("retry_after")
+            raise DiscordRateLimitedError(
+                float(retry_after) if isinstance(retry_after, (int, float)) else 1.0
+            )
         if resp.status_code != 200:
             log.warning(
                 "Discord message update failed: %s %s", resp.status_code, resp.text

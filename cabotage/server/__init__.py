@@ -49,6 +49,7 @@ from cabotage.server.ext.kubernetes import Kubernetes
 from cabotage.server.ext.vault import Vault
 from cabotage.server.ext.vault_db_creds import VaultDBCreds
 from cabotage.server.mfa import CabotageWebauthnUtil
+from cabotage.utils.datetimes import iso_utc
 
 # instantiate the extensions
 bcrypt = Bcrypt()
@@ -175,6 +176,24 @@ def celery_init_app(app):
             "args": None,
         },
     }
+    if app.config.get("SHOW_COST_ESTIMATES"):
+        celery_app.conf.beat_schedule["cost-collector"] = {
+            "task": "cabotage.celery.tasks.cost.collect_costs",
+            "schedule": crontab(minute="7"),
+            "args": None,
+        }
+        if app.config.get("COST_AWS_PRICING_ENABLED"):
+            celery_app.conf.beat_schedule["cost-aws-prices"] = {
+                "task": "cabotage.celery.tasks.cost.refresh_aws_prices",
+                "schedule": crontab(minute="37", hour="4"),
+                "args": None,
+            }
+        if app.config.get("COST_AWS_ACTUALS_ENABLED"):
+            celery_app.conf.beat_schedule["cost-aws-actuals"] = {
+                "task": "cabotage.celery.tasks.cost.refresh_aws_actuals",
+                "schedule": crontab(minute="23", hour="*/6"),
+                "args": None,
+            }
     app.extensions["celery"] = celery_app
     return celery_app
 
@@ -342,9 +361,7 @@ def create_app():
 
     @app.template_filter("isoformat_utc")
     def isoformat_utc_filter(value):
-        if value is None:
-            return ""
-        return value.isoformat() + "Z"
+        return iso_utc(value) or ""
 
     @app.template_filter("duration")
     def duration_filter(obj):
@@ -391,6 +408,8 @@ def create_app():
     babel.init_app(app)
 
     # register blueprints
+    # Applet views add their routes to user_blueprint; import before registering.
+    import cabotage.server.applets.pipeline.views  # noqa: F401
     from cabotage.server.alerting.views import alerting_blueprint
     from cabotage.server.main.legal import validate_legal_config
     from cabotage.server.main.views import main_blueprint
@@ -404,6 +423,10 @@ def create_app():
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
     validate_legal_config(app)
+
+    from cabotage.server.applets.cost.views import cost_blueprint
+
+    app.register_blueprint(cost_blueprint)
 
     # GitHub webhook uses HMAC validation, not CSRF tokens
     csrf.exempt("cabotage.server.user.views.github_hooks")

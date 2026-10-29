@@ -7,6 +7,7 @@ from wtforms import (
     HiddenField,
     IntegerField,
     SelectField,
+    SelectMultipleField,
     StringField,
     TextAreaField,
 )
@@ -47,6 +48,10 @@ BIGINT_MAX = 2**63 - 1
 
 def _normalize_branch(value: str | None) -> str | None:
     return (value or "").strip() or None
+
+
+def _strip(value: str | None) -> str | None:
+    return value.strip() if value else value
 
 
 class ExtendedLoginForm(LoginForm):
@@ -217,6 +222,15 @@ class EditProjectSettingsForm(FlaskForm):
         "Enable Branch Deploys",
         [],
         description="Automatically create ephemeral environments for pull requests.",
+    )
+    branch_deploy_fallback_to_base = BooleanField(
+        "Fall Back to Base Environment",
+        [],
+        description=(
+            "Let previews resolve ${app.url} and ${app.host} references to apps "
+            "that are not included in branch deploys against this project's base "
+            "environment. The preview then talks to the real service."
+        ),
     )
     branch_deploy_base_environment_id = SelectField(
         "Base Environment",
@@ -429,6 +443,14 @@ class EditApplicationSettingsForm(FlaskForm):
         "Watch Paths",
         description="Only deploy this app when files matching these patterns change. One .gitignore-style pattern per line (e.g. src/**, Dockerfile). Leave empty to always deploy.",
     )
+    branch_deploys_enabled = BooleanField(
+        "Include in Branch Deploys",
+        description=(
+            "Clone this app into pull request preview environments. "
+            "Turning this off does not remove the app from PR environments "
+            "that already exist."
+        ),
+    )
     github_app_installation_id = SelectField(
         "GitHub App Installation",
         [Optional()],
@@ -495,6 +517,7 @@ class EditApplicationSettingsForm(FlaskForm):
             "It should respond quickly with a simple HTTP 200 OK. "
             "Requires a new release to take effect."
         ),
+        filters=[_strip],
     )
     health_check_host = StringField(
         "HTTP Health Check Host Header",
@@ -770,6 +793,11 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "Wait for CI",
         description="Wait for CI checks to pass before deploying. Uncheck to deploy immediately on push.",
     )
+    deployment_checks = SelectMultipleField(
+        "Deployment Checks",
+        choices=[],
+        validate_choice=False,
+    )
     github_environment_name = StringField(
         "GitHub Environment Name",
         [Optional()],
@@ -785,6 +813,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "HTTP Health Check Path",
         [Optional()],
         description="Path for health check probes",
+        filters=[_strip],
     )
     health_check_host = StringField(
         "HTTP Health Check Host Header",
