@@ -102,6 +102,7 @@ def test_missing_colors_skip_colors_other_clusters_chose():
         ([{"url": "https://a.example.com"}], "name"),
         ([{"name": "has space", "url": "https://a.example.com"}], "name"),
         ([{"name": "a"}], "missing url"),
+        ([{"name": "a", "url": ["https://a.example.com"]}], "url must be a string"),
         ([{"name": "a", "url": "https://a.example.com/projects"}], "bare http"),
         ([{"name": "a", "url": "ftp://a.example.com"}], "bare http"),
         ([{"name": "a", "url": "https://a.example.com:abc"}], "bare http"),
