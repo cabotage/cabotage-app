@@ -411,6 +411,7 @@ def create_app():
     # Applet views add their routes to user_blueprint; import before registering.
     import cabotage.server.applets.pipeline.views  # noqa: F401
     from cabotage.server.alerting.views import alerting_blueprint
+    from cabotage.server.main.legal import validate_legal_config
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
     from cabotage.server.registry_auth.views import registry_auth_blueprint
@@ -421,6 +422,8 @@ def create_app():
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
+    validate_legal_config(app)
+
     from cabotage.server.applets.cost.views import cost_blueprint
 
     app.register_blueprint(cost_blueprint)
