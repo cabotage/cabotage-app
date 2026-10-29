@@ -225,15 +225,14 @@ function initThemeToggle() {
       };
       meta.content = metaColors[resolved] || '#0f0f17';
     }
-    var accent = document.documentElement.getAttribute('data-accent') || 'purple';
-    if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') {
-      accent = 'white';
-      localStorage.setItem('accent-color', accent);
-      document.documentElement.setAttribute('data-accent', accent);
-      document.querySelectorAll('.accent-opt').forEach(function (b) {
-        b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
-      });
-    }
+    var root = document.documentElement;
+    var accent = localStorage.getItem('accent-color') || root.getAttribute('data-accent-default') || 'purple';
+    // Terminal only takes the mono accents. Not saved, so leaving terminal brings back the user's pick or the cluster's color.
+    if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') accent = 'white';
+    root.setAttribute('data-accent', accent);
+    document.querySelectorAll('.accent-opt').forEach(function (b) {
+      b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
+    });
     if (window.__applyAccent) window.__applyAccent(accent, resolved);
   }
 

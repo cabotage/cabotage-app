@@ -87,7 +87,11 @@
       window.__paintClusterFavicon = paintClusterFavicon;
 
       // A cluster's configured color is its default accent; a user's own pick wins.
-      var accent = localStorage.getItem('accent-color') || {{ (current_cluster.color if current_cluster else 'purple') | tojson }};
+      var defaultAccent = {{ (current_cluster.color if current_cluster else 'purple') | tojson }};
+      var accent = localStorage.getItem('accent-color') || defaultAccent;
+      // Terminal only takes the mono accents, without saving over the pick.
+      if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') accent = 'white';
+      document.documentElement.setAttribute('data-accent-default', defaultAccent);
       document.documentElement.setAttribute('data-accent', accent);
       applyAccent(accent, resolved);
 
