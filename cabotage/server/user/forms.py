@@ -7,6 +7,7 @@ from wtforms import (
     HiddenField,
     IntegerField,
     SelectField,
+    SelectMultipleField,
     StringField,
     TextAreaField,
 )
@@ -47,6 +48,10 @@ BIGINT_MAX = 2**63 - 1
 
 def _normalize_branch(value: str | None) -> str | None:
     return (value or "").strip() or None
+
+
+def _strip(value: str | None) -> str | None:
+    return value.strip() if value else value
 
 
 class ExtendedLoginForm(LoginForm):
@@ -512,6 +517,7 @@ class EditApplicationSettingsForm(FlaskForm):
             "It should respond quickly with a simple HTTP 200 OK. "
             "Requires a new release to take effect."
         ),
+        filters=[_strip],
     )
     health_check_host = StringField(
         "HTTP Health Check Host Header",
@@ -787,6 +793,11 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "Wait for CI",
         description="Wait for CI checks to pass before deploying. Uncheck to deploy immediately on push.",
     )
+    deployment_checks = SelectMultipleField(
+        "Deployment Checks",
+        choices=[],
+        validate_choice=False,
+    )
     github_environment_name = StringField(
         "GitHub Environment Name",
         [Optional()],
@@ -802,6 +813,7 @@ class EditApplicationEnvironmentSettingsForm(FlaskForm):
         "HTTP Health Check Path",
         [Optional()],
         description="Path for health check probes",
+        filters=[_strip],
     )
     health_check_host = StringField(
         "HTTP Health Check Host Header",

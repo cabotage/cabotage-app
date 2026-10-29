@@ -41,6 +41,9 @@
         process_names=process_names,
         loki_configured=loki_configured,
         active_process=request.args.get('process', ''),
+        window_start=window_start,
+        window_end=window_end,
+        clear_url=logs_clear_url,
     ) }}
   </div>
 {% endblock content %}
