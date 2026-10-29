@@ -5909,6 +5909,7 @@ def application_release_create(org_slug: str, project_slug: str, app_slug: str):
             "deploy_after_release": True,
             "trigger": "manual_release_deploy",
             "triggered_by": current_user.username,
+            "triggered_by_user_id": str(current_user.id),
         }
         if deploy
         else {"trigger": "manual_release", "triggered_by": current_user.username}
