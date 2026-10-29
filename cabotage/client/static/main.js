@@ -4442,7 +4442,7 @@ function initClusterSwitcher() {
     // Only operator-listed clusters share this list and consume the marker; personal ones may run anything.
     var marker = here && !c.personal ? '#from-cluster=' + encodeURIComponent(here.name) + '&colors=' + outgoingPicks() : '';
     if (newTab) {
-      window.open(url + marker, '_blank', 'noopener');
+      follow(url + marker, true);
       close();
       return;
     }
@@ -4451,11 +4451,20 @@ function initClusterSwitcher() {
     // Two frames so the handoff paints before the browser starts unloading.
     requestAnimationFrame(function () {
       requestAnimationFrame(function () {
-        window.location.assign(url + marker);
+        follow(url + marker, false);
         // Still here means the jump stalled or was stopped: show where we really are.
         setTimeout(resetHandoff, 5000);
       });
     });
+  }
+
+  // The page's referrer policy is same-origin; a jump sends its origin so the
+  // destination can tell a real jump from a crafted link.
+  function follow(href, newTab) {
+    var a = h('a', { href: href, referrerpolicy: 'origin', target: newTab ? '_blank' : null, rel: newTab ? 'noopener' : null, hidden: true });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
 
   var EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
@@ -4532,7 +4541,10 @@ function initClusterSwitcher() {
     });
   });
 
-  if (_clusterArrival) writePicks(parsePicks([localStorage.getItem(CLUSTER_PICKS_KEY), _clusterArrival.colors].join(',')));
+  var sender = _clusterArrival && data.clusters.filter(function (c) { return c.name === _clusterArrival.from; })[0];
+  if (sender && originOf(document.referrer) === sender.url) {
+    writePicks(parsePicks([localStorage.getItem(CLUSTER_PICKS_KEY), _clusterArrival.colors].join(',')));
+  }
   syncCrumb();
   arrive();
 }
