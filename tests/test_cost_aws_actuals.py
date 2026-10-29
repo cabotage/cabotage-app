@@ -19,7 +19,7 @@ from cabotage.server.models.projects import Application, Project
 from cabotage.server.wsgi import app as _app
 
 TODAY = datetime.date(2026, 10, 15)
-DAY = TODAY - datetime.timedelta(days=1)
+DAY = TODAY - datetime.timedelta(days=2)  # the newest settled day
 DAY_START = datetime.datetime.combine(DAY, datetime.time(), datetime.UTC)
 
 
@@ -181,7 +181,11 @@ def test_refresh_follows_pages_and_replaces_the_window(app):
                         "USE2-BoxUsage:c8g.xlarge": 10.0,
                         "USE2-DataTransfer-Regional-Bytes": 50.0,
                         "USE2-DataTransfer-In-Bytes": 0.0,
-                    }
+                    },
+                    # Still settling: neither stored nor trued up.
+                    TODAY - datetime.timedelta(days=1): {
+                        "USE2-BoxUsage:m8g.2xlarge": 5.0
+                    },
                 }
             ),
         ]
@@ -193,7 +197,7 @@ def test_refresh_follows_pages_and_replaces_the_window(app):
     assert client.requests[1]["NextPageToken"] == "next"
     assert client.requests[0]["TimePeriod"] == {
         "Start": (TODAY - datetime.timedelta(days=7)).isoformat(),
-        "End": TODAY.isoformat(),
+        "End": (TODAY - datetime.timedelta(days=1)).isoformat(),
     }
     stored = {(row.day, row.bucket): float(row.cost_usd) for row in CostAwsDaily.query}
     # The stale in-window day is gone (Cost Explorer no longer reports it).
@@ -344,7 +348,7 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
         )
     db.session.commit()
 
-    overrides = actuals_rate_overrides(today=TODAY + datetime.timedelta(days=1))
+    overrides = actuals_rate_overrides(today=TODAY)
     rates = effective_rates({"COST_AWS_ACTUALS_ENABLED": True})
 
     # $24 cross-AZ over 1,200 tenant GB in 12 hours, i.e. 2,400 GB for the day.
@@ -356,8 +360,8 @@ def test_rate_overrides_from_latest_actuals(app, org, apps):
     }
     assert rates["fixed_hourly"] == overrides["fixed_hourly"]
     assert rates["network_gb"] == pytest.approx(0.01)
-    # Yesterday's costs are still settling; rates don't come from it.
-    assert actuals_rate_overrides(today=TODAY) == {}
+    # A day later than settled: rates don't come from it.
+    assert actuals_rate_overrides(today=TODAY - datetime.timedelta(days=1)) == {}
 
 
 def test_no_rate_overrides_without_collected_hours(app):
