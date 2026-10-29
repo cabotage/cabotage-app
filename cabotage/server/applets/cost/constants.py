@@ -125,6 +125,7 @@ ACTUALS_BUCKET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
 ACTUALS_OTHER_BUCKET = "other"
 
 ACTUALS_NETWORK_BUCKETS = ("cross_az", "inter_region", "internet_egress")
+ACTUALS_EGRESS_BUCKETS = ("inter_region", "internet_egress")
 
 #: Become ``fixed_hourly``. Storage is handled separately.
 ACTUALS_FIXED_BUCKETS = (
