@@ -303,7 +303,6 @@ function initAccentPicker() {
       e.stopPropagation();
       var name = opt.getAttribute('data-accent');
       localStorage.setItem('accent-color', name);
-      localStorage.setItem('accent-color-at', Date.now());
       document.documentElement.setAttribute('data-accent', name);
       var theme = getResolvedTheme();
       if (window.__applyAccent) window.__applyAccent(name, theme);
@@ -3995,10 +3994,11 @@ function initClusterSwitcher() {
     }).join(','));
   }
 
-  // What a jump carries: the picks known here, plus this cluster's own.
+  // What a jump carries: the picks known here, plus this cluster's own color as of now,
+  // default included, so it replaces anything older relayed about this cluster.
   function outgoingPicks() {
-    var mine = localStorage.getItem('accent-color');
-    var own = data.current && mine ? data.current + ':' + mine + ':' + (Number(localStorage.getItem('accent-color-at')) || 0) : '';
+    var mine = localStorage.getItem('accent-color') || document.documentElement.getAttribute('data-accent-default');
+    var own = data.current ? data.current + ':' + mine + ':' + Date.now() : '';
     return [own, localStorage.getItem(CLUSTER_PICKS_KEY)].filter(Boolean).join(',');
   }
 
