@@ -233,7 +233,8 @@ def create_app():
         }
 
     # MetaFlaskEnv parses dotted strings as floats, which truncates IDs
-    # like Slack's "10818900810177.1079..." — re-read as raw strings.
+    # like Slack's "10818900810177.1079...", and turns names like "2" or
+    # "true" into numbers and booleans — re-read as raw strings.
     _env_prefix = app.config.get("ENV_PREFIX", "CABOTAGE_")
     for _key in (
         "SLACK_CLIENT_ID",
@@ -241,6 +242,7 @@ def create_app():
         "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET",
         "DISCORD_BOT_TOKEN",
+        "CLUSTER_NAME",
     ):
         _raw = os.environ.get(f"{_env_prefix}{_key}")
         if _raw is not None:
