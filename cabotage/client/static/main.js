@@ -1766,8 +1766,7 @@ function initTimestampsAndDeployForm() {
     startTimestampTicker();
   }
 
-  var deployForm = document.querySelector('[data-full-deploy-form]');
-  if (deployForm) {
+  document.querySelectorAll('[data-full-deploy-form]').forEach(function (deployForm) {
     deployForm.addEventListener('submit', function () {
       var btn = deployForm.querySelector('button[type="submit"]');
       if (btn) {
@@ -1775,7 +1774,7 @@ function initTimestampsAndDeployForm() {
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Deploying\u2026';
       }
     });
-  }
+  });
 }
 
 /* Structured Live Log (build/release/deploy) */
