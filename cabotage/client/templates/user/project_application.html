@@ -638,6 +638,22 @@
                             Create Release
                           </button>
                         </form>
+                        {% if can_administer %}
+                        <form action="{{ url_for('user.application_release_create', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}"
+                              method="post"
+                              class="run-drawer-cta"
+                              data-full-deploy-form>
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                          <input type="hidden" name="deploy" value="true">
+                          {% if environment %}<input type="hidden" name="environment_id" value="{{ environment.id }}" />{% endif %}
+                          <button type="submit"
+                                  class="btn btn-ghost btn-sm gap-1.5"
+                                  title="Create a release and deploy it when the build finishes">
+                            {{ icon('deploy', 'w-3.5 h-3.5') }}
+                            Release &amp; Deploy
+                          </button>
+                        </form>
+                        {% endif %}
                       </div>
                     </div>
                   </div>

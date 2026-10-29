@@ -210,13 +210,24 @@ def project_application_pipeline_runs(
 
     runs = []
     for d in deployments:
-        pipeline = bool((d.deploy_metadata or {}).get("auto_deploy"))
+        deploy_metadata = d.deploy_metadata or {}
+        pipeline = bool(deploy_metadata.get("auto_deploy"))
+        release_pipeline = not pipeline and bool(
+            deploy_metadata.get("deploy_after_release")
+        )
         rel = releases.get((d.release or {}).get("id"))
         img = images.get((rel.image or {}).get("id")) if rel else None
         image_duration, image_status = stage(img, img and img.built)
         release_duration, release_status = stage(rel, rel and rel.built)
         deploy_duration, deploy_status = stage(d, d.complete)
-        if not pipeline:
+        if release_pipeline:
+            image_duration = None
+            total_duration = (
+                seconds(release_duration + deploy_duration)
+                if release_duration is not None and deploy_duration is not None
+                else None
+            )
+        elif not pipeline:
             image_duration = None
             release_duration = None
             total_duration = deploy_duration

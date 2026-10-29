@@ -87,8 +87,12 @@ def row_duration(
 
 
 def pipeline_run_duration() -> ColumnElement[int]:
-    """Deploy-only time, or build and deploy time with shared builds counted once."""
+    """Deploy-only time, release and deploy time for Release & Deploy, or build
+    and deploy time with shared builds counted once."""
     is_build_pipeline = Deployment.deploy_metadata["auto_deploy"].astext == "true"
+    is_release_pipeline: ColumnElement[bool] = (
+        Deployment.deploy_metadata["deploy_after_release"].astext == "true"
+    )
     image_release_overlap = func.greatest(
         0.0,
         func.extract(
@@ -105,6 +109,7 @@ def pipeline_run_duration() -> ColumnElement[int]:
             + row_duration(Deployment)
             - image_release_overlap,
         ),
+        (is_release_pipeline, row_duration(Release) + row_duration(Deployment)),
         else_=row_duration(Deployment),
     )
 
@@ -175,11 +180,15 @@ def pipeline_live_run(
     deploy = anchor if isinstance(anchor, Deployment) else None
     release = anchor if isinstance(anchor, Release) else None
     image = anchor if isinstance(anchor, Image) else None
-    if deploy is not None and (deploy.deploy_metadata or {}).get("auto_deploy"):
-        release = cast(
-            "Release | None",
-            Release.query.filter_by(id=(deploy.release or {}).get("id")).first(),
-        )
+    if deploy is not None:
+        deploy_metadata = deploy.deploy_metadata or {}
+        if deploy_metadata.get("auto_deploy") or deploy_metadata.get(
+            "deploy_after_release"
+        ):
+            release = cast(
+                "Release | None",
+                Release.query.filter_by(id=(deploy.release or {}).get("id")).first(),
+            )
     if release is not None:
         image = cast(
             "Image | None",
