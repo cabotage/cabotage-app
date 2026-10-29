@@ -5895,16 +5895,24 @@ def deployment_detail_legacy(deployment_id):
 )
 @login_required
 def application_release_create(org_slug: str, project_slug: str, app_slug: str):
-    org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deploy = request.form.get("deploy") == "true"
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=deploy
+    )
 
     environment_id = request.form.get("environment_id")
     app_env = _resolve_app_env(application, environment_id=environment_id)
 
     release = application.create_release(app_env=app_env)
-    release.release_metadata = {
-        "trigger": "manual_release",
-        "triggered_by": current_user.username,
-    }
+    release.release_metadata = (
+        {
+            "deploy_after_release": True,
+            "trigger": "manual_release_deploy",
+            "triggered_by": current_user.username,
+        }
+        if deploy
+        else {"trigger": "manual_release", "triggered_by": current_user.username}
+    )
     db.session.add(release)
     db.session.flush()
     activity = Activity(
@@ -5927,6 +5935,20 @@ def application_release_create(org_slug: str, project_slug: str, app_slug: str):
         str(app_env.id),
         detail=f"Triggered by: {current_user.username}",
     )
+    if deploy:
+        return redirect(
+            url_for(
+                "user.project_application",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                env_slug=(
+                    app_env.environment.slug
+                    if app_env.environment_id and project.environments_enabled
+                    else None
+                ),
+            )
+        )
     return redirect(
         url_for(
             "user.release_detail",
