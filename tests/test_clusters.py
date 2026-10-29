@@ -40,11 +40,14 @@ def app():
 def context_for(app, admin=None):
     """cluster_context() as seen by an anonymous visitor, or a (non-)admin user."""
     with app.test_request_context("/", base_url="http://localhost"):
-        if admin is not None:
-            g._login_user = User(
-                admin=admin, active=True, fs_uniquifier=uuid.uuid4().hex
-            )
-        return cluster_context()
+        if admin is None:
+            return cluster_context()
+        # g lives on the fixture's app context, which later requests reuse.
+        g._login_user = User(admin=admin, active=True, fs_uniquifier=uuid.uuid4().hex)
+        try:
+            return cluster_context()
+        finally:
+            g.pop("_login_user")
 
 
 @pytest.fixture
