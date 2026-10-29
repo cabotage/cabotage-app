@@ -3423,6 +3423,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         environment=environment,
         environments=environments,
         deploy_form=ReleaseDeployForm(),
+        can_administer=AdministerApplicationPermission(application.id).can(),
         scale_form=scale_form,
         view_releases=version_class(Release)
         .query.filter_by(application_id=application.id)
