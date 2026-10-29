@@ -4210,7 +4210,11 @@ function initClusterSwitcher() {
     if (!reduceMotion.matches) playHandoff(c);
     // Two frames so the handoff paints before the browser starts unloading.
     requestAnimationFrame(function () {
-      requestAnimationFrame(function () { window.location.assign(url + marker); });
+      requestAnimationFrame(function () {
+        window.location.assign(url + marker);
+        // Still here means the jump stalled or was stopped: show where we really are.
+        setTimeout(resetHandoff, 5000);
+      });
     });
   }
 
@@ -4239,12 +4243,15 @@ function initClusterSwitcher() {
     }
   }
 
-  // Back/forward cache restores the page mid-handoff; put it back the way it was.
-  window.addEventListener('pageshow', function (e) {
-    if (!e.persisted) return;
+  function resetHandoff() {
     document.body.classList.remove('cluster-leaving');
     document.querySelectorAll('.cluster-crumb-face-next, .cluster-horizon-sweep').forEach(function (el) { el.remove(); });
     if (face && face.getAnimations) face.getAnimations().forEach(function (a) { a.cancel(); });
+  }
+
+  // Back/forward cache restores the page mid-handoff; put it back the way it was.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) resetHandoff();
   });
 
   function arrive() {
