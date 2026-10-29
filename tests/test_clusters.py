@@ -81,6 +81,16 @@ def test_missing_colors_are_assigned_distinctly_by_position():
     assert len({c.color for c in clusters}) == 3
 
 
+def test_missing_colors_skip_colors_other_clusters_chose():
+    clusters = parse_clusters(
+        [
+            {"name": "a", "url": "https://a.example.com"},
+            {"name": "b", "url": "https://b.example.com", "color": "purple"},
+        ]
+    )
+    assert [c.color for c in clusters] == ["blue", "purple"]
+
+
 @pytest.mark.parametrize(
     "raw, message",
     [
