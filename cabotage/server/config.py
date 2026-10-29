@@ -186,6 +186,8 @@ class Config(metaclass=MetaFlaskEnv):
     # cabotage/server/main/clusters.py.
     CLUSTERS = None
     CLUSTER_NAME = None
+    # Who sees other clusters and the jump palette: "admins" or "users".
+    CLUSTER_SWITCHER_ACCESS = "admins"
     BACKING_SERVICE_POSTGRES_ENABLED = False
     BACKING_SERVICE_REDIS_ENABLED = False
     BACKING_SERVICES_POOL = None
