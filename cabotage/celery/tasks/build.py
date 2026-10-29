@@ -263,6 +263,28 @@ def _dispatch_release_failure(release, error_detail):
         log.warning("Failed to dispatch release failure notification", exc_info=True)
 
 
+def _dispatch_deploy_after_release_notification(
+    release: Release, deployment: Deployment, complete: bool = False
+) -> None:
+    """Notify for a deploy chained from a manual release (non auto-deploy flow)."""
+    try:
+        triggered_by = (release.release_metadata or {}).get("triggered_by")
+        dispatch_pipeline_notification.delay(
+            "pipeline.deploy",
+            "Deployment",
+            str(deployment.id),
+            str(release.application.project.organization_id),
+            str(release.application.id),
+            str(release.application_environment_id)
+            if release.application_environment_id
+            else None,
+            detail=f"Triggered by: {triggered_by}" if triggered_by else None,
+            complete=complete,
+        )
+    except Exception:
+        log.warning("Failed to dispatch chained deploy notification", exc_info=True)
+
+
 def _build_namespace(app_env: ApplicationEnvironment) -> str:
     """Return the namespace where build jobs run."""
     # FIXME: Remove once "typed config" is implemented
@@ -2187,11 +2209,11 @@ def run_release_build(release_id: str):
             **release_links,
         )
 
-        if not (
-            release.built
-            and release.release_metadata
-            and release.release_metadata.get("auto_deploy", False)
-        ):
+        metadata = release.release_metadata or {}
+        auto_deploy = bool(metadata.get("auto_deploy"))
+        deploy_after_release = bool(metadata.get("deploy_after_release"))
+
+        if not (release.built and auto_deploy):
             try:
                 dispatch_pipeline_notification.delay(
                     "pipeline.release",
@@ -2210,11 +2232,7 @@ def run_release_build(release_id: str):
                     exc_info=True,
                 )
 
-        if (
-            release.built
-            and release.release_metadata
-            and release.release_metadata.get("auto_deploy", False)
-        ):
+        if release.built and (auto_deploy or deploy_after_release):
             deployment = Deployment(
                 application_id=release.application.id,
                 application_environment_id=release.application_environment_id,
@@ -2228,37 +2246,40 @@ def run_release_build(release_id: str):
                 object=deployment,
                 data={
                     "user_id": "automation",
-                    "deployment_id": release.release_metadata.get("id", None),
-                    "description": release.release_metadata.get("description", None),
+                    "deployment_id": metadata.get("id", None),
+                    "description": metadata.get("description", None),
                     "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
                 },
             )
             db.session.add(activity)
             db.session.commit()
-            try:
-                image_id = release.release_metadata.get(
-                    "source_image_id", str(release.id)
-                )
-                dispatch_autodeploy_notification(
-                    "deploying",
-                    image_id,
-                    release.application,
-                    release.application_environment,
-                    image_url=cabotage_url(release.application, f"images/{image_id}"),
-                    release_url=cabotage_url(
-                        release.application, f"releases/{release.id}"
-                    ),
-                    deploy_url=cabotage_url(
-                        release.application, f"deployments/{deployment.id}"
-                    ),
-                    image_metadata=release.release_metadata,
-                )
-            except Exception:
-                log.warning(
-                    "Failed to dispatch autodeploy deploying notification",
-                    exc_info=True,
-                )
+            image_id = metadata.get("source_image_id", str(release.id))
+            if auto_deploy:
+                try:
+                    dispatch_autodeploy_notification(
+                        "deploying",
+                        image_id,
+                        release.application,
+                        release.application_environment,
+                        image_url=cabotage_url(
+                            release.application, f"images/{image_id}"
+                        ),
+                        release_url=cabotage_url(
+                            release.application, f"releases/{release.id}"
+                        ),
+                        deploy_url=cabotage_url(
+                            release.application, f"deployments/{deployment.id}"
+                        ),
+                        image_metadata=release.release_metadata,
+                    )
+                except Exception:
+                    log.warning(
+                        "Failed to dispatch autodeploy deploying notification",
+                        exc_info=True,
+                    )
             if current_app.config["KUBERNETES_ENABLED"]:
+                if not auto_deploy:
+                    _dispatch_deploy_after_release_notification(release, deployment)
                 deployment_id = deployment.id
                 run_deploy.delay(deployment_id=deployment.id)
                 deployment = Deployment.query.filter_by(id=deployment_id).first()
@@ -2278,27 +2299,32 @@ def run_release_build(release_id: str):
                     Deployment=f"deployments/{deployment.id}",
                     Release=f"releases/{release.id}",
                 )
-                try:
-                    dispatch_autodeploy_notification(
-                        "complete",
-                        image_id,
-                        release.application,
-                        release.application_environment,
-                        image_url=cabotage_url(
-                            release.application, f"images/{image_id}"
-                        ),
-                        release_url=cabotage_url(
-                            release.application, f"releases/{release.id}"
-                        ),
-                        deploy_url=cabotage_url(
-                            release.application, f"deployments/{deployment.id}"
-                        ),
-                        image_metadata=release.release_metadata,
-                    )
-                except Exception:
-                    log.warning(
-                        "Failed to dispatch autodeploy completion notification",
-                        exc_info=True,
+                if auto_deploy:
+                    try:
+                        dispatch_autodeploy_notification(
+                            "complete",
+                            image_id,
+                            release.application,
+                            release.application_environment,
+                            image_url=cabotage_url(
+                                release.application, f"images/{image_id}"
+                            ),
+                            release_url=cabotage_url(
+                                release.application, f"releases/{release.id}"
+                            ),
+                            deploy_url=cabotage_url(
+                                release.application, f"deployments/{deployment.id}"
+                            ),
+                            image_metadata=release.release_metadata,
+                        )
+                    except Exception:
+                        log.warning(
+                            "Failed to dispatch autodeploy completion notification",
+                            exc_info=True,
+                        )
+                else:
+                    _dispatch_deploy_after_release_notification(
+                        release, deployment, complete=True
                     )
     except Exception:
         db.session.rollback()
