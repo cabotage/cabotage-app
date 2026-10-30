@@ -1,0 +1,55 @@
+{% extends "_base.html" %}
+{% from "_macros.html" import icon %}
+
+{% block title %}
+  Re-Authenticate - Cabotage
+{% endblock title %}
+
+{% block content %}
+  {% set next_qs = ('?next=' ~ request.args.next|urlencode) if 'next' in request.args else '' %}
+  <div class="form-card">
+    <div class="card bg-base-200 border border-base-300 shadow-xl">
+      <div class="card-body">
+        <div class="text-center mb-6">
+          <h1 class="text-2xl font-semibold text-base-content">Re-Authenticate</h1>
+          <p class="text-sm text-base-content/50 mt-1">Confirm your password to continue</p>
+        </div>
+
+        {% include "security/_messages.html" %}
+
+        <form action="{{ url_for_security('us_verify') }}{{ next_qs }}"
+              method="post"
+              name="us_verify_form"
+              class="flex flex-col gap-4">
+          {{ us_verify_form.hidden_tag() }}
+          <div class="w-full">
+            <label for="{{ us_verify_form.passcode.id }}"
+                   class="text-xs text-base-content/50 font-medium uppercase tracking-wider">Password</label>
+            {{ us_verify_form.passcode(class="input input-bordered w-full bg-base-100 text-base-content border-base-content/10 focus:border-primary", placeholder="", autocomplete="current-password", autofocus=true) }}
+            {% for error in us_verify_form.passcode.errors %}
+              <p class="text-xs text-error mt-0.5">{{ error }}</p>
+            {% endfor %}
+          </div>
+          <button type="submit" class="btn btn-primary w-full mt-2">Continue</button>
+        </form>
+
+        {% if has_webauthn_verify_credential %}
+          <div class="divider text-base-content/30 text-xs">or</div>
+          <form action="{{ url_for_security('wan_verify') }}{{ next_qs }}"
+                method="post"
+                name="wan_verify_form">
+            <input type="hidden"
+                   name="csrf_token"
+                   id="wan_csrf_token"
+                   value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-ghost border border-base-content/10 w-full gap-2">
+              {{ icon('key', 'w-4 h-4') }} Use a security key
+            </button>
+          </form>
+        {% endif %}
+
+        {% include "security/_menu.html" %}
+      </div>
+    </div>
+  </div>
+{% endblock content %}

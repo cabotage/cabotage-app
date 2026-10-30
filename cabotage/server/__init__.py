@@ -327,6 +327,17 @@ def create_app():
                 return parts[2]
         return value
 
+    @app.template_filter("short_ref")
+    def short_ref_filter(ref, length):
+        """Shorten a ref that is a bare commit SHA; branch names pass through.
+
+        Auto-deploys record the commit SHA as the ref, so the branch slot
+        would otherwise print a 40-character hash next to the short commit.
+        """
+        if ref and len(ref) == 40 and all(c in "0123456789abcdef" for c in ref):
+            return ref[:length]
+        return ref
+
     @app.template_filter("humanize")
     def humanize_filter(value):
         return humanize_lib.naturaltime(value)

@@ -533,7 +533,7 @@
         {% for host in app_hosts %}
           {% if host.ingress_class == 'tailscale' %}
             {% set ts_fqdn = host.hostname ~ '.' ~ host.tailnet if host.tailnet else host.hostname %}
-            <span class="inline-flex items-center gap-1 text-xs font-mono text-info/70 hover:text-info transition-colors cursor-pointer"
+            <span class="inline-flex items-center gap-1 text-xs font-mono text-accent/70 hover:text-accent transition-colors cursor-pointer"
                   onclick="event.preventDefault(); event.stopPropagation(); window.open('https://{{ ts_fqdn }}', '_blank')"
                   title="Open {{ ts_fqdn }}"><span class="px-0.5">{{ icon('tailscale', 'w-2.5 h-2.5') }}</span>{{ host.hostname }}<span class="opacity-40 -ml-0.5">.{{ host.tailnet or 'tailnet' }}</span></span>
           {% else %}
@@ -593,12 +593,10 @@
   ) }}
 {% endmacro %}
 
-{% macro org_card(name, slug, url, project_count=0, app_count=0, member_count=0, last_deploy=none, color_index=0) %}
-  {% set colors = ["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"] %}
-  {% set bg_color = colors[color_index % 6] %}
+{% macro org_card(name, slug, url, project_count=0, app_count=0, member_count=0, last_deploy=none) %}
   <a href="{{ url }}" class="org-card card-interactive block no-underline">
     <div class="org-card-header">
-      <div class="org-card-avatar" style="background: {{ bg_color }}">{{ slug[:2]|upper }}</div>
+      <div class="org-card-avatar bg-primary/10 text-primary">{{ slug[:2]|upper }}</div>
       <div class="flex-1 min-w-0">
         <span class="text-sm font-semibold text-base-content truncate block">{{ name }}</span>
         <span class="text-xs text-base-content/40 font-mono">{{ slug }}</span>

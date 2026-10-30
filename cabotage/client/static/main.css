@@ -303,7 +303,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   padding: 0.75rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--text-muted);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
   border-bottom: 2px solid transparent;
   white-space: nowrap;
   text-decoration: none;
@@ -389,7 +389,7 @@ html:not([data-theme-pref]) .theme-icon-system {
 .card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px var(--shadow-card);
-  border-color: rgba(124, 58, 237, 0.3);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
 /* Service Card */
@@ -404,7 +404,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   transition: all 0.2s ease;
 }
 .service-card:hover {
-  border-color: rgba(124, 58, 237, 0.3);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
   box-shadow: 0 4px 16px var(--shadow-card);
   transform: translateY(-1px);
 }
@@ -442,7 +442,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   transition: all 0.2s ease;
 }
 .org-card:hover {
-  border-color: rgba(124, 58, 237, 0.3);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
   box-shadow: 0 4px 16px var(--shadow-card);
   transform: translateY(-1px);
 }
@@ -461,7 +461,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   flex-shrink: 0;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #fff;
   letter-spacing: 0.05em;
 }
 .org-card-stats {
@@ -905,7 +904,7 @@ a.live-commit-sha:hover {
   transition: background 0.1s ease;
 }
 .count-input .incr-btn:hover {
-  background: rgba(124, 58, 237, 0.15);
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .count-input .incr-btn.inactive {
   opacity: 0.3;
@@ -947,7 +946,7 @@ a.live-commit-sha:hover {
   border-radius: 2px;
 }
 .log-viewer .log-line:hover {
-  background: rgba(124, 58, 237, 0.06);
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 }
 .loki-log-lines { font-family: ui-monospace, monospace; font-size: 0.65rem; line-height: 1.3; }
 .loki-log-lines .log-line { padding: 0.15rem 0.4rem; border-bottom: 1px solid oklch(var(--bc) / 0.03); }
@@ -1121,9 +1120,9 @@ a.live-commit-sha:hover {
   border: 1px solid color-mix(in oklch, var(--color-warning, oklch(0.8 0.15 85)) 18%, transparent);
 }
 .env-badge-shared {
-  background: color-mix(in oklch, var(--color-info, oklch(0.7 0.15 230)) 10%, transparent);
-  color: var(--color-info, oklch(0.7 0.15 230));
-  border: 1px solid color-mix(in oklch, var(--color-info, oklch(0.7 0.15 230)) 30%, transparent);
+  background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  color: var(--accent-text);
+  border: 1px solid color-mix(in oklch, var(--color-primary) 30%, transparent);
 }
 .env-badge-neutral {
   background: color-mix(in oklch, currentColor 5%, transparent);
@@ -1131,13 +1130,14 @@ a.live-commit-sha:hover {
   border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
   padding-left: 0.5rem;
 }
-/* Semantic Badges & Alerts
+/* Semantic & Accent Badges, Alerts
    Tinted like .flash-* below instead of daisyUI's solid fill, which can't clear
-   4.5:1 on this palette. Unlayered, so these win over @layer daisyui. */
+   4.5:1 on this palette (or on dim accent presets). Unlayered, so these win over @layer daisyui. */
 .badge-error,
 .badge-warning,
 .badge-success,
-.badge-info {
+.badge-info,
+.badge-accent {
   --badge-bg: color-mix(in srgb, var(--badge-color) 12%, transparent);
   --badge-fg: color-mix(in srgb, var(--badge-color) 75%, var(--color-base-content));
   border-color: color-mix(in srgb, var(--badge-color) 40%, transparent);
@@ -1172,6 +1172,30 @@ a.live-commit-sha:hover {
 [data-theme='terminal'] :is(.badge-error, .badge-warning, .badge-success, .badge-info) {
   --badge-fg: var(--badge-color);
 }
+/* Each accent preset sets --accent-text as its legible text shade for the current theme. */
+[data-theme] .badge-accent {
+  --badge-fg: var(--accent-text);
+}
+[data-theme='light'] .badge-accent {
+  --badge-fg: color-mix(in srgb, var(--accent-text) 60%, var(--color-base-content));
+}
+/* Outline primary buttons: the primary fill is too dark to read as text on dark
+   surfaces (and borderline on light), so their resting text uses the text shade. */
+.btn-outline.btn-primary {
+  --btn-rest-fg: var(--accent-text);
+}
+[data-theme='light'] .btn-outline.btn-primary {
+  --btn-rest-fg: color-mix(in srgb, var(--accent-text) 75%, var(--color-base-content));
+}
+/* Solid error buttons: dark text on the dark-theme red reads muddy at 4.6:1, so
+   a deeper fill takes white text (5.9:1); terminal's neon red takes black. */
+[data-theme='dark'] .btn-error:not(.btn-outline, :disabled, [disabled], .btn-disabled) {
+  --btn-color: oklch(0.53 0.21 25);
+  --btn-fg: oklch(1 0 0);
+}
+[data-theme='terminal'] .btn-error:not(.btn-outline, :disabled, [disabled], .btn-disabled) {
+  --btn-fg: #0a0a0a;
+}
 [data-theme='terminal'] :is(.alert-error, .alert-warning, .alert-success, .alert-info) {
   color: var(--alert-tint);
 }
@@ -1196,14 +1220,16 @@ a.live-commit-sha:hover {
 .flash-dismiss {
   background: none;
   border: none;
+  border-radius: 0.25rem;
   cursor: pointer;
   font-size: 1.1rem;
   line-height: 1;
   padding: 0 0.25rem;
-  opacity: 0.5;
-  transition: opacity 0.15s;
+  /* Status tint pulled toward the text color, like alert text, so the × clears AA. */
+  color: color-mix(in oklab, currentColor 70%, var(--color-base-content));
+  transition: background-color 0.15s;
 }
-.flash-dismiss:hover { opacity: 1; }
+.flash-dismiss:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .flash-success {
   background: color-mix(in oklch, var(--color-success) 10%, transparent);
   color: var(--color-success);
@@ -1482,7 +1508,7 @@ details[open] summary .collapse-icon {
 /* Auth Card */
 /* Hero Section (Landing) */
 .hero-gradient {
-  background: radial-gradient(ellipse at 50% 0%, rgba(124, 58, 237, 0.12) 0%, transparent 60%);
+  background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-primary) 12%, transparent) 0%, transparent 60%);
 }
 
 /* Table Styles */
@@ -1569,7 +1595,7 @@ details[open] summary .collapse-icon {
 }
 .process-card:hover {
   background: var(--hover-overlay, rgba(124, 58, 237, 0.04));
-  border-color: rgba(124, 58, 237, 0.15);
+  border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .process-card .process-name {
   display: flex;
@@ -1583,24 +1609,21 @@ details[open] summary .collapse-icon {
   gap: 0.5rem;
   margin-left: auto;
 }
-.process-card-idle {
+/* Idle dims the name and status, not the controls, so Logs/History stay readable. */
+.process-card-idle > :not(.process-controls) {
   opacity: 0.5;
 }
-.process-card-idle:hover {
+.process-card-idle:hover > :not(.process-controls) {
   opacity: 0.75;
 }
 .process-log-btn {
   min-height: 1.5rem;
   height: 1.5rem;
   padding: 0 0.375rem;
-  opacity: 0.4;
-  transition: opacity 0.15s ease;
-}
-.process-card:hover .process-log-btn {
-  opacity: 0.7;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
 }
 .process-log-btn:hover {
-  opacity: 1 !important;
+  color: var(--color-base-content);
 }
 .job-card {
   display: grid;
@@ -1620,7 +1643,7 @@ details[open] summary .collapse-icon {
 }
 .job-card:hover {
   background: var(--hover-overlay, rgba(124, 58, 237, 0.04));
-  border-color: rgba(124, 58, 237, 0.15);
+  border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .job-card .process-name {
   grid-column: 1;
@@ -2080,7 +2103,7 @@ a.pipeline-stage-body:hover {
 /* Deploy Steps (vertical) */
 .getting-started {
   background: var(--hover-overlay);
-  border: 1px solid rgba(124, 58, 237, 0.1);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 10%, transparent);
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
 }
@@ -2124,7 +2147,7 @@ a.pipeline-stage-body:hover {
 .deploy-step-active .deploy-step-number {
   background: var(--color-primary);
   color: white;
-  box-shadow: 0 0 12px rgba(124, 58, 237, 0.3);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 .deploy-step-pending .deploy-step-number {
   background: var(--surface-neutral);
@@ -2210,8 +2233,8 @@ a.pipeline-stage-body:hover {
   line-height: 1.4;
 }
 .change-pill-image {
-  background: rgba(59, 130, 246, 0.08);
-  color: rgba(59, 130, 246, 0.85);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: color-mix(in srgb, var(--color-accent) 85%, transparent);
 }
 .change-pill-config {
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
@@ -2224,7 +2247,7 @@ a.pipeline-stage-body:hover {
   align-items: center;
   gap: 0.25rem;
   font-size: 0.75rem;
-  color: var(--text-faintest);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
   transition: color 0.15s ease;
 }
 .change-details-toggle:hover {
@@ -2385,11 +2408,11 @@ a.pipeline-stage-body:hover {
   background: oklch(var(--bc) / 0.06);
   color: oklch(var(--bc) / 0.4);
 }
-.audit-verb-create { background: rgba(34, 197, 94, 0.1); color: rgba(34, 197, 94, 0.7); }
-.audit-verb-edit { background: rgba(59, 130, 246, 0.1); color: rgba(59, 130, 246, 0.7); }
-.audit-verb-delete { background: rgba(239, 68, 68, 0.1); color: rgba(239, 68, 68, 0.7); }
-.audit-verb-deploy { background: rgba(124, 58, 237, 0.1); color: rgba(124, 58, 237, 0.7); }
-.audit-verb-complete { background: rgba(34, 197, 94, 0.1); color: rgba(34, 197, 94, 0.7); }
+.audit-verb-create { background: color-mix(in srgb, var(--color-success) 10%, transparent); color: color-mix(in srgb, var(--color-success) 70%, transparent); }
+.audit-verb-edit { background: color-mix(in srgb, var(--color-info) 10%, transparent); color: color-mix(in srgb, var(--color-info) 70%, transparent); }
+.audit-verb-delete { background: color-mix(in srgb, var(--color-error) 10%, transparent); color: color-mix(in srgb, var(--color-error) 70%, transparent); }
+.audit-verb-deploy { background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: color-mix(in srgb, var(--color-primary) 70%, transparent); }
+.audit-verb-complete { background: color-mix(in srgb, var(--color-success) 10%, transparent); color: color-mix(in srgb, var(--color-success) 70%, transparent); }
 .audit-row-body { flex: 1; min-width: 0; }
 .audit-row-primary {
   display: flex;
@@ -2537,7 +2560,7 @@ a.pipeline-stage-body:hover {
   max-height: 90vh;
   overflow-y: auto;
   background: var(--surface-card);
-  border: 1px solid rgba(124, 58, 237, 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
   border-radius: 0.75rem;
   padding: 1.5rem;
   box-shadow: 0 24px 48px var(--shadow-card);
@@ -2588,8 +2611,8 @@ a.pipeline-stage-body:hover {
   outline: none;
 }
 .raw-editor-textarea:focus {
-  border-color: rgba(124, 58, 237, 0.3);
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.1);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 .raw-editor-textarea::placeholder {
   color: #6b7280;
@@ -2664,8 +2687,8 @@ a.pipeline-stage-body:hover {
 }
 .guide-shortcut-active {
   color: var(--accent-text);
-  background: rgba(124, 58, 237, 0.08);
-  border: 1px solid rgba(124, 58, 237, 0.15);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .guide-shortcut-arrow {
   font-size: 1rem;
@@ -2700,7 +2723,7 @@ a.pipeline-stage-body:hover {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.8125rem;
   color: var(--accent-text);
-  background: rgba(124, 58, 237, 0.08);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
 }
@@ -2719,6 +2742,11 @@ a.pipeline-stage-body:hover {
   color: var(--text-faint);
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* Git refs without a link: accent-tinted but pulled toward the text color, so
+   they read as refs at AA contrast without looking like the linked ones. */
+.ref-muted {
+  color: color-mix(in oklab, var(--accent-text) 55%, var(--color-base-content));
 }
 .build-meta-value,
 .deploy-meta-value {
@@ -3616,7 +3644,7 @@ a.pipeline-stage-body:hover {
   margin-top: 0.625rem;
   padding: 0.375rem 0.5rem;
   border-radius: 0.375rem;
-  background: color-mix(in oklch, var(--color-info, oklch(0.7 0.15 230)) 5%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
   font-size: 0.6875rem;
   color: var(--text-faint);
   line-height: 1.4;
@@ -4506,9 +4534,9 @@ a.obs-pod-link:hover {
   border: 1px solid color-mix(in srgb, var(--color-accent, oklch(var(--a))) 12%, transparent);
 }
 .dpl-badge-manual {
-  background: color-mix(in srgb, var(--color-info, oklch(var(--in))) 6%, transparent);
-  color: var(--color-info, oklch(var(--in)));
-  border: 1px solid color-mix(in srgb, var(--color-info, oklch(var(--in))) 12%, transparent);
+  background: color-mix(in srgb, var(--text-bright) 5%, transparent);
+  color: var(--text-muted);
+  border: 1px solid color-mix(in srgb, var(--text-bright) 8%, transparent);
 }
 .dpl-badge-latest {
   background: color-mix(in srgb, oklch(var(--bc)) 5%, transparent);
@@ -4882,13 +4910,17 @@ a.obs-pod-link:hover {
   flex: 1;
   min-height: 0;
   width: 100%;
+  --log-tint: var(--text-bright);
 }
-/* The log box stays dark (#0a0a0f) in every theme. Outside the terminal theme,
+.struct-log[data-tint="accent"] {
+  --log-tint: var(--accent-on-dark);
+}
+/* The log and shell boxes stay dark (#0a0a0f / #000) in every theme. Outside the terminal theme,
    the neutral tokens used inside it take light-on-dark values that pass AA
    there, and the light theme's status colors (tuned for white) are swapped
    for the dark theme's. */
-[data-theme="light"] .struct-log,
-[data-theme="dark"] .struct-log {
+[data-theme="light"] :is(.struct-log, .term-box),
+[data-theme="dark"] :is(.struct-log, .term-box) {
   --text-bright: rgba(226, 226, 233, 0.9);
   --text-muted: rgba(226, 226, 233, 0.65);
   --text-faint: rgba(226, 226, 233, 0.55);
@@ -4948,6 +4980,24 @@ a.obs-pod-link:hover {
   color: var(--text-bright);
   background: var(--surface-neutral);
 }
+.term-tint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+/* Previews the accent; dimmed until the toggle is on. Square: circles mean status. */
+.term-tint-swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 0.125rem;
+  background: var(--accent-on-dark);
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+.term-tint-btn:hover .term-tint-swatch,
+.term-tint-btn[aria-pressed="true"] .term-tint-swatch {
+  opacity: 1;
+}
 .struct-log-jump-error {
   color: var(--color-error);
 }
@@ -4997,8 +5047,8 @@ a.obs-pod-link:hover {
   font-weight: 500;
   padding: 0.3rem 0.625rem;
   border-radius: 9999px;
-  background: var(--color-primary);
-  color: var(--color-primary-content, #fff);
+  background: var(--log-tint);
+  color: #0a0a0f;
   border: none;
   cursor: pointer;
   box-shadow: 0 4px 16px var(--shadow-card);
@@ -5049,7 +5099,7 @@ a.obs-pod-link:hover {
   text-align: left;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.75rem;
-  color: var(--text-bright);
+  color: var(--log-tint);
 }
 .log-step-toggle:hover {
   background: var(--hover-overlay);

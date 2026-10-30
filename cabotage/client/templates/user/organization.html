@@ -42,13 +42,13 @@
   {% endcall %}
 
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-      {{ stat_card(proj_count, 'Projects', 'folder', 'secondary') }}
+      {{ stat_card(proj_count, 'Projects', 'folder', 'primary') }}
       {{ stat_card(org_app_count, 'Applications', 'box', 'accent') }}
-      {{ stat_card(org_deploy_count, 'Deployments', 'deploy', 'success') }}
+      {{ stat_card(org_deploy_count, 'Deployments', 'deploy', 'primary') }}
       {% if latest_deploy.ts %}
         <div class="stat-card">
           <div class="flex items-center gap-2">
-            <span class="text-info/60">{{ icon('clock', 'w-4 h-4') }}</span>
+            <span class="text-primary/60">{{ icon('clock', 'w-4 h-4') }}</span>
             <span class="stat-card-value text-sm">{{ latest_deploy.ts|humanize }}</span>
           </div>
           <span class="stat-card-label">Last Deploy</span>
@@ -95,7 +95,7 @@
                     url=url_for('user.project', org_slug=organization.slug, project_slug=project.slug) ,
           status=status,
           meta_items=meta,
-          color='secondary',
+          color='primary',
           icon_name='folder'
           ) }}
         {% endfor %}

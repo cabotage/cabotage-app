@@ -31,7 +31,7 @@
       {% set total_apps.n = total_apps.n + project.active_applications|length %}
     {% endfor %}
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-      {{ stat_card(projects|length, 'Projects', 'folder', 'secondary') }}
+      {{ stat_card(projects|length, 'Projects', 'folder', 'primary') }}
       {{ stat_card(total_apps.n, 'Applications', 'box', 'accent') }}
     </div>
 
@@ -86,7 +86,7 @@
                             url=url_for('user.project', org_slug=org_slug, project_slug=project.slug) ,
               status=status,
               meta_items=meta,
-              color='secondary',
+              color='primary',
               icon_name='folder'
               ) }}
             {% endfor %}

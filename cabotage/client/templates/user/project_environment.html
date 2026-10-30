@@ -138,11 +138,9 @@
         {% if resource.type == 'postgres' %}
           {% set res_url = url_for('user.environment_postgres_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) %}
           {% set icon_name = 'database' %}
-          {% set color = 'secondary' %}
         {% elif resource.type == 'redis' %}
           {% set res_url = url_for('user.environment_redis_detail', org_slug=project.organization.slug, project_slug=project.slug, env_slug=environment.slug, resource_slug=resource.slug) %}
           {% set icon_name = 'zap' %}
-          {% set color = 'warning' %}
         {% endif %}
         {% if resource.provisioning_status == 'ready' %}
           {% set status = 'running' %}
@@ -164,7 +162,7 @@
              url=res_url,
              status=status,
              meta_items=meta,
-             color=color,
+             color='primary',
              icon_name=icon_name,
         ) }}
       {% endfor %}

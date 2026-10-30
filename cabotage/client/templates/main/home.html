@@ -41,9 +41,9 @@
 
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-8">
         {{ stat_card(org_count, 'Organizations', 'building', 'primary') }}
-        {{ stat_card(project_count, 'Projects', 'folder', 'secondary') }}
+        {{ stat_card(project_count, 'Projects', 'folder', 'primary') }}
         {{ stat_card(app_count, 'Applications', 'box', 'accent') }}
-        {{ stat_card(deploy_count, 'Deployments', 'deploy', 'success') }}
+        {{ stat_card(deploy_count, 'Deployments', 'deploy', 'primary') }}
       </div>
 
       <h2 class="text-sm font-medium text-base-content/40 uppercase tracking-wider mb-3">Quick Actions</h2>
@@ -69,7 +69,7 @@
         <a href="{{ url_for('user.projects') }}"
            class="service-card card-interactive block no-underline">
           <div class="service-card-header">
-            <div class="service-card-icon bg-secondary/10 text-secondary">{{ icon('folder', 'w-5 h-5') }}</div>
+            <div class="service-card-icon bg-primary/10 text-primary">{{ icon('folder', 'w-5 h-5') }}</div>
             <div class="flex-1">
               <span class="text-sm font-medium text-base-content">Projects</span>
               <p class="text-xs text-base-content/40">View all projects</p>

@@ -105,9 +105,10 @@
                   {{ icon('git-branch', 'w-3 h-3') }}
                   {% if app.github_repository %}
                     <span class="dpl-meta-chip-link"
-                          data-href="https://github.com/{{ app.github_repository }}/tree/{{ rel_ref }}">{{ rel_ref }}</span>
+                          data-href="https://github.com/{{ app.github_repository }}/tree/{{ rel_ref }}"
+                          title="{{ rel_ref }}">{{ rel_ref|short_ref(7) }}</span>
                   {% else %}
-                    <span>{{ rel_ref }}</span>
+                    <span title="{{ rel_ref }}">{{ rel_ref|short_ref(7) }}</span>
                   {% endif %}
                 </span>
               {% endif %}
