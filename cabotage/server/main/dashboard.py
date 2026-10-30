@@ -4,8 +4,8 @@ Every number and status here is read from the database:
 
 - Counts come from the organizations, projects and applications the user can
   see, skipping anything soft-deleted.
-- Each app environment's status comes from its newest Image and Deployment
-  rows, via ``compute_ae_status_sets``.
+- Each app environment's status comes from its newest Image, Release and
+  Deployment rows, via ``compute_ae_status_sets``.
 - The 14-day chart and the deploy lists come from ``Deployment.created``,
   ``.complete`` and ``.error``.
 """
@@ -29,6 +29,7 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Deployment,
     Project,
+    Release,
 )
 from cabotage.server.query_helpers import compute_ae_status_sets
 
@@ -205,10 +206,13 @@ class EnvironmentStatuses:
     @classmethod
     def load(cls, app_environment_ids: list[uuid.UUID]) -> EnvironmentStatuses:
         sets = cast("dict[str, object]", compute_ae_status_sets(app_environment_ids))
+        release_building, release_failed = _release_statuses(app_environment_ids)
+        # A release build is part of the build: it fails or runs like one.
         return cls(
-            build_failed=cast("set[uuid.UUID]", sets["errored_ae_ids"]),
+            build_failed=cast("set[uuid.UUID]", sets["errored_ae_ids"])
+            | release_failed,
             deploy_failed=cast("set[uuid.UUID]", sets["deploy_failed_ae_ids"]),
-            building=cast("set[uuid.UUID]", sets["building_ae_ids"]),
+            building=cast("set[uuid.UUID]", sets["building_ae_ids"]) | release_building,
             deploying=cast("set[uuid.UUID]", sets["deploying_ae_ids"]),
             deployed=cast("set[uuid.UUID]", sets["completed_ae_ids"]),
             last_deploy=cast(
@@ -231,6 +235,35 @@ class EnvironmentStatuses:
         if app_environment_id in self.deployed:
             return "live"
         return "idle"
+
+
+def _release_statuses(
+    app_environment_ids: list[uuid.UUID],
+) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+    """App environments whose newest release is still building, and those
+    whose newest failed release is newer than their newest built one."""
+    if not app_environment_ids:
+        return set(), set()
+    rows = db.session.execute(
+        select(
+            Release.application_environment_id,
+            func.max(Release.version),
+            func.max(case((Release.error.is_(True), Release.version))),
+            func.max(case((Release.built.is_(True), Release.version))),
+        )
+        .where(Release.application_environment_id.in_(app_environment_ids))
+        .group_by(Release.application_environment_id)
+    )
+    building: set[uuid.UUID] = set()
+    failed: set[uuid.UUID] = set()
+    for ae_id, newest, newest_failed, newest_built in rows:
+        if newest not in (newest_failed, newest_built):
+            building.add(ae_id)
+        if newest_failed is not None and (
+            newest_built is None or newest_failed > newest_built
+        ):
+            failed.add(ae_id)
+    return building, failed
 
 
 def _newest(
