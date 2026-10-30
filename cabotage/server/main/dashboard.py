@@ -218,14 +218,16 @@ class EnvironmentStatuses:
         )
 
     def status_of(self, app_environment_id: uuid.UUID) -> str:
+        # Work in progress wins over an older failure, so a retry shows as
+        # running (and the page live-refreshes) instead of still failed.
+        if app_environment_id in self.deploying:
+            return "deploying"
+        if app_environment_id in self.building:
+            return "building"
         if app_environment_id in self.build_failed:
             return "build-failed"
         if app_environment_id in self.deploy_failed:
             return "deploy-failed"
-        if app_environment_id in self.building:
-            return "building"
-        if app_environment_id in self.deploying:
-            return "deploying"
         if app_environment_id in self.deployed:
             return "live"
         return "idle"
