@@ -875,13 +875,17 @@
           return root.querySelector('dialog[open]');
         }
 
-        // `toggle` fires after the fact, including for orgs opened by a filter;
-        // only remember choices the user made with no filter active.
+        // `toggle` also fires for orgs the server rendered open, for regions the
+        // live refresh swaps in, and for orgs opened by a filter. Only persist
+        // what the user clicked (flagged in the click handler) with no filter.
         root.addEventListener('toggle', function (e) {
           var org = e.target;
-          if (!org.matches || !org.matches('[data-org]') || isTreeFiltered()) return;
+          if (!org.matches || !org.matches('[data-org]')) return;
+          var byUser = org.dataset.userToggled === '1';
+          delete org.dataset.userToggled;
+          if (isTreeFiltered()) return;
           org.dataset.userOpen = org.open ? '1' : '0';
-          saveOpenOrg(org.getAttribute('data-org'), org.open);
+          if (byUser) saveOpenOrg(org.getAttribute('data-org'), org.open);
         }, true);
 
         // `close` does not bubble, so listen during capture.
@@ -923,8 +927,10 @@
             try { localStorage.setItem(VIEW_KEY, view); } catch (err) {}
             return;
           }
+          var orgSummary = !target.closest('a') && target.closest('.dash-org-head');
+          if (orgSummary && !isGridView()) orgSummary.parentElement.dataset.userToggled = '1';
           // In the grid, a card opens its organization instead of expanding.
-          var orgHead = isGridView() && !target.closest('a') && target.closest('.dash-org-head');
+          var orgHead = isGridView() && orgSummary;
           if (orgHead) {
             e.preventDefault();
             var href = orgHead.querySelector('.dash-open').href;
