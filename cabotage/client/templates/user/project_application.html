@@ -802,9 +802,10 @@
                       <a href="https://github.com/{{ application.github_repository }}/tree/{{ _aref }}"
                          target="_blank"
                          rel="noopener"
-                         class="dpl-meta-chip-link">{{ _aref }}</a>
+                         class="dpl-meta-chip-link"
+                         title="{{ _aref }}">{{ _aref|short_ref(8) }}</a>
                     {% else %}
-                      <span>{{ _aref }}</span>
+                      <span title="{{ _aref }}">{{ _aref|short_ref(8) }}</span>
                     {% endif %}
                   </span>
                 {% endif %}
