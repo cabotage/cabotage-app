@@ -1187,6 +1187,15 @@ a.live-commit-sha:hover {
 [data-theme='light'] .btn-outline.btn-primary {
   --btn-rest-fg: color-mix(in srgb, var(--accent-text) 75%, var(--color-base-content));
 }
+/* Solid error buttons: dark text on the dark-theme red reads muddy at 4.6:1, so
+   a deeper fill takes white text (5.9:1); terminal's neon red takes black. */
+[data-theme='dark'] .btn-error:not(.btn-outline) {
+  --btn-color: oklch(0.53 0.21 25);
+  --btn-fg: oklch(1 0 0);
+}
+[data-theme='terminal'] .btn-error:not(.btn-outline) {
+  --btn-fg: #0a0a0a;
+}
 [data-theme='terminal'] :is(.alert-error, .alert-warning, .alert-success, .alert-info) {
   color: var(--alert-tint);
 }
