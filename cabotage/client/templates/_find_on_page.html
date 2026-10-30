@@ -18,12 +18,24 @@ window.pageFind = window.pageFind || (function() {
     return true;
   }
   // Escaped text with every term occurrence wrapped in <mark class="find-hit">.
+  // Lowercase one character at a time and keep where each lowered unit came
+  // from: toLowerCase can lengthen a string ('İ' becomes two units), which
+  // would otherwise shift every later range.
   function mark(text, ts) {
     text = String(text == null ? '' : text);
     if (!ts.length) return esc(text);
-    var lower = text.toLowerCase(), ranges = [];
+    var lower = '', from = [], to = [];
+    for (var i = 0; i < text.length; ) {
+      var ch = String.fromCodePoint(text.codePointAt(i)), low = ch.toLowerCase();
+      for (var k = 0; k < low.length; k++) { from.push(i); to.push(i + ch.length); }
+      lower += low;
+      i += ch.length;
+    }
+    var ranges = [];
     ts.forEach(function(t) {
-      for (var at = lower.indexOf(t); at !== -1; at = lower.indexOf(t, at + t.length)) ranges.push([at, at + t.length]);
+      for (var at = lower.indexOf(t); at !== -1; at = lower.indexOf(t, at + t.length)) {
+        ranges.push([from[at], to[at + t.length - 1]]);
+      }
     });
     if (!ranges.length) return esc(text);
     ranges.sort(function(a, b) { return a[0] - b[0]; });
