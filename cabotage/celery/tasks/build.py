@@ -28,6 +28,7 @@ from cabotage.celery.tasks.deploy import (
     _safe_labels_from_application,
     run_deploy,
     run_job,
+    start_deployment,
 )
 from cabotage.celery.tasks.notify import (
     dispatch_autodeploy_notification,
@@ -261,6 +262,21 @@ def _dispatch_release_failure(release, error_detail):
             )
     except Exception:
         log.warning("Failed to dispatch release failure notification", exc_info=True)
+
+
+def _release_superseded(release: Release) -> str | None:
+    """Why a Release & Deploy release should not go live, if anything newer exists."""
+    app_env = release.application_environment
+    newer_release = (
+        app_env.releases.filter(Release.version > release.version)
+        .order_by(Release.version.desc())
+        .first()
+    )
+    if newer_release is not None:
+        return f"release v{newer_release.version} is newer"
+    if app_env.deployments.filter(Deployment.created > release.created).first():
+        return "a deployment started after this release was created"
+    return None
 
 
 def _build_namespace(app_env: ApplicationEnvironment) -> str:
@@ -2300,6 +2316,20 @@ def run_release_build(release_id: str):
                         "Failed to dispatch autodeploy completion notification",
                         exc_info=True,
                     )
+
+        metadata = release.release_metadata or {}
+        if (
+            release.built
+            and metadata.get("deploy_after_release")
+            and not metadata.get("auto_deploy")
+        ):
+            superseded = _release_superseded(release)
+            if superseded:
+                log.info("Not deploying release %s: %s", release.id, superseded)
+            else:
+                _ = start_deployment(
+                    release, metadata, metadata.get("triggered_by_user_id")
+                )
     except Exception:
         db.session.rollback()
         if release is not None and not release.error:

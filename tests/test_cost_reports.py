@@ -12,7 +12,13 @@ from cabotage.server import db
 from cabotage.server.applets.cost.reports import CostScope, build_report
 from cabotage.server.models.auth import Organization, User
 from cabotage.server.models.auth_associations import OrganizationMember
-from cabotage.server.models.cost import CostCollectionRun, CostLineItem, CostNode
+from cabotage.server.models.cost import (
+    CostAwsDaily,
+    CostCollectionRun,
+    CostLineItem,
+    CostNode,
+    CostNodeHour,
+)
 from cabotage.server.models.projects import (
     Application,
     ApplicationEnvironment,
@@ -232,6 +238,32 @@ def _floor_hour(dt):
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
+def _add_node_hour(run, name, *, cost, idle, cpu_request):
+    priced = cost is not None
+    row = CostNodeHour(
+        run_id=run.id,
+        period_start=run.period_start,
+        node_name=name,
+        instance_type="m8g.xlarge" if priced else None,
+        capacity_type="on-demand" if priced else None,
+        cpu_capacity=4.0 if priced else None,
+        memory_gib=16.0 if priced else None,
+        node_hours=1.0,
+        cpu_request_hours=cpu_request,
+        cpu_usage_hours=cpu_request / 2,
+        cpu_billed_hours=cpu_request,
+        memory_request_gib_hours=8.0,
+        memory_usage_gib_hours=4.0,
+        memory_billed_gib_hours=8.0,
+        cost_usd=cost,
+        requested_cost_usd=(cost - idle) if priced else None,
+        used_cost_usd=(cost - idle) / 2 if priced else None,
+        idle_cost_usd=idle,
+    )
+    db.session.add(row)
+    return row
+
+
 class TestBuildReportBasics:
     def test_mtd_and_projection_math(self, app, org, project, environment, application):
         month_start = NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -287,10 +319,15 @@ class TestBuildReportBasics:
         hours_in_month = report["kpis"]["run_rate_monthly"] / run_rate_hourly
         elapsed_hours = (NOW - month_start).total_seconds() / 3600.0
         remaining_hours = hours_in_month - elapsed_hours
-        expected_projection = mtd_cost + run_rate_hourly * remaining_hours
+        # 25 hours collected; the rest are projected at the run rate.
+        uncollected_hours = int(elapsed_hours) - 25
+        expected_projection = mtd_cost + run_rate_hourly * (
+            remaining_hours + uncollected_hours
+        )
         assert report["kpis"]["projected_month"] == pytest.approx(
             expected_projection, rel=1e-6
         )
+        assert "coverage" not in report["kpis"]
 
     def test_previous_period_change_pct(
         self, app, org, project, environment, application
@@ -714,6 +751,7 @@ class TestBuildReportBasics:
                 "seed": "demo",
                 "cluster_compute_cost": 10.0,
                 "fixed_overhead": 2.0,
+                "node_data_available": True,
                 "pods_seen": 20,
                 "pods_unallocated": 1,
             },
@@ -955,7 +993,7 @@ class TestBuildReportBasics:
         report = build_report(CostScope(kind="platform"), "90d", now=NOW)
         assert report["freshness"]["missing_hours"] == 0
 
-    def test_platform_nodes_and_rates_only_count_recent_nodes(self, app):
+    def test_rates_only_list_recently_seen_node_types(self, app):
         suffix = uuid.uuid4().hex[:8]
         stale = CostNode(
             name=f"stale-{suffix}",
@@ -981,12 +1019,98 @@ class TestBuildReportBasics:
             CostNode.query.filter(CostNode.name.in_([stale.name, live.name])).delete()
             db.session.commit()
 
-        node_types = {n["instance_type"] for n in report["platform"]["nodes"]}
-        assert "m7i.large" in node_types
-        assert "r8g.xlarge" not in node_types
         rate_nodes = {n["instance_type"]: n["hourly"] for n in report["rates"]["nodes"]}
         assert "r8g.xlarge" not in rate_nodes
         assert rate_nodes["m7i.large"] > 0
+
+    def test_platform_nodes_sum_node_hours_in_range(self, app):
+        hour = _floor_hour(NOW) - datetime.timedelta(hours=2)
+        outside = _floor_hour(NOW) - datetime.timedelta(hours=30)
+        for period_start, cost in (
+            (hour, 1.0),
+            (hour - datetime.timedelta(hours=1), 1.0),
+        ):
+            run = _add_run(period_start)
+            _add_node_hour(run, "busy", cost=cost, idle=0.25, cpu_request=3.0)
+            _add_node_hour(run, "mystery", cost=None, idle=None, cpu_request=1.0)
+        _add_node_hour(_add_run(outside), "busy", cost=50.0, idle=50.0, cpu_request=0.0)
+        db.session.commit()
+
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+        nodes = {n["name"]: n for n in report["platform"]["nodes"]}
+
+        assert list(nodes) == ["busy", "mystery"]
+        busy = nodes["busy"]
+        assert busy["node_hours"] == pytest.approx(2.0)
+        assert busy["cost"] == pytest.approx(2.0)
+        assert busy["idle_cost"] == pytest.approx(0.5)
+        # Hour-weighted average, not the summed vCPU-hours.
+        assert busy["cpu_requested"] == pytest.approx(3.0)
+        assert busy["cpu_capacity"] == 4.0
+        mystery = nodes["mystery"]
+        assert mystery["cost"] is None
+        assert mystery["idle_cost"] is None
+        assert mystery["cpu_requested"] == pytest.approx(1.0)
+
+    def test_platform_nodes_keep_reused_names_apart(self, app):
+        """An EKS ip-name recycled onto a different machine is two nodes."""
+        name = "ip-10-0-0-1.us-east-2.compute.internal"
+        old = _add_node_hour(
+            _add_run(_floor_hour(NOW) - datetime.timedelta(hours=3)),
+            name,
+            cost=1.0,
+            idle=0.5,
+            cpu_request=1.0,
+        )
+        new = _add_node_hour(
+            _add_run(_floor_hour(NOW) - datetime.timedelta(hours=2)),
+            name,
+            cost=3.0,
+            idle=0.5,
+            cpu_request=12.0,
+        )
+        new.instance_type = "c8g.4xlarge"
+        new.cpu_capacity = 16.0
+        new.memory_gib = 32.0
+        db.session.commit()
+
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+        rows = {
+            n["instance_type"]: n
+            for n in report["platform"]["nodes"]
+            if n["name"] == name
+        }
+
+        assert set(rows) == {old.instance_type, "c8g.4xlarge"}
+        assert rows["c8g.4xlarge"]["cpu_capacity"] == 16.0
+        assert rows["c8g.4xlarge"]["cpu_requested"] == pytest.approx(12.0)
+        assert rows["c8g.4xlarge"]["cost"] == pytest.approx(3.0)
+        assert rows[old.instance_type]["cpu_capacity"] == 4.0
+        assert rows[old.instance_type]["cpu_requested"] == pytest.approx(1.0)
+
+    def test_platform_node_inventory_reports_latest_run(self, app):
+        _add_run(
+            _floor_hour(NOW) - datetime.timedelta(hours=3),
+            stats={"node_inventory_error": "old", "nodes_unpriced": 9},
+        )
+        latest = _floor_hour(NOW) - datetime.timedelta(hours=2)
+        _add_run(
+            latest,
+            stats={
+                "node_inventory_error": "listing nodes failed: 403 Forbidden",
+                "nodes_unpriced": 2,
+            },
+        )
+        _add_run(_floor_hour(NOW) - datetime.timedelta(hours=1), status="failed")
+        db.session.commit()
+
+        report = build_report(CostScope(kind="platform"), "24h", now=NOW)
+
+        assert report["platform"]["node_inventory"] == {
+            "period_start": latest.isoformat(),
+            "error": "listing nodes failed: 403 Forbidden",
+            "nodes_unpriced": 2,
+        }
 
     def test_tenant_scope_omits_install_wide_fields(
         self, app, org, project, environment, application
@@ -1029,3 +1153,191 @@ class TestBuildReportBasics:
         assert "nodes" in platform_report["rates"]
         assert "missing_hours" in platform_report["freshness"]
         assert "failed_hours" in platform_report["freshness"]
+
+
+@pytest.fixture
+def _clean_aws_daily(app):
+    CostAwsDaily.query.delete()
+    db.session.commit()
+    yield
+    CostAwsDaily.query.delete()
+    db.session.commit()
+
+
+def _add_true_up(day, hour, *, org, application, category, cost):
+    item = CostLineItem(
+        run_id=None,
+        aws_day=day,
+        period_start=hour,
+        organization_id=org.id,
+        application_id=application.id,
+        category=category,
+        meter="shared",
+        component="aws-true-up",
+        quantity=cost,
+        unit="USD",
+        cost_usd=cost,
+    )
+    db.session.add(item)
+    return item
+
+
+@pytest.mark.usefixtures("_clean_aws_daily")
+class TestPlatformActuals:
+    def test_reconciliation_ignores_hours_without_node_data(
+        self, app, org, project, environment, application
+    ):
+        priced = _floor_hour(NOW) - datetime.timedelta(hours=1)
+        unpriced = priced - datetime.timedelta(hours=1)
+        priced_run = _add_run(
+            priced,
+            stats={
+                "cluster_compute_cost": 10.0,
+                "fixed_overhead": 2.0,
+                "node_data_available": True,
+            },
+        )
+        _add_item(priced_run, priced, org=org, application=application, cost=6.0)
+        _add_item(
+            priced_run,
+            priced,
+            org=org,
+            application=application,
+            category="overhead",
+            meter="shared",
+            cost=6.0,
+        )
+        unpriced_run = _add_run(unpriced, stats={"fixed_overhead": 2.0})
+        _add_item(unpriced_run, unpriced, org=org, application=application, cost=50.0)
+        # A true-up row in the priced hour is AWS-side, not estimate-side.
+        _add_true_up(
+            priced.date(),
+            priced,
+            org=org,
+            application=application,
+            category="overhead",
+            cost=3.0,
+        )
+        db.session.commit()
+
+        rec = build_report(CostScope(kind="platform"), "24h", now=NOW)["platform"][
+            "reconciliation"
+        ]
+        assert rec["hours"] == 1
+        assert rec["total"] == pytest.approx(12.0)
+        assert rec["tenant_direct"] == pytest.approx(6.0)
+        assert rec["overhead_allocated"] == pytest.approx(6.0)
+        assert rec["residual"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_aws_block_scales_whole_days_to_collected_hours(
+        self, app, org, project, environment, application
+    ):
+        full_day = (NOW - datetime.timedelta(days=2)).date()
+        uncollected_day = (NOW - datetime.timedelta(days=3)).date()
+        today = NOW.date()
+        fetched = NOW - datetime.timedelta(hours=2)
+        for day, bucket, cost in [
+            # One of 24 hours collected: a 24th of the day is compared.
+            (full_day, "compute", 70.0 * 24),
+            (full_day, "cross_az", 30.0 * 24),
+            # Nothing collected to compare against.
+            (uncollected_day, "compute", 500.0),
+            # The range's partial last day (today) isn't compared.
+            (today, "compute", 999.0),
+        ]:
+            db.session.add(
+                CostAwsDaily(day=day, bucket=bucket, cost_usd=cost, fetched_at=fetched)
+            )
+        hour = datetime.datetime.combine(full_day, datetime.time(9), datetime.UTC)
+        run = _add_run(hour)
+        _add_item(run, hour, org=org, application=application, cost=80.0)
+        _add_true_up(
+            full_day,
+            hour,
+            org=org,
+            application=application,
+            category="network",
+            cost=15.0,
+        )
+        today_hour = _floor_hour(NOW) - datetime.timedelta(hours=1)
+        _add_item(_add_run(today_hour), today_hour, org=org, cost=5.0)
+        db.session.commit()
+
+        aws = build_report(CostScope(kind="platform"), "7d", now=NOW)["platform"][
+            "reconciliation"
+        ]["aws"]
+        assert aws["days"] == 1
+        assert aws["first_day"] == aws["last_day"] == full_day.isoformat()
+        assert aws["actual"] == pytest.approx(100.0)
+        assert aws["allocated"] == pytest.approx(95.0)
+        assert aws["true_up"] == pytest.approx(15.0)
+        assert aws["difference"] == pytest.approx(5.0)
+        assert [b["key"] for b in aws["buckets"]] == ["compute", "cross_az"]
+
+    def test_true_ups_do_not_count_as_covered_hours(self, app, org, application):
+        month_start = NOW.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        trued_up_day = (month_start + datetime.timedelta(days=3)).date()
+        db.session.add(
+            CostAwsDaily(
+                day=trued_up_day, bucket="compute", cost_usd=24.0, fetched_at=NOW
+            )
+        )
+        # True-ups only cover the hours that were collected, so the rest of the
+        # day still needs filling by the projection.
+        _add_true_up(
+            trued_up_day,
+            datetime.datetime.combine(trued_up_day, datetime.time(), datetime.UTC),
+            org=org,
+            application=application,
+            category="overhead",
+            cost=1.0,
+        )
+        collected = _floor_hour(NOW) - datetime.timedelta(hours=1)
+        _add_item(_add_run(collected), collected, org=org, cost=1.0)
+        db.session.commit()
+
+        coverage = build_report(CostScope(kind="platform"), "mtd", now=NOW)["kpis"][
+            "coverage"
+        ]
+        assert coverage["completed_hours"] == int(
+            (NOW - month_start).total_seconds() // 3600
+        )
+        assert coverage["covered_hours"] == 1
+
+    def test_platform_components_summed_over_range(self, app):
+        hours = [_floor_hour(NOW) - datetime.timedelta(hours=h) for h in (1, 2)]
+        for hour in hours:
+            _add_run(
+                hour,
+                stats={
+                    "platform_components": {
+                        "cabotage/resident-mimir-write": {
+                            "cpu_billed_hours": 1.0,
+                            "memory_billed_gib_hours": 4.0,
+                            "network_gb": 30.0,
+                            "storage_gib_month": 0.1,
+                            "cost_usd": 0.3,
+                        },
+                        "traefik/traefik": {
+                            "cpu_billed_hours": 0.5,
+                            "memory_billed_gib_hours": 1.0,
+                            "network_gb": 10.0,
+                            "storage_gib_month": 0.0,
+                            "cost_usd": 0.1,
+                        },
+                    }
+                },
+            )
+        db.session.commit()
+
+        rows = build_report(CostScope(kind="platform"), "24h", now=NOW)["platform"][
+            "platform_components"
+        ]
+        assert [row["name"] for row in rows] == [
+            "cabotage/resident-mimir-write",
+            "traefik/traefik",
+        ]
+        mimir = rows[0]
+        assert mimir["network_gb"] == pytest.approx(60.0)
+        assert mimir["cost"] == pytest.approx(0.6)
+        assert mimir["share"] == pytest.approx(0.75)

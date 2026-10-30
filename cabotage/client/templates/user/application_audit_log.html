@@ -30,7 +30,7 @@
     {# Active filter pills #}
     <div class="audit-filter-pills">
       {% for t in type_filter %}
-        <span class="badge badge-secondary gap-1" data-filter-type="type" data-filter-value="{{ t }}">
+        <span class="badge badge-accent gap-1" data-filter-type="type" data-filter-value="{{ t }}">
           {{ t }}
           <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
         </span>
@@ -63,7 +63,7 @@
 
       {% if verb_filter or type_filter %}
         <a href="{{ url_for('user.application_audit_log', org_slug=org_slug, project_slug=project_slug, app_slug=app_slug) }}{% if env_slug %}?env_slug={{ env_slug }}{% endif %}"
-           class="btn btn-ghost btn-xs text-error gap-1">{{ icon('x', 'w-2.5 h-2.5') }} clear</a>
+           class="btn btn-ghost btn-xs text-base-content/50 gap-1">{{ icon('x', 'w-2.5 h-2.5') }} clear</a>
       {% endif %}
     </div>
   </div>

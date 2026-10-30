@@ -14,7 +14,6 @@
   'idle': 'Not deployed',
 } %}
 {% set status_order = ['build-failed', 'deploy-failed', 'building', 'deploying', 'live', 'idle'] %}
-{% set org_colors = ["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444"] %}
 
 {#- Groups behind the "Failing" and "In progress" filter buttons. -#}
 {% macro filter_group(status) -%}
@@ -170,7 +169,7 @@
            {% if org.expanded %}open{% endif %}>
     <summary class="dash-org-head">
       <span class="dash-chevron" aria-hidden="true">{{ icon('chevron-right', 'w-3.5 h-3.5') }}</span>
-      <span class="dash-avatar" style="background: {{ org_colors[org.color_index] }}">{{ org.slug[:2]|upper }}</span>
+      <span class="dash-avatar bg-primary/10 text-primary">{{ org.slug[:2]|upper }}</span>
       <span class="dash-org-title">
         <span class="dash-org-name">{{ org.name }}</span>
         <span class="dash-org-sub">
@@ -451,7 +450,7 @@
           {% set deploy_note = chart_succeeded ~ ' in the last ' ~ chart_days ~ ' days' %}
 
           {% call summary_card(org_count, 'Organizations', 'building', 'primary', 'orgs') %}{{ org_note }}{% endcall %}
-          {% call summary_card(project_count, 'Projects', 'folder', 'secondary', 'projects') %}{{ project_note }}{% endcall %}
+          {% call summary_card(project_count, 'Projects', 'folder', 'primary', 'projects') %}{{ project_note }}{% endcall %}
           {% call summary_card(app_count, 'Applications', 'box', 'accent', 'apps') %}
             {% if failing_app_count %}
               <span class="dash-kpi-alert">{{ dot('build-failed') }}{{ failing_app_count }} failing</span>
@@ -461,14 +460,14 @@
               none live yet
             {% endif %}
           {% endcall %}
-          {% call summary_card(completed_deploys, 'Deployments', 'deploy', 'success', 'deploys') %}{{ deploy_note }}{% endcall %}
+          {% call summary_card(completed_deploys, 'Deployments', 'deploy', 'primary', 'deploys') %}{{ deploy_note }}{% endcall %}
 
           {% call sheet('orgs', 'Organizations', 'building', org_count, org_note,
                         page_url=url_for('user.organizations'), page_label='Organizations') %}
             {% for org in org_rows %}
               <li data-search="{{ org.name|lower }} {{ org.slug|lower }}">
                 <a href="{{ org.url }}" class="dash-row">
-                  <span class="dash-avatar dash-avatar-sm" style="background: {{ org_colors[org.color_index] }}">{{ org.slug[:2]|upper }}</span>
+                  <span class="dash-avatar dash-avatar-sm bg-primary/10 text-primary">{{ org.slug[:2]|upper }}</span>
                   <span class="dash-row-main">
                     <span class="dash-row-title">
                       {{ org.name }}

@@ -41,6 +41,7 @@ from cabotage.server.applets.cost.constants import (
     DEMO_BUILD_MEM_REQUEST,
     HOURS_PER_MONTH,
     LINE_ITEM_COLUMNS,
+    NODE_HOUR_COLUMNS,
     RUN_COLUMNS,
 )
 from cabotage.server.applets.cost.helpers import (
@@ -48,7 +49,7 @@ from cabotage.server.applets.cost.helpers import (
     parse_cpu_quantity,
     parse_memory_quantity_gib,
 )
-from cabotage.server.applets.cost.rates import effective_rates
+from cabotage.server.applets.cost.rates import effective_rates, node_hourly_price
 from cabotage.server.applets.cost.types import (
     CostRates,
     Events,
@@ -61,6 +62,7 @@ from cabotage.server.models.cost import (
     CostCollectionRun,
     CostLineItem,
     CostNode,
+    CostNodeHour,
     CostRunStats,
 )
 from cabotage.server.models.projects import (
@@ -433,6 +435,531 @@ def finalize_platform_stats(
     )
     db.session.commit()
     return len(patches)
+
+
+# ---------------------------------------------------------------------------
+# Giant-scale node fleet & platform workloads (opt-in via SEED_SCALE=giant)
+# ---------------------------------------------------------------------------
+
+#: (name, instance_type, capacity_type, cpu_capacity, memory_gib)
+_GiantNodeSpec = tuple[str, str, str, float, float]
+
+ACTUALS_DAYS = 10
+
+
+def _giant_node_fleet(
+    rates: CostRates, peak_hourly_cost: float
+) -> list[_GiantNodeSpec]:
+    """A Karpenter-style Graviton fleet: an always-on base (a general-purpose
+    majority, a compute-optimized pool, a couple of spot nodes for memory-
+    and burst-heavy work) followed by enough m8g.4xlarge burst nodes to cover
+    the busiest hour. `_fleet_node_hours` scales the burst pool in and out
+    hour by hour, filling it in list order."""
+    fleet: list[_GiantNodeSpec] = []
+    for i in range(1, 7):
+        fleet.append(
+            (f"node-m8g-4xlarge-{i:02d}", "m8g.4xlarge", "on-demand", 16.0, 64.0)
+        )
+    for i in range(1, 4):
+        fleet.append(
+            (f"node-c8g-2xlarge-{i:02d}", "c8g.2xlarge", "on-demand", 8.0, 16.0)
+        )
+    for i in range(1, 3):
+        fleet.append((f"node-r8g-2xlarge-{i:02d}", "r8g.2xlarge", "spot", 8.0, 64.0))
+    fleet.append(("node-t4g-large-01", "t4g.large", "spot", 2.0, 8.0))
+    base_cost = sum(_node_price(spec, rates) for spec in fleet)
+    burst_spec = ("", "m8g.4xlarge", "on-demand", 16.0, 64.0)
+    burst_count = max(
+        0, math.ceil((peak_hourly_cost - base_cost) / _node_price(burst_spec, rates))
+    )
+    for i in range(1, burst_count + 1):
+        fleet.append(
+            (f"node-m8g-4xlarge-burst-{i:02d}", "m8g.4xlarge", "on-demand", 16.0, 64.0)
+        )
+    return fleet
+
+
+#: How many leading `_giant_node_fleet` entries are the always-on base.
+_GIANT_BASE_NODES = 12
+
+
+def _node_price(spec: _GiantNodeSpec, rates: CostRates) -> float:
+    _, instance_type, _, cpu_capacity, memory_gib = spec
+    return node_hourly_price(
+        instance_type, rates, cpu_capacity=cpu_capacity, memory_gib=memory_gib
+    )
+
+
+def _fleet_node_hours(prices: list[float], target_cost: float) -> list[float]:
+    """Node-hours per fleet node for one hour whose priced capacity should
+    come to `target_cost`: the base runs the whole hour and burst nodes join
+    in order, the last one for part of the hour. An hour cheaper than the
+    base alone runs every base node for the same fraction."""
+    base_cost = sum(prices[:_GIANT_BASE_NODES])
+    if target_cost <= base_cost:
+        fraction = target_cost / base_cost if base_cost > 0 else 0.0
+        return [fraction] * _GIANT_BASE_NODES + [0.0] * (
+            len(prices) - _GIANT_BASE_NODES
+        )
+    hours = [1.0] * _GIANT_BASE_NODES
+    remaining = target_cost - base_cost
+    for price in prices[_GIANT_BASE_NODES:]:
+        share = min(1.0, remaining / price) if remaining > 0 and price > 0 else 0.0
+        hours.append(share)
+        remaining -= share * price
+    return hours
+
+
+#: namespace -> workload names, mirroring the real collector's
+#: `{namespace}/{workload}` platform-component naming (see
+#: collector.py's `_platform_pod_workload`/`_add_platform`).
+_GIANT_PLATFORM_NAMESPACES: dict[str, list[str]] = {
+    "cabotage": [
+        "api",
+        "scheduler",
+        "operator",
+        "webhook",
+        "builder",
+        "registry-proxy",
+        *(f"worker-shard-{i}" for i in range(16)),
+    ],
+    "kube-system": [
+        "coredns",
+        "aws-node",
+        "kube-proxy",
+        "ebs-csi-controller",
+        "ebs-csi-node",
+        "cluster-autoscaler",
+        "metrics-server",
+        "karpenter",
+    ],
+    "redis": [
+        "redis-sentinel",
+        "redis-proxy",
+        "redis-exporter",
+        *(f"redis-cluster-{i}" for i in range(10)),
+    ],
+    "postgres": [
+        "postgres-operator",
+        "pgbouncer",
+        "pg-exporter",
+        *(f"postgres-replica-{i}" for i in range(8)),
+    ],
+    "clickhouse": [
+        "clickhouse-operator",
+        "clickhouse-keeper",
+        "clickhouse-exporter",
+        *(f"clickhouse-shard-{i}" for i in range(10)),
+    ],
+    "monitoring": [
+        "prometheus",
+        "grafana",
+        "alertmanager",
+        "resident-mimir-write",
+        "resident-mimir-read",
+        "loki-write",
+        "loki-read",
+        "tempo",
+        "mimir-compactor",
+        "mimir-store-gateway",
+        *(f"mimir-ingester-{i}" for i in range(16)),
+    ],
+    "cert-manager": [
+        "cert-manager-controller",
+        "cert-manager-webhook",
+        "cert-manager-cainjector",
+    ],
+    "traefik": ["traefik-ingress", "traefik-gateway", "traefik-middleware"],
+    "ingress-nginx": ["ingress-nginx-controller", "ingress-nginx-admission"],
+    "elastic-system": [
+        "elastic-operator",
+        "elasticsearch-master",
+        "kibana",
+        *(f"elasticsearch-data-{i}" for i in range(8)),
+    ],
+    "default": ["datadog-agent", "datadog-cluster-agent", "datadog-logs-agent"],
+    "storage": ["data-minio", "minio-operator"],
+}
+
+#: PVC claims built-cache workloads live under either the shared `default`
+#: namespace or the dedicated tenant-builds namespace, mirroring real
+#: `build-image-cache-<org>-<project>-<app>` claim names from
+#: `_collect_pv_storage`.
+_GIANT_BUILD_CACHE_NAMESPACES = ("default", "cabotage-tenant-builds")
+_GIANT_BUILD_CACHE_COUNT = 60
+
+
+def _giant_platform_component_names(
+    organizations: list[Organization],
+) -> list[str]:
+    """~200 stable platform-component names: cluster add-ons/infra
+    (compute+memory+network) plus per-app build-image-cache PVCs
+    (storage-only), mirroring the real collector's naming conventions."""
+    names: list[str] = [
+        f"{namespace}/{workload}"
+        for namespace, workloads in _GIANT_PLATFORM_NAMESPACES.items()
+        for workload in workloads
+    ]
+    names.append("unclaimed/volumes")
+
+    app_keys: list[str] = []
+    for organization in sorted(organizations, key=lambda o: o.slug):
+        for project in sorted(organization.active_projects, key=lambda p: p.slug):
+            for application in sorted(
+                project.active_applications, key=lambda a: a.slug
+            ):
+                app_keys.append(
+                    f"{organization.slug}-{project.slug}-{application.slug}"
+                )
+    for i, key in enumerate(app_keys[:_GIANT_BUILD_CACHE_COUNT]):
+        namespace = _GIANT_BUILD_CACHE_NAMESPACES[
+            i % len(_GIANT_BUILD_CACHE_NAMESPACES)
+        ]
+        names.append(f"{namespace}/build-image-cache-{key}")
+    return names
+
+
+def _component_weight(name: str) -> float:
+    """Long-tail magnitude: a couple of dominant stateful workloads, a
+    handful of sharded/replica pools, a mass of tiny build caches, and
+    everything else in between."""
+    if "resident-mimir-write" in name or "data-minio" in name:
+        return 120.0
+    if name.startswith(
+        ("default/build-image-cache", "cabotage-tenant-builds/build-image-cache")
+    ):
+        return 0.4
+    if any(
+        tag in name
+        for tag in ("-shard-", "-ingester-", "-data-", "-replica-", "-cluster-")
+    ):
+        return 4.0
+    return 1.0
+
+
+def _giant_hour_platform_components(
+    names: list[str], rates: CostRates, rng: random.Random, compute_budget: float
+) -> dict[str, dict[str, float]]:
+    """One hour's worth of `PlatformComponentStats`-shaped values per
+    component name, long-tail weighted so totals over any range stay
+    dominated by a few stateful workloads. Compute workloads are scaled so
+    together they cost `compute_budget`, keeping them inside the share of
+    the fleet tenants don't use."""
+    components: dict[str, dict[str, float]] = {}
+    for name in names:
+        weight = _component_weight(name)
+        jitter = rng.uniform(0.85, 1.15)
+        is_storage_only = "build-image-cache" in name or name in (
+            "storage/data-minio",
+            "unclaimed/volumes",
+        )
+        if is_storage_only:
+            storage_gib_month = (weight * 8.0 * jitter) / HOURS_PER_MONTH
+            components[name] = {
+                "cpu_billed_hours": 0.0,
+                "memory_billed_gib_hours": 0.0,
+                "network_gb": 0.0,
+                "storage_gib_month": storage_gib_month,
+                "cost_usd": storage_gib_month * rates["storage_gib_month"],
+            }
+            continue
+        cpu_h = weight * 0.4 * jitter
+        mem_h = weight * 1.0 * jitter
+        net_gb = weight * 0.05 * jitter
+        cost = (
+            cpu_h * rates["vcpu_hour"]
+            + mem_h * rates["memory_gib_hour"]
+            + net_gb * rates["network_gb"]
+        )
+        components[name] = {
+            "cpu_billed_hours": cpu_h,
+            "memory_billed_gib_hours": mem_h,
+            "network_gb": net_gb,
+            "storage_gib_month": 0.0,
+            "cost_usd": cost,
+        }
+    compute_cost = sum(
+        c["cost_usd"] for c in components.values() if c["cpu_billed_hours"]
+    )
+    scale = compute_budget / compute_cost if compute_cost > 0 else 0.0
+    for component in components.values():
+        if component["cpu_billed_hours"]:
+            for key in (
+                "cpu_billed_hours",
+                "memory_billed_gib_hours",
+                "network_gb",
+                "cost_usd",
+            ):
+                component[key] *= scale
+    return components
+
+
+def _giant_node_hour_row(
+    run_id: uuid.UUID,
+    hour: datetime.datetime,
+    node: _GiantNodeSpec,
+    node_hours: float,
+    rates: CostRates,
+    rng: random.Random,
+) -> tuple[object, ...]:
+    """One node's load/price for one collected hour (`node_hours` of it),
+    mirroring collector.py's `_collect_nodes`/`_price_node_hour` math over a
+    synthetic diurnal+weekly utilization curve."""
+    name, instance_type, capacity_type, cpu_capacity, memory_gib = node
+    utilization = max(
+        0.05,
+        min(
+            0.95,
+            _weekly_factor(hour.weekday())
+            * _diurnal_factor(hour.hour)
+            * rng.uniform(0.7, 1.1),
+        ),
+    )
+    cpu_usage = cpu_capacity * utilization * node_hours
+    cpu_request = (
+        cpu_capacity * min(0.95, utilization * rng.uniform(1.0, 1.3)) * node_hours
+    )
+    cpu_billed = max(cpu_usage, cpu_request)
+    mem_usage = memory_gib * utilization * node_hours
+    mem_request = (
+        memory_gib * min(0.95, utilization * rng.uniform(1.0, 1.3)) * node_hours
+    )
+    mem_billed = max(mem_usage, mem_request)
+
+    hourly_price = _node_price(node, rates)
+    cost = node_hours * hourly_price
+    capacity_value = (
+        cpu_capacity * rates["vcpu_hour"] + memory_gib * rates["memory_gib_hour"]
+    )
+    scale = (hourly_price / capacity_value) if capacity_value > 0 else 0.0
+
+    def _value(cpu_hours: float, mem_gib_hours: float) -> float:
+        value = scale * (
+            cpu_hours * rates["vcpu_hour"] + mem_gib_hours * rates["memory_gib_hour"]
+        )
+        return min(max(value, 0.0), cost)
+
+    requested_cost = _value(cpu_request, mem_request)
+    used_cost = _value(cpu_usage, mem_usage)
+    idle_cost = cost - _value(cpu_billed, mem_billed)
+
+    return (
+        uuid.uuid4(),
+        run_id,
+        hour,
+        name,
+        instance_type,
+        capacity_type,
+        cpu_capacity,
+        memory_gib,
+        node_hours,
+        cpu_request,
+        cpu_usage,
+        cpu_billed,
+        mem_request,
+        mem_usage,
+        mem_billed,
+        cost,
+        requested_cost,
+        used_cost,
+        idle_cost,
+    )
+
+
+def _seed_aws_actuals(
+    compute_by_day: dict[datetime.date, float],
+    now: datetime.datetime | None = None,
+    days: int = ACTUALS_DAYS,
+) -> int:
+    """Seed `CostAwsDaily` actuals for the most recent `days` days so the
+    admin AWS-bill reconciliation table (``COST_AWS_ACTUALS_ENABLED``) has
+    something to compare against the allocated/collected totals. The EC2
+    bucket tracks the seeded fleet's priced node-hours per day
+    (`compute_by_day`) plus a few percent of what node pricing misses.
+    Upserts by the table's own `(day, bucket)` primary key, so re-seeding
+    is a cheap no-op refresh rather than an error."""
+    now = now or datetime.datetime.now(datetime.UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.UTC)
+    last_day = (now - datetime.timedelta(days=1)).date()
+    first_day = last_day - datetime.timedelta(days=days - 1)
+
+    rng = random.Random("giant-aws-actuals")  # nosec B311
+    bucket_bases = {
+        "compute": 420.0,
+        "storage": 38.0,
+        "cross_az": 22.0,
+        "internet_egress": 15.0,
+        "load_balancer": 9.0,
+        "inter_region": 4.0,
+    }
+    rows: list[tuple[datetime.date, str, float, datetime.datetime]] = []
+    day = first_day
+    while day <= last_day:
+        weekday_factor = _weekly_factor(day.weekday())
+        for bucket, base in bucket_bases.items():
+            if bucket == "compute" and day in compute_by_day:
+                cost = round(compute_by_day[day] * rng.uniform(1.01, 1.06), 6)
+            else:
+                cost = round(base * weekday_factor * rng.uniform(0.9, 1.1), 6)
+            rows.append((day, bucket, cost, now))
+        day += datetime.timedelta(days=1)
+
+    raw_connection = db.session.connection().connection.dbapi_connection
+    if raw_connection is None:
+        raise RuntimeError("Demo AWS actuals seeding requires a database connection")
+    cursor = cast(psycopg.Cursor, raw_connection.cursor())
+    cursor.executemany(
+        "INSERT INTO cost_aws_daily (day, bucket, cost_usd, fetched_at) "
+        "VALUES (%s, %s, %s, %s) "
+        "ON CONFLICT (day, bucket) DO UPDATE SET "
+        "cost_usd = EXCLUDED.cost_usd, fetched_at = EXCLUDED.fetched_at",
+        rows,
+    )
+    db.session.commit()
+    return len(rows)
+
+
+def seed_cost_nodes_and_platform(
+    organizations: list[Organization],
+    days: int = 90,
+    now: datetime.datetime | None = None,
+) -> dict[str, int]:
+    """Seed a synthetic `CostNode` fleet, `CostNodeHour` load for every
+    demo hour, `stats['platform_components']` workloads on every demo
+    run, and recent `CostAwsDaily` actuals -- the three data sources the
+    real collector writes that `seed_cost_history`/`finalize_platform_stats`
+    never touch -- so the admin platform-scope report's Nodes and Platform
+    workloads tables, and the AWS-bill reconciliation, are populated at
+    SEED_SCALE=giant.
+
+    The numbers agree with each other the way collector output does: each
+    hour's fleet is sized to the `cluster_compute_cost`
+    `finalize_platform_stats` derived from tenant usage, then that stat is
+    rewritten as the sum of the hour's node-hour costs (collector.py does
+    the same). Platform workloads fill part of the capacity tenants leave
+    unused, and the AWS EC2 bucket tracks the node-hour cost per day.
+
+    Cluster-wide like `finalize_platform_stats`: call once after every
+    organization has been seeded, never per-organization. Idempotent: node
+    rows are upserted by name, `CostNodeHour` rows for demo runs are
+    cleared and rewritten every call (respecting `UNIQUE(run_id,
+    node_name)`), and the stats patch always replaces the same keys via the
+    same `stats || jsonb` merge `finalize_platform_stats` uses.
+    """
+    now = now or datetime.datetime.now(datetime.UTC)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.UTC)
+    last_hour = now.replace(minute=0, second=0, microsecond=0) - datetime.timedelta(
+        hours=1
+    )
+    first_hour = last_hour - datetime.timedelta(hours=days * 24 - 1)
+
+    rates = effective_rates()
+    runs: list[CostCollectionRun] = CostCollectionRun.query.filter(
+        CostCollectionRun.period_start >= first_hour,
+        CostCollectionRun.period_start <= last_hour,
+        CostCollectionRun.status == "succeeded",
+    ).all()
+    demo_runs = [run for run in runs if (run.stats or {}).get("seed") == "demo"]
+    targets = {
+        run.id: float((run.stats or {}).get("cluster_compute_cost") or 0.0)
+        for run in demo_runs
+    }
+    fleet = _giant_node_fleet(rates, max(targets.values(), default=0.0))
+    prices = [_node_price(spec, rates) for spec in fleet]
+
+    existing_nodes: dict[str, CostNode] = {
+        node.name: node
+        for node in CostNode.query.filter(
+            CostNode.name.in_([spec[0] for spec in fleet])
+        ).all()
+    }
+    now_ts = datetime.datetime.now(datetime.UTC)
+    for name, instance_type, capacity_type, cpu_capacity, memory_gib in fleet:
+        node = existing_nodes.get(name)
+        if node is None:
+            node = CostNode(name=name)
+            db.session.add(node)
+        node.instance_type = instance_type
+        node.capacity_type = capacity_type
+        node.cpu_capacity = cpu_capacity
+        node.memory_gib = memory_gib
+        node.last_seen = now_ts
+    db.session.flush()
+    db.session.commit()
+
+    if not demo_runs:
+        return {
+            "nodes": len(fleet),
+            "node_hours": 0,
+            "components": 0,
+            "runs_patched": 0,
+            "aws_actuals_rows": _seed_aws_actuals({}, now=now),
+        }
+    demo_run_ids = [run.id for run in demo_runs]
+
+    CostNodeHour.query.filter(CostNodeHour.run_id.in_(demo_run_ids)).delete(
+        synchronize_session=False
+    )
+    db.session.flush()
+
+    component_names = _giant_platform_component_names(organizations)
+
+    raw_connection = db.session.connection().connection.dbapi_connection
+    if raw_connection is None:
+        raise RuntimeError("Demo node/platform seeding requires a database connection")
+    cursor = cast(psycopg.Cursor, raw_connection.cursor())
+
+    node_hour_rows: list[tuple[object, ...]] = []
+    patches: list[tuple[Json, uuid.UUID]] = []
+    compute_by_day: dict[datetime.date, float] = {}
+    for run in demo_runs:
+        hour = run.period_start
+        stats = run.stats or {}
+        hour_rng = random.Random(f"giant-demo-hour-{hour.isoformat()}")  # nosec B311
+        node_hours = _fleet_node_hours(prices, targets[run.id])
+        cluster_compute_cost = 0.0
+        for node, hours in zip(fleet, node_hours, strict=True):
+            if hours <= 0:
+                continue
+            row = _giant_node_hour_row(run.id, hour, node, hours, rates, hour_rng)
+            node_hour_rows.append(row)
+            cluster_compute_cost += hours * _node_price(node, rates)
+        day = hour.date()
+        compute_by_day[day] = compute_by_day.get(day, 0.0) + cluster_compute_cost
+
+        tenant_direct = float(stats.get("tenant_compute_cost") or 0.0)
+        fixed_overhead = float(stats.get("fixed_overhead") or 0.0)
+        unused = max(cluster_compute_cost - tenant_direct, 0.0)
+        overhead_pool = unused + fixed_overhead
+        components = _giant_hour_platform_components(
+            component_names, rates, hour_rng, unused * hour_rng.uniform(0.5, 0.7)
+        )
+        patch = {
+            "platform_components": components,
+            "cluster_compute_cost": cluster_compute_cost,
+            "overhead_pool": overhead_pool,
+            "overhead_allocated": overhead_pool if tenant_direct > 0 else 0.0,
+            "node_hours": sum(node_hours),
+        }
+        patches.append((Json(patch), run.id))
+
+    _copy_rows(cursor, "cost_node_hours", NODE_HOUR_COLUMNS, node_hour_rows)
+    cursor.executemany(
+        "UPDATE cost_collection_runs SET stats = stats || %s::jsonb WHERE id = %s",
+        patches,
+    )
+    db.session.commit()
+    aws_actuals_rows = _seed_aws_actuals(compute_by_day, now=now)
+
+    return {
+        "nodes": len(fleet),
+        "node_hours": len(node_hour_rows),
+        "components": len(component_names),
+        "runs_patched": len(patches),
+        "aws_actuals_rows": aws_actuals_rows,
+    }
 
 
 # ---------------------------------------------------------------------------

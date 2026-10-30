@@ -4425,6 +4425,13 @@
       "severity": "error"
     },
     {
+      "column": 58,
+      "path": "cabotage/celery/tasks/build.py",
+      "name": "unknown-argument-type",
+      "concise_description": "The type of this argument is unknown",
+      "severity": "error"
+    },
+    {
       "column": 5,
       "path": "cabotage/celery/tasks/deploy.py",
       "name": "unannotated-return",
@@ -13834,13 +13841,6 @@
     },
     {
       "column": 53,
-      "path": "cabotage/celery/tasks/notify.py",
-      "name": "unknown-argument-type",
-      "concise_description": "The type of this argument is unknown",
-      "severity": "error"
-    },
-    {
-      "column": 64,
       "path": "cabotage/celery/tasks/notify.py",
       "name": "unknown-argument-type",
       "concise_description": "The type of this argument is unknown",
@@ -25037,41 +25037,6 @@
       "path": "cabotage/server/integrations/discord_oauth.py",
       "name": "unannotated-return",
       "concise_description": "`_update_discord_message` is missing a return annotation",
-      "severity": "error"
-    },
-    {
-      "column": 29,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `channel_id`",
-      "severity": "error"
-    },
-    {
-      "column": 41,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `message_id`",
-      "severity": "error"
-    },
-    {
-      "column": 53,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `text`",
-      "severity": "error"
-    },
-    {
-      "column": 59,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `embeds`",
-      "severity": "error"
-    },
-    {
-      "column": 72,
-      "path": "cabotage/server/integrations/discord_oauth.py",
-      "name": "implicit-any-parameter",
-      "concise_description": "`_update_discord_message` is missing an annotation for parameter `components`",
       "severity": "error"
     },
     {

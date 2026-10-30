@@ -1,8 +1,11 @@
 import datetime
 import uuid
+from decimal import Decimal
 from typing import Any, TypedDict
 
 from sqlalchemy import (
+    CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -17,7 +20,11 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cabotage.server import Model
-from cabotage.server.applets.cost.types import CostRates, SnapshotRates
+from cabotage.server.applets.cost.types import (
+    CostRates,
+    PlatformComponentStats,
+    SnapshotRates,
+)
 
 
 class CostRunStats(TypedDict, total=False):
@@ -26,11 +33,18 @@ class CostRunStats(TypedDict, total=False):
     node_hours: float
     nodes_unpriced: int
     node_data_available: bool
+    #: Why the Kubernetes node list couldn't be refreshed this hour (e.g. RBAC),
+    #: leaving nodes unpriced; None when it succeeded or Kubernetes is off.
+    node_inventory_error: str | None
     cluster_compute_cost: float
     tenant_compute_cost: float
     overhead_pool: float
     overhead_allocated: float
     fixed_overhead: float
+    network_gb_total: float
+    platform_components: dict[str, PlatformComponentStats]
+    platform_cost: float
+    storage_inventory_error: str | None
     synthetic: bool
     seed: str
     last_attempt_status: str
@@ -81,10 +95,10 @@ class CostLineItem(Model):
         server_default=text("gen_random_uuid()"),
         primary_key=True,
     )
-    run_id: Mapped[uuid.UUID] = mapped_column(
+    #: NULL for AWS true-up rows, which set ``aws_day`` instead.
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
         postgresql.UUID(as_uuid=True),
         ForeignKey("cost_collection_runs.id", ondelete="CASCADE"),
-        nullable=False,
     )
     period_start: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -118,8 +132,9 @@ class CostLineItem(Model):
     usage_quantity: Mapped[float | None] = mapped_column(Float())
     request_quantity: Mapped[float | None] = mapped_column(Float())
     cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=False)
+    aws_day: Mapped[datetime.date | None] = mapped_column(Date())
 
-    run: Mapped[CostCollectionRun] = relationship(back_populates="line_items")
+    run: Mapped[CostCollectionRun | None] = relationship(back_populates="line_items")
 
     __table_args__ = (
         Index(
@@ -144,6 +159,11 @@ class CostLineItem(Model):
         # FK columns not led by another index; ON DELETE actions scan without them.
         Index("ix_cost_line_items_run_id", "run_id"),
         Index("ix_cost_line_items_resource_id", "resource_id"),
+        Index("ix_cost_line_items_aws_day", "aws_day"),
+        CheckConstraint(
+            "(run_id IS NULL) <> (aws_day IS NULL)",
+            name="ck_cost_line_items_run_or_aws_day",
+        ),
     )
 
 
@@ -156,6 +176,57 @@ class CostNode(Model):
     cpu_capacity: Mapped[float | None] = mapped_column(Float())
     memory_gib: Mapped[float | None] = mapped_column(Float())
     last_seen: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CostNodeHour(Model):
+    """One node's capacity, load, and price for one collected hour.
+
+    Quantities are summed over the hour's 5-minute steps (vCPU-hr, GiB-hr),
+    so dividing by ``node_hours`` gives the hour's average. ``requested``,
+    ``used`` and ``billed`` cover every pod on the node, attributed or not;
+    ``billed`` is the per-pod ``max(usage, request)`` tenants are charged
+    on. Dollar columns are frozen at collection time and NULL when the node
+    has no instance type to price.
+    """
+
+    __tablename__ = "cost_node_hours"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        server_default=text("gen_random_uuid()"),
+        primary_key=True,
+    )
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("cost_collection_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    period_start: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    node_name: Mapped[str] = mapped_column(String(253), nullable=False)
+    instance_type: Mapped[str | None] = mapped_column(String(64))
+    capacity_type: Mapped[str | None] = mapped_column(String(32))
+    cpu_capacity: Mapped[float | None] = mapped_column(Float())
+    memory_gib: Mapped[float | None] = mapped_column(Float())
+    node_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cpu_request_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cpu_usage_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cpu_billed_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    memory_request_gib_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    memory_usage_gib_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    memory_billed_gib_hours: Mapped[float] = mapped_column(Float(), nullable=False)
+    cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+    requested_cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+    used_cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+    idle_cost_usd: Mapped[Any] = mapped_column(Numeric(14, 6), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "node_name", name="uq_cost_node_hours_run_id_node_name"
+        ),
+        Index("ix_cost_node_hours_period_start", "period_start"),
+    )
 
 
 class CostPriceSnapshot(Model):
@@ -183,3 +254,16 @@ class CostPriceSnapshot(Model):
             cls.fetched_at.desc()
         ).first()
         return snapshot
+
+
+class CostAwsDaily(Model):
+    """One day's Cost Explorer spend for one bucket, before credits."""
+
+    __tablename__ = "cost_aws_daily"
+
+    day: Mapped[datetime.date] = mapped_column(Date(), primary_key=True)
+    bucket: Mapped[str] = mapped_column(String(32), primary_key=True)
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(14, 6), nullable=False)
+    fetched_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )

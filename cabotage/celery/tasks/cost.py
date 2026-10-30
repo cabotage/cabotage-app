@@ -1,4 +1,4 @@
-"""Periodic cost tasks: hourly collection and daily AWS price refresh."""
+"""Periodic cost tasks: hourly collection, AWS price and actuals refresh."""
 
 import datetime
 import logging
@@ -7,6 +7,7 @@ from celery import shared_task
 from sqlalchemy.exc import SQLAlchemyError
 
 from cabotage.server import db
+from cabotage.server.applets.cost.aws_actuals import refresh_actuals
 from cabotage.server.applets.cost.aws_pricing import refresh_prices
 from cabotage.server.applets.cost.collector import collect_hour
 from cabotage.server.applets.cost.constants import FAILED_HOUR_RETRY_AFTER
@@ -94,4 +95,14 @@ def refresh_aws_prices() -> None:
         "Refreshed AWS prices for %s: %d instance types",
         snapshot.region,
         len(snapshot.rates.get("node_instance_hourly", {})),
+    )
+
+
+@shared_task()
+def refresh_aws_actuals() -> None:
+    days = refresh_actuals()
+    log.info(
+        "Refreshed AWS actuals for %d days%s",
+        len(days),
+        f" ({days[0].isoformat()}..{days[-1].isoformat()})" if days else "",
     )

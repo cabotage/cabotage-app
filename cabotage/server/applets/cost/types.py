@@ -47,6 +47,7 @@ class CostRates(TypedDict):
     memory_gib_hour: float
     storage_gib_month: float
     egress_gb: float
+    network_gb: float
     fixed_hourly: dict[str, float]
     node_family_xlarge_hourly: dict[str, float]
     node_size_factor: dict[str, float]
@@ -141,6 +142,16 @@ class PodClassification(TypedDict):
     component: str
 
 
+class PlatformComponentStats(TypedDict):
+    """One hour of a pod group that belongs to no tenant."""
+
+    cpu_billed_hours: float
+    memory_billed_gib_hours: float
+    network_gb: float
+    storage_gib_month: float
+    cost_usd: float
+
+
 # ---------------------------------------------------------------------------
 # Reports
 # ---------------------------------------------------------------------------
@@ -215,6 +226,9 @@ class CapacitySeries(TypedDict):
 
 
 class ReconciliationStats(TypedDict):
+    """Over only the hours that have node data."""
+
+    hours: int
     cluster_compute: float
     fixed_overhead: float
     tenant_direct: float
@@ -222,15 +236,65 @@ class ReconciliationStats(TypedDict):
     unallocated_idle: float
     total: float
     residual: float
+    aws: NotRequired[AwsReconciliation]
+
+
+class AwsBucketRow(TypedDict):
+    key: str
+    label: str
+    cost: float
+
+
+class AwsReconciliation(TypedDict):
+    """Cost Explorer actuals vs. allocated, over days that have actuals."""
+
+    days: int
+    first_day: str
+    last_day: str
+    actual: float
+    allocated: float
+    true_up: float
+    difference: float
+    buckets: list[AwsBucketRow]
+
+
+class PlatformComponentRow(TypedDict):
+    name: str
+    cpu_billed_hours: float
+    memory_billed_gib_hours: float
+    network_gb: float
+    storage_gib_month: float
+    cost: float
+    share: float
 
 
 class NodeRow(TypedDict):
+    """One node over the report range. CPU/memory figures are hour-weighted
+    averages (vCPU, GiB); dollar figures are None when the node was never
+    priced (unknown instance type or capacity)."""
+
+    name: str
     instance_type: str | None
     capacity_type: str | None
-    count: int
+    cpu_capacity: float | None
+    memory_gib: float | None
     node_hours: float
-    hourly: float
-    cost: float
+    cpu_requested: float
+    cpu_used: float
+    memory_requested: float
+    memory_used: float
+    cost: float | None
+    requested_cost: float | None
+    used_cost: float | None
+    idle_cost: float | None
+
+
+class NodeInventoryStats(TypedDict):
+    """Node pricing health as of the latest collected hour."""
+
+    period_start: str | None
+    error: str | None
+    nodes_unpriced: int
 
 
 class UnallocatedStats(TypedDict):
@@ -243,8 +307,10 @@ class PlatformBlock(TypedDict):
     reconciliation: ReconciliationStats
     capacity_series: CapacitySeries
     nodes: list[NodeRow]
+    node_inventory: NodeInventoryStats
     unallocated: UnallocatedStats
     top_orgs_series: SeriesBreakdownEntry
+    platform_components: list[PlatformComponentRow]
 
 
 class RateLineItem(TypedDict):

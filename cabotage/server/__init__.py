@@ -188,6 +188,12 @@ def celery_init_app(app):
                 "schedule": crontab(minute="37", hour="4"),
                 "args": None,
             }
+        if app.config.get("COST_AWS_ACTUALS_ENABLED"):
+            celery_app.conf.beat_schedule["cost-aws-actuals"] = {
+                "task": "cabotage.celery.tasks.cost.refresh_aws_actuals",
+                "schedule": crontab(minute="23", hour="*/6"),
+                "args": None,
+            }
     app.extensions["celery"] = celery_app
     return celery_app
 
@@ -227,7 +233,8 @@ def create_app():
         }
 
     # MetaFlaskEnv parses dotted strings as floats, which truncates IDs
-    # like Slack's "10818900810177.1079..." — re-read as raw strings.
+    # like Slack's "10818900810177.1079...", and turns names like "2" or
+    # "true" into numbers and booleans — re-read as raw strings.
     _env_prefix = app.config.get("ENV_PREFIX", "CABOTAGE_")
     for _key in (
         "SLACK_CLIENT_ID",
@@ -235,6 +242,7 @@ def create_app():
         "DISCORD_CLIENT_ID",
         "DISCORD_CLIENT_SECRET",
         "DISCORD_BOT_TOKEN",
+        "CLUSTER_NAME",
     ):
         _raw = os.environ.get(f"{_env_prefix}{_key}")
         if _raw is not None:
@@ -318,6 +326,17 @@ def create_app():
             if len(parts) == 3:
                 return parts[2]
         return value
+
+    @app.template_filter("short_ref")
+    def short_ref_filter(ref, length):
+        """Shorten a ref that is a bare commit SHA; branch names pass through.
+
+        Auto-deploys record the commit SHA as the ref, so the branch slot
+        would otherwise print a 40-character hash next to the short commit.
+        """
+        if ref and len(ref) == 40 and all(c in "0123456789abcdef" for c in ref):
+            return ref[:length]
+        return ref
 
     @app.template_filter("humanize")
     def humanize_filter(value):
@@ -405,6 +424,8 @@ def create_app():
     # Applet views add their routes to user_blueprint; import before registering.
     import cabotage.server.applets.pipeline.views  # noqa: F401
     from cabotage.server.alerting.views import alerting_blueprint
+    from cabotage.server.main.clusters import validate_cluster_config
+    from cabotage.server.main.legal import validate_legal_config
     from cabotage.server.main.views import main_blueprint
     from cabotage.server.oidc.views import oidc_blueprint
     from cabotage.server.registry_auth.views import registry_auth_blueprint
@@ -415,6 +436,9 @@ def create_app():
     app.register_blueprint(oidc_blueprint)
     app.register_blueprint(registry_auth_blueprint)
     app.register_blueprint(alerting_blueprint)
+    validate_legal_config(app)
+    validate_cluster_config(app)
+
     from cabotage.server.applets.cost.views import cost_blueprint
 
     app.register_blueprint(cost_blueprint)

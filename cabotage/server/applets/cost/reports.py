@@ -11,6 +11,7 @@ import datetime
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import cast
 
 from flask import current_app
@@ -20,13 +21,14 @@ from sqlalchemy.orm import InstrumentedAttribute, Query, joinedload
 
 from cabotage.server import db
 from cabotage.server.applets.cost.constants import (
+    ACTUALS_BUCKET_LABELS,
     CALENDAR_SPAN,
     CATEGORY_LABELS,
     CATEGORY_ORDER,
     COLLECTION_GRACE_MINUTES,
     CUSTOM_HOURLY_SPAN,
     DEFAULT_RATES,
-    FIXED_RATE_ITEMS,
+    FIXED_RATE_LABELS,
     MAX_EXTENT_BUCKETS,
     METER_LABELS,
     METER_ORDER,
@@ -43,6 +45,8 @@ from cabotage.server.applets.cost.constants import (
 from cabotage.server.applets.cost.helpers import as_utc
 from cabotage.server.applets.cost.rates import effective_rates, node_hourly_price
 from cabotage.server.applets.cost.types import (
+    AwsBucketRow,
+    AwsReconciliation,
     BreakdownAggregates,
     BreakdownDimension,
     BreakdownKey,
@@ -57,8 +61,10 @@ from cabotage.server.applets.cost.types import (
     MeterRow,
     MoverRow,
     NameResolver,
+    NodeInventoryStats,
     NodeRow,
     PlatformBlock,
+    PlatformComponentRow,
     PriceTier,
     RateLineItem,
     RatesDisplay,
@@ -71,9 +77,11 @@ from cabotage.server.applets.cost.types import (
 )
 from cabotage.server.models.auth import Organization
 from cabotage.server.models.cost import (
+    CostAwsDaily,
     CostCollectionRun,
     CostLineItem,
     CostNode,
+    CostNodeHour,
 )
 from cabotage.server.models.projects import Application, Environment, Project
 from cabotage.server.models.resources import Resource
@@ -92,7 +100,7 @@ type BreakdownFunc = Callable[
 
 
 def _simple_rates(rates: CostRates) -> dict[str, float]:
-    """The 4 per-unit rate keys as a plain dict, so callers can look one up
+    """The 5 per-unit rate keys as a plain dict, so callers can look one up
     by a dynamic (non-literal) key without indexing the ``CostRates``
     TypedDict directly -- TypedDict subscripting requires a literal key.
     """
@@ -101,6 +109,7 @@ def _simple_rates(rates: CostRates) -> dict[str, float]:
         "memory_gib_hour": rates["memory_gib_hour"],
         "storage_gib_month": rates["storage_gib_month"],
         "egress_gb": rates["egress_gb"],
+        "network_gb": rates["network_gb"],
     }
 
 
@@ -204,10 +213,13 @@ def build_report(
     hours_in_month = (next_month_start - month_start).total_seconds() / 3600.0
     elapsed_hours = (now - month_start).total_seconds() / 3600.0
     remaining_hours = max(hours_in_month - elapsed_hours, 0.0)
+    completed_hours = int(elapsed_hours)
+    covered_hours = min(_covered_hours(month_start, now), completed_hours)
+    uncovered_hours = completed_hours - covered_hours
 
     run_rate_hourly = _run_rate_hourly(scope, now)
     projected_month = (
-        mtd_cost + run_rate_hourly * remaining_hours
+        mtd_cost + run_rate_hourly * (remaining_hours + uncovered_hours)
         if run_rate_hourly is not None
         else None
     )
@@ -283,11 +295,26 @@ def build_report(
             "capacity_series": _platform_capacity_series(
                 scope, range_start, range_end, interval, buckets, rates
             ),
-            "nodes": _platform_nodes(rates, range_start, range_end),
+            "nodes": _platform_nodes(range_start, range_end),
+            "node_inventory": _platform_node_inventory(),
             "unallocated": _platform_unallocated(range_start, range_end),
             "top_orgs_series": series["breakdowns"].get(
                 "organizations", empty_breakdown
             ),
+            "platform_components": _platform_components(range_start, range_end),
+        }
+
+    kpis: dict[str, object] = {
+        "month_to_date": mtd_cost,
+        "projected_month": projected_month,
+        "run_rate_monthly": run_rate_monthly,
+        "efficiency": efficiency,
+    }
+    if scope.kind == "platform":
+        # Platform only: this is collector health.
+        kpis["coverage"] = {
+            "covered_hours": covered_hours,
+            "completed_hours": completed_hours,
         }
 
     return {
@@ -303,12 +330,7 @@ def build_report(
             "previous_cost": previous_cost,
             "change_pct": change_pct,
         },
-        "kpis": {
-            "month_to_date": mtd_cost,
-            "projected_month": projected_month,
-            "run_rate_monthly": run_rate_monthly,
-            "efficiency": efficiency,
-        },
+        "kpis": kpis,
         "categories": [
             {
                 "key": category,
@@ -709,6 +731,17 @@ def _run_rate_hourly(scope: CostScope, now: datetime.datetime) -> float | None:
     return float(total or 0.0) / len(hours)
 
 
+def _covered_hours(start: datetime.datetime, end: datetime.datetime) -> int:
+    """Hours with a succeeded run."""
+    end_hour = end.replace(minute=0, second=0, microsecond=0)
+    hours: int = CostCollectionRun.query.filter(
+        CostCollectionRun.status == "succeeded",
+        CostCollectionRun.period_start >= start,
+        CostCollectionRun.period_start < end_hour,
+    ).count()
+    return hours
+
+
 def _efficiency(
     scope: CostScope, start: datetime.datetime, end: datetime.datetime, rates: CostRates
 ) -> float | None:
@@ -747,7 +780,7 @@ _BREAKDOWN_DIMENSIONS: dict[str, BreakdownDimension] = {
     "environments": (CostLineItem.environment_id, None),
     "applications": (CostLineItem.application_id, None),
     "backing_services": (CostLineItem.resource_id, ["backing_service", "storage"]),
-    "processes": (CostLineItem.component, ["compute", "egress"]),
+    "processes": (CostLineItem.component, ["compute", "egress", "network"]),
 }
 
 
@@ -1367,65 +1400,206 @@ def _platform_reconciliation(
     only appears (and only ever goes negative) if direct + allocated somehow
     exceeds the ground truth, surfacing a real inconsistency instead of
     silently clamping it away.
+
+    Only hours with node data count, and true-up rows are left out.
     """
-    stats_row = (
+    node_runs = (
         db.session.query(
-            func.sum(
-                sa_cast(CostCollectionRun.stats["cluster_compute_cost"].astext, Float)
+            CostCollectionRun.period_start,
+            sa_cast(
+                CostCollectionRun.stats["cluster_compute_cost"].astext, Float
             ).label("cluster_compute"),
-            func.sum(
-                sa_cast(CostCollectionRun.stats["fixed_overhead"].astext, Float)
-            ).label("fixed_overhead"),
+            sa_cast(CostCollectionRun.stats["fixed_overhead"].astext, Float).label(
+                "fixed_overhead"
+            ),
+        )
+        .filter(
+            CostCollectionRun.status == "succeeded",
+            CostCollectionRun.period_start >= start,
+            CostCollectionRun.period_start < end,
+            func.jsonb_extract_path_text(CostCollectionRun.stats, "node_data_available")
+            == "true",
+        )
+        .all()
+    )
+    hours = [row.period_start for row in node_runs]
+    cluster_compute = sum(float(row.cluster_compute or 0.0) for row in node_runs)
+    fixed_overhead = sum(float(row.fixed_overhead or 0.0) for row in node_runs)
+
+    tenant_direct = 0.0
+    overhead_allocated = 0.0
+    if hours:
+        items_row = (
+            db.session.query(
+                func.sum(
+                    case(
+                        (
+                            CostLineItem.category.in_(
+                                ("compute", "backing_service", "build")
+                            ),
+                            CostLineItem.cost_usd,
+                        ),
+                        else_=0.0,
+                    )
+                ).label("tenant_direct"),
+                func.sum(
+                    case(
+                        (CostLineItem.category == "overhead", CostLineItem.cost_usd),
+                        else_=0.0,
+                    )
+                ).label("overhead_allocated"),
+            )
+            .filter(
+                CostLineItem.period_start.in_(hours),
+                CostLineItem.run_id.isnot(None),
+            )
+            .one()
+        )
+        tenant_direct = float(items_row.tenant_direct or 0.0)
+        overhead_allocated = float(items_row.overhead_allocated or 0.0)
+
+    total = cluster_compute + fixed_overhead
+    raw_idle = total - tenant_direct - overhead_allocated
+    result: ReconciliationStats = {
+        "hours": len(hours),
+        "cluster_compute": cluster_compute,
+        "fixed_overhead": fixed_overhead,
+        "tenant_direct": tenant_direct,
+        "overhead_allocated": overhead_allocated,
+        "unallocated_idle": max(raw_idle, 0.0),
+        "total": total,
+        "residual": min(raw_idle, 0.0),
+    }
+    aws = _aws_reconciliation(start, end)
+    if aws is not None:
+        result["aws"] = aws
+    return result
+
+
+def _aws_reconciliation(
+    start: datetime.datetime, end: datetime.datetime
+) -> AwsReconciliation | None:
+    """Actuals vs. everything allocated, over whole days with actuals and
+    collected hours. Each day's actuals are scaled to the hours collected."""
+    first_day = start.date()
+    if start.time() != datetime.time():
+        first_day += datetime.timedelta(days=1)
+    end_day = end.date()  # exclusive: a partial last day isn't compared
+    run_day = func.date(func.timezone("UTC", CostCollectionRun.period_start))
+    hours_by_day: dict[datetime.date, int] = {
+        day: count
+        for day, count in db.session.query(run_day, func.count())
+        .filter(
+            CostCollectionRun.status == "succeeded",
+            run_day >= first_day,
+            run_day < end_day,
+        )
+        .group_by(run_day)
+        .all()
+    }
+    bucket_costs: defaultdict[str, float] = defaultdict(float)
+    day_set: set[datetime.date] = set()
+    for day, bucket, cost in (
+        db.session.query(CostAwsDaily.day, CostAwsDaily.bucket, CostAwsDaily.cost_usd)
+        .filter(CostAwsDaily.day >= first_day, CostAwsDaily.day < end_day)
+        .all()
+    ):
+        hours = hours_by_day.get(day, 0)
+        if not hours:
+            continue
+        bucket_costs[bucket] += float(cost) * hours / 24
+        day_set.add(day)
+    if not day_set:
+        return None
+    days = sorted(day_set)
+    line_day = func.date(func.timezone("UTC", CostLineItem.period_start))
+    allocated_row = (
+        db.session.query(
+            func.coalesce(func.sum(CostLineItem.cost_usd), 0).label("allocated"),
+            func.coalesce(
+                func.sum(
+                    case(
+                        (CostLineItem.aws_day.isnot(None), CostLineItem.cost_usd),
+                        else_=0,
+                    )
+                ),
+                0,
+            ).label("true_up"),
+        )
+        .filter(line_day.in_(days))
+        .one()
+    )
+    actual = sum(bucket_costs.values())
+    allocated = float(allocated_row.allocated or 0.0)
+    buckets: list[AwsBucketRow] = [
+        {
+            "key": bucket,
+            "label": ACTUALS_BUCKET_LABELS.get(bucket, bucket),
+            "cost": cost,
+        }
+        for bucket, cost in bucket_costs.items()
+    ]
+    buckets.sort(key=lambda bucket: bucket["cost"], reverse=True)
+    return {
+        "days": len(days),
+        "first_day": days[0].isoformat(),
+        "last_day": days[-1].isoformat(),
+        "actual": actual,
+        "allocated": allocated,
+        "true_up": float(allocated_row.true_up or 0.0),
+        "difference": actual - allocated,
+        "buckets": buckets,
+    }
+
+
+def _platform_components(
+    start: datetime.datetime, end: datetime.datetime
+) -> list[PlatformComponentRow]:
+    """Sum of each run's ``stats.platform_components`` over the range."""
+    fields = (
+        "cpu_billed_hours",
+        "memory_billed_gib_hours",
+        "network_gb",
+        "storage_gib_month",
+        "cost_usd",
+    )
+    totals: defaultdict[str, dict[str, float]] = defaultdict(
+        lambda: dict.fromkeys(fields, 0.0)
+    )
+    rows: list[Row[tuple[dict[str, dict[str, float]] | None]]] = (
+        db.session.query(
+            func.jsonb_extract_path(CostCollectionRun.stats, "platform_components")
         )
         .filter(
             CostCollectionRun.status == "succeeded",
             CostCollectionRun.period_start >= start,
             CostCollectionRun.period_start < end,
         )
-        .one()
+        .all()
     )
-    cluster_compute = float(stats_row.cluster_compute or 0.0)
-    fixed_overhead = float(stats_row.fixed_overhead or 0.0)
-
-    items_row = (
-        db.session.query(
-            func.sum(
-                case(
-                    (
-                        CostLineItem.category.in_(
-                            ("compute", "backing_service", "build")
-                        ),
-                        CostLineItem.cost_usd,
-                    ),
-                    else_=0.0,
-                )
-            ).label("tenant_direct"),
-            func.sum(
-                case(
-                    (CostLineItem.category == "overhead", CostLineItem.cost_usd),
-                    else_=0.0,
-                )
-            ).label("overhead_allocated"),
-        )
-        .filter(CostLineItem.period_start >= start, CostLineItem.period_start < end)
-        .one()
-    )
-    tenant_direct = float(items_row.tenant_direct or 0.0)
-    overhead_allocated = float(items_row.overhead_allocated or 0.0)
-
-    total = cluster_compute + fixed_overhead
-    raw_idle = total - tenant_direct - overhead_allocated
-    unallocated_idle = max(raw_idle, 0.0)
-    residual = min(raw_idle, 0.0)
-    return {
-        "cluster_compute": cluster_compute,
-        "fixed_overhead": fixed_overhead,
-        "tenant_direct": tenant_direct,
-        "overhead_allocated": overhead_allocated,
-        "unallocated_idle": unallocated_idle,
-        "total": total,
-        "residual": residual,
-    }
+    for row in rows:
+        components: dict[str, dict[str, float]] | None = row[0]
+        if not components:
+            continue
+        for name, component in components.items():
+            entry = totals[name]
+            for field in fields:
+                entry[field] += float(component.get(field) or 0.0)
+    grand_total = sum(entry["cost_usd"] for entry in totals.values())
+    result: list[PlatformComponentRow] = [
+        {
+            "name": name,
+            "cpu_billed_hours": entry["cpu_billed_hours"],
+            "memory_billed_gib_hours": entry["memory_billed_gib_hours"],
+            "network_gb": entry["network_gb"],
+            "storage_gib_month": entry["storage_gib_month"],
+            "cost": entry["cost_usd"],
+            "share": entry["cost_usd"] / grand_total if grand_total else 0.0,
+        }
+        for name, entry in totals.items()
+    ]
+    result.sort(key=lambda row: row["cost"], reverse=True)
+    return result
 
 
 def _platform_capacity_series(
@@ -1471,52 +1645,107 @@ def _platform_capacity_series(
     }
 
 
-def _platform_nodes(
-    rates: CostRates, start: datetime.datetime, end: datetime.datetime
-) -> list[NodeRow]:
-    """Grouped by instance type: `node_hours` approximates every node in
-    that group as present for the whole requested range (true per-node
-    hourly presence isn't persisted — only the live collector's aggregate
-    `node_hours` stat is, which isn't broken out by type).
+def _platform_nodes(start: datetime.datetime, end: datetime.datetime) -> list[NodeRow]:
+    """Every node that ran pods in the range, from the collector's per-node
+    hours: load is hour-weighted averages, dollars are summed.
+
+    A row is a node name plus the type and capacity it was collected with,
+    so a name reused by a different machine (EKS ``ip-…`` names follow
+    recycled IPs) gets its own row instead of blending two machines, and
+    hours collected while the node was unpriced show apart from priced ones.
     """
-    hours_in_range = max((end - start).total_seconds() / 3600.0, 0.0)
-    rows = (
+    rows: list[
+        Row[
+            tuple[
+                str,
+                str | None,
+                str | None,
+                float | None,
+                float | None,
+                float,
+                float,
+                float,
+                float,
+                float,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+                Decimal | None,
+            ]
+        ]
+    ] = (
         db.session.query(
-            CostNode.instance_type,
-            CostNode.capacity_type,
-            # Labeled "node_count", not "count": SQLAlchemy Row objects
-            # inherit tuple.count(), which would shadow a `.count` column
-            # attribute.
-            func.count().label("node_count"),
-            func.avg(CostNode.cpu_capacity).label("cpu_capacity"),
-            func.avg(CostNode.memory_gib).label("memory_gib"),
+            CostNodeHour.node_name,
+            CostNodeHour.instance_type,
+            CostNodeHour.capacity_type,
+            CostNodeHour.cpu_capacity,
+            CostNodeHour.memory_gib,
+            func.sum(CostNodeHour.node_hours).label("node_hours"),
+            func.sum(CostNodeHour.cpu_request_hours).label("cpu_request_hours"),
+            func.sum(CostNodeHour.cpu_usage_hours).label("cpu_usage_hours"),
+            func.sum(CostNodeHour.memory_request_gib_hours).label("mem_request"),
+            func.sum(CostNodeHour.memory_usage_gib_hours).label("mem_usage"),
+            func.sum(CostNodeHour.cost_usd).label("cost"),
+            func.sum(CostNodeHour.requested_cost_usd).label("requested_cost"),
+            func.sum(CostNodeHour.used_cost_usd).label("used_cost"),
+            func.sum(CostNodeHour.idle_cost_usd).label("idle_cost"),
         )
-        .filter(CostNode.instance_type.isnot(None), CostNode.last_seen >= start)
-        .group_by(CostNode.instance_type, CostNode.capacity_type)
+        .filter(CostNodeHour.period_start >= start, CostNodeHour.period_start < end)
+        .group_by(
+            CostNodeHour.node_name,
+            CostNodeHour.instance_type,
+            CostNodeHour.capacity_type,
+            CostNodeHour.cpu_capacity,
+            CostNodeHour.memory_gib,
+        )
         .all()
     )
+
     nodes: list[NodeRow] = []
     for row in rows:
-        hourly = node_hourly_price(
-            row.instance_type,
-            rates,
-            cpu_capacity=row.cpu_capacity,
-            memory_gib=row.memory_gib,
+        node_hours = float(row.node_hours or 0.0)
+        # Per-hour averages; node_hours is never zero for a stored row.
+        per_hour = 1.0 / node_hours if node_hours else 0.0
+        cost = float(row.cost) if row.cost is not None else None
+        requested_cost = (
+            float(row.requested_cost) if row.requested_cost is not None else None
         )
-        node_count: int = row.node_count
-        node_hours = node_count * hours_in_range
+        used_cost = float(row.used_cost) if row.used_cost is not None else None
+        idle_cost = float(row.idle_cost) if row.idle_cost is not None else None
         nodes.append(
             {
+                "name": row.node_name,
                 "instance_type": row.instance_type,
                 "capacity_type": row.capacity_type,
-                "count": node_count,
+                "cpu_capacity": row.cpu_capacity,
+                "memory_gib": row.memory_gib,
                 "node_hours": node_hours,
-                "hourly": hourly,
-                "cost": node_hours * hourly,
+                "cpu_requested": float(row.cpu_request_hours or 0.0) * per_hour,
+                "cpu_used": float(row.cpu_usage_hours or 0.0) * per_hour,
+                "memory_requested": float(row.mem_request or 0.0) * per_hour,
+                "memory_used": float(row.mem_usage or 0.0) * per_hour,
+                "cost": cost,
+                "requested_cost": requested_cost,
+                "used_cost": used_cost,
+                "idle_cost": idle_cost,
             }
         )
-    nodes.sort(key=lambda n: n["cost"], reverse=True)
+    nodes.sort(key=lambda n: (n["cost"] is None, -(n["cost"] or 0.0), n["name"]))
     return nodes
+
+
+def _platform_node_inventory() -> NodeInventoryStats:
+    latest: CostCollectionRun | None = (
+        CostCollectionRun.query.filter_by(status="succeeded")
+        .order_by(CostCollectionRun.period_start.desc())
+        .first()
+    )
+    stats = (latest.stats or {}) if latest is not None else {}
+    return {
+        "period_start": latest.period_start.isoformat() if latest is not None else None,
+        "error": stats.get("node_inventory_error"),
+        "nodes_unpriced": int(stats.get("nodes_unpriced") or 0),
+    }
 
 
 def _platform_unallocated(
@@ -1589,12 +1818,12 @@ def _rates_display(
             rates.get("storage_throughput_tiers", []),
         )
     )
-    for key, label in FIXED_RATE_ITEMS:
+    for key, value in sorted(rates["fixed_hourly"].items()):
         line_items.append(
             {
                 "key": key,
-                "label": label,
-                "value": rates["fixed_hourly"].get(key),
+                "label": FIXED_RATE_LABELS.get(key, key.replace("_", " ").capitalize()),
+                "value": value,
                 "unit": "USD/hr",
                 "note": "fixed, shared across tenants on the cluster",
             }

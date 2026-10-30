@@ -225,15 +225,14 @@ function initThemeToggle() {
       };
       meta.content = metaColors[resolved] || '#0f0f17';
     }
-    var accent = localStorage.getItem('accent-color') || 'purple';
-    if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') {
-      accent = 'white';
-      localStorage.setItem('accent-color', accent);
-      document.documentElement.setAttribute('data-accent', accent);
-      document.querySelectorAll('.accent-opt').forEach(function (b) {
-        b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
-      });
-    }
+    var root = document.documentElement;
+    var accent = localStorage.getItem('accent-color') || root.getAttribute('data-accent-default') || 'purple';
+    // Terminal only takes the mono accents. Not saved, so leaving terminal brings back the user's pick or the cluster's color.
+    if (resolved === 'terminal' && accent !== 'white' && accent !== 'dark') accent = 'white';
+    root.setAttribute('data-accent', accent);
+    document.querySelectorAll('.accent-opt').forEach(function (b) {
+      b.style.borderColor = b.getAttribute('data-accent') === accent ? 'var(--color-base-content)' : 'transparent';
+    });
     if (window.__applyAccent) window.__applyAccent(accent, resolved);
   }
 
@@ -296,7 +295,7 @@ function initAccentPicker() {
     });
   }
 
-  var current = localStorage.getItem('accent-color') || 'purple';
+  var current = document.documentElement.getAttribute('data-accent') || 'purple';
   markActive(current);
 
   document.querySelectorAll('.accent-opt').forEach(function (opt) {
@@ -323,9 +322,213 @@ function initRawEditor() {
   var backdrop = modal.querySelector('.raw-editor-backdrop');
   var textarea = document.getElementById('raw-editor-textarea');
   var formatInput = document.getElementById('raw-editor-format');
+  var baselineInput = document.getElementById('raw-editor-baseline');
   var copyBtn = document.getElementById('raw-editor-copy');
+  var deleteCheck = document.getElementById('raw-editor-delete');
+  var preview = document.getElementById('raw-editor-preview');
+  var previewAdd = document.getElementById('raw-editor-preview-add');
+  var previewUpdate = document.getElementById('raw-editor-preview-update');
+  var previewDelete = document.getElementById('raw-editor-preview-delete');
+  var submitLabel = document.getElementById('raw-editor-submit-label');
+  var tabError = document.getElementById('raw-editor-tab-error');
   var tabs = modal.querySelectorAll('[data-editor-tab]');
   var panels = modal.querySelectorAll('[data-editor-panel]');
+
+  // Existing app-level variables; secrets carry the **secure** placeholder.
+  var configs = [];
+  var dataEl = document.getElementById('env-export-data');
+  if (dataEl) {
+    try {
+      configs = JSON.parse(dataEl.textContent);
+      // Tell the server what the editor was filled from so untouched lines
+      // are skipped even if someone else changed them meanwhile.
+      if (baselineInput) baselineInput.value = dataEl.textContent;
+    } catch (e) {
+      configs = [];
+    }
+  }
+
+  // Client-side copy of the rules in _parse_raw_config (views.py): skip blank
+  // and # lines, split at the first "=", trim the name, keep the value
+  // verbatim unless it starts with a double quote (then it may span lines and
+  // \" \\ \n are escapes), no duplicate names; JSON must be an object of
+  // strings. Advisory only; the server re-parses and decides what is written.
+  // Returns {entries: [{name, value}]} or {error: message}.
+  function parseEditor(fmt, text) {
+    var entries = [];
+    var seen = {};
+    if (fmt === 'json') {
+      var obj;
+      try {
+        obj = JSON.parse(text);
+      } catch (e) {
+        return { error: 'Invalid JSON.' };
+      }
+      if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+        return { error: 'JSON must be an object of "KEY": "VALUE" strings.' };
+      }
+      var keys = Object.keys(obj);
+      for (var i = 0; i < keys.length; i++) {
+        if (typeof obj[keys[i]] !== 'string') {
+          return { error: 'JSON must be an object of "KEY": "VALUE" strings.' };
+        }
+        entries.push({ name: keys[i], value: obj[keys[i]] });
+      }
+    } else {
+      var lines = text.split('\n');
+      for (var n = 0; n < lines.length; n++) {
+        var start = n + 1;
+        var trimmed = lines[n].trim();
+        if (!trimmed || trimmed.charAt(0) === '#') continue;
+        var eq = lines[n].indexOf('=');
+        if (eq === -1) return { error: 'Line ' + start + ': expected KEY=VALUE.' };
+        var name = lines[n].slice(0, eq).trim();
+        if (seen[name.toUpperCase()]) return { error: 'Line ' + start + ': duplicate variable name.' };
+        seen[name.toUpperCase()] = true;
+        var value = lines[n].slice(eq + 1);
+        if (value.charAt(0) === '"') {
+          var rest = value.slice(1);
+          var chars = '';
+          var closed = false;
+          while (!closed) {
+            for (var i = 0; i < rest.length; i++) {
+              var ch = rest.charAt(i);
+              if (ch === '\\' && i + 1 < rest.length) {
+                var next = rest.charAt(i + 1);
+                chars += next === 'n' ? '\n' : next === '"' || next === '\\' ? next : '\\' + next;
+                i++;
+              } else if (ch === '"') {
+                if (rest.slice(i + 1).trim()) {
+                  return { error: 'Line ' + (n + 1) + ': unexpected text after closing quote.' };
+                }
+                closed = true;
+                break;
+              } else {
+                chars += ch;
+              }
+            }
+            if (!closed) {
+              if (n + 1 >= lines.length) return { error: 'Line ' + start + ': unterminated quote.' };
+              chars += '\n';
+              rest = lines[++n];
+            }
+          }
+          value = chars;
+        }
+        entries.push({ name: name, value: value });
+      }
+    }
+    return { entries: entries };
+  }
+
+  // Inverse of parseEditor. ENV values are quoted only when they must be, so
+  // ordinary values read back exactly as typed.
+  function formatEditor(fmt, entries) {
+    if (!entries.length) return '';
+    if (fmt === 'json') {
+      var obj = {};
+      entries.forEach(function (e) {
+        obj[e.name] = e.value;
+      });
+      return JSON.stringify(obj, null, 2);
+    }
+    return entries
+      .map(function (e) {
+        var v = e.value;
+        if (v.charAt(0) === '"' || /[\r\n]/.test(v)) {
+          v = '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
+        }
+        return e.name + '=' + v;
+      })
+      .join('\n');
+  }
+
+  function storedEntries() {
+    return configs.map(function (c) {
+      return { name: c.name, value: c.secret ? '**secure**' : c.value };
+    });
+  }
+
+  function buildText(fmt) {
+    return formatEditor(fmt, storedEntries());
+  }
+
+  // Fill once at load; the page reloads after every save, so this cannot
+  // go stale, and refilling on open would throw away edits after Cancel.
+  var generated = '';
+  if (textarea) {
+    generated = buildText(formatInput ? formatInput.value : 'env');
+    textarea.value = generated;
+  }
+
+  // {UPPER_NAME: {name, value}} for the current text, or null if it does not parse.
+  function submittedValues() {
+    var parsed = parseEditor(formatInput ? formatInput.value : 'env', textarea.value);
+    if (parsed.error) return null;
+    var values = {};
+    parsed.entries.forEach(function (e) {
+      values[e.name.toUpperCase()] = e;
+    });
+    return values;
+  }
+
+  function setPreviewLine(el, text) {
+    if (!el) return;
+    el.textContent = text;
+    el.style.display = text ? '' : 'none';
+  }
+
+  function updatePreview() {
+    if (!preview || !textarea) return;
+    var stored = {};
+    configs.forEach(function (c) {
+      stored[c.name.toUpperCase()] = c;
+    });
+    var values = submittedValues();
+    var adds = [];
+    var updates = [];
+    var removed = [];
+    if (values !== null) {
+      Object.keys(values).forEach(function (key) {
+        var c = stored[key];
+        if (!c) adds.push(values[key].name);
+        else if (values[key].value !== c.value) updates.push(c.name);
+      });
+      configs.forEach(function (c) {
+        if (!values[c.name.toUpperCase()]) removed.push(c.name);
+      });
+    }
+    var ticked = deleteCheck && deleteCheck.checked;
+    var deleting = ticked && removed.length > 0;
+    var deleteText = '';
+    if (ticked) {
+      if (values === null) deleteText = 'Fix the text above to see what will be deleted.';
+      else deleteText = deleting ? 'Will delete: ' + removed.join(', ') : 'Nothing to delete.';
+    } else if (removed.length) {
+      deleteText = 'Removed but kept (tick to delete): ' + removed.join(', ');
+    }
+    setPreviewLine(previewAdd, adds.length ? 'Will add: ' + adds.join(', ') : '');
+    setPreviewLine(previewUpdate, updates.length ? 'Will update: ' + updates.join(', ') : '');
+    setPreviewLine(previewDelete, deleteText);
+    if (previewDelete) {
+      // Red only when something will actually be deleted; muted otherwise.
+      previewDelete.classList.toggle('text-error', deleting);
+      previewDelete.classList.toggle('text-base-content/50', !deleting);
+    }
+    preview.style.display = adds.length || updates.length || deleteText ? '' : 'none';
+    if (submitLabel) {
+      submitLabel.textContent = deleting
+        ? 'Update and delete ' + removed.length
+        : 'Update Variables';
+    }
+  }
+  if (deleteCheck) deleteCheck.addEventListener('change', updatePreview);
+  if (textarea) {
+    textarea.addEventListener('input', function () {
+      setPreviewLine(tabError, '');
+      updatePreview();
+    });
+  }
 
   function openModal() {
     modal.style.display = 'flex';
@@ -349,6 +552,17 @@ function initRawEditor() {
   tabs.forEach(function (tab) {
     tab.addEventListener('click', function () {
       var tabId = tab.getAttribute('data-editor-tab');
+      var fromId = formatInput ? formatInput.value : 'env';
+      if (tabId === fromId || !textarea) return;
+      // Untouched text is regenerated; edited text is converted if it parses,
+      // otherwise stay put and say why, so ENV is never submitted as JSON.
+      var entries = storedEntries();
+      if (textarea.value !== generated) {
+        var parsed = parseEditor(fromId, textarea.value);
+        if (parsed.error) return setPreviewLine(tabError, parsed.error);
+        entries = parsed.entries;
+      }
+      setPreviewLine(tabError, '');
       tabs.forEach(function (t) {
         t.classList.toggle('raw-editor-tab-active', t.getAttribute('data-editor-tab') === tabId);
       });
@@ -358,28 +572,24 @@ function initRawEditor() {
       if (formatInput) formatInput.value = tabId;
 
       if (textarea) {
+        var text = formatEditor(tabId, entries);
+        if (textarea.value === generated) generated = text;
+        textarea.value = text;
         if (tabId === 'json') {
           textarea.placeholder = '{\n  "DATABASE_URL": "postgres://...",\n  "REDIS_URL": "redis://..."\n}';
         } else {
           textarea.placeholder =
             '# Paste your environment variables here\nDATABASE_URL=postgres://...\nREDIS_URL=redis://...';
         }
+        updatePreview();
       }
     });
   });
 
   if (copyBtn) {
     copyBtn.addEventListener('click', function () {
-      var dataEl = document.getElementById('env-export-data');
-      if (!dataEl) return;
       try {
-        var configs = JSON.parse(dataEl.textContent);
-        var lines = configs.map(function (c) {
-          if (c.secret) return c.name + '=**secure**';
-          return c.name + '=' + c.value;
-        });
-        var text = lines.join('\n');
-        navigator.clipboard.writeText(text).then(function () {
+        navigator.clipboard.writeText(buildText('env')).then(function () {
           var orig = copyBtn.innerHTML;
           copyBtn.textContent = 'Copied!';
           setTimeout(function () {
@@ -1767,8 +1977,7 @@ function initTimestampsAndDeployForm() {
     startTimestampTicker();
   }
 
-  var deployForm = document.querySelector('[data-full-deploy-form]');
-  if (deployForm) {
+  document.querySelectorAll('[data-full-deploy-form]').forEach(function (deployForm) {
     deployForm.addEventListener('submit', function () {
       var btn = deployForm.querySelector('button[type="submit"]');
       if (btn) {
@@ -1776,7 +1985,7 @@ function initTimestampsAndDeployForm() {
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Deploying\u2026';
       }
     });
-  }
+  });
 }
 
 /* Structured Live Log (build/release/deploy) */
@@ -1838,6 +2047,35 @@ function structLogAttachTailTracking(scrollEl, chipEl) {
   return state;
 }
 
+/* Shell and log boxes are white by default; this toggle colors them with the
+   accent instead. One saved pref; every box on the page follows it. */
+var TERMINAL_TINT_KEY = 'terminal-tint';
+function terminalTintIsAccent() {
+  return localStorage.getItem(TERMINAL_TINT_KEY) === 'accent';
+}
+function terminalTintToggle(onChange) {
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'struct-log-btn term-tint-btn';
+  btn.title = 'Color with the accent';
+  btn.innerHTML = '<span class="term-tint-swatch" aria-hidden="true"></span>Accent';
+  function sync() {
+    var on = terminalTintIsAccent();
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    onChange(on);
+  }
+  // A mouse click shouldn't pull focus out of the shell; keyboard users can still Tab here.
+  btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  btn.addEventListener('click', function () {
+    if (terminalTintIsAccent()) localStorage.removeItem(TERMINAL_TINT_KEY);
+    else localStorage.setItem(TERMINAL_TINT_KEY, 'accent');
+    document.dispatchEvent(new Event('terminal-tint-change'));
+  });
+  document.addEventListener('terminal-tint-change', sync);
+  sync();
+  return btn;
+}
+
 function StructuredLogViewer(container, kind) {
   this.container = container;
   this.kind = kind; /* 'buildkit' | 'phases' */
@@ -1884,9 +2122,15 @@ StructuredLogViewer.prototype.buildDom = function () {
   rawToggle.setAttribute('aria-pressed', 'false');
   rawToggle.textContent = 'Raw';
 
+  var tintToggle = terminalTintToggle(function (on) {
+    if (on) root.dataset.tint = 'accent';
+    else delete root.dataset.tint;
+  });
+
   header.appendChild(stepCount);
   header.appendChild(jumpError);
   header.appendChild(spacer);
+  header.appendChild(tintToggle);
   header.appendChild(rawToggle);
 
   var body = document.createElement('div');
@@ -2554,13 +2798,36 @@ function initAppShell() {
   }
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
   var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
+  // xterm needs concrete colors, so resolve the tint to rgb. White by default; in accent
+  // mode the cursor, selection and ANSI blue (ls directories, prompts, git branches) take
+  // the accent's dark-mode text shade, since the terminal is always black.
+  function terminalTheme() {
+    var theme = { background: '#000000', foreground: '#e2e2e9', cursor: '#e2e2e9', selectionBackground: 'rgba(226, 226, 233, 0.3)' };
+    if (!terminalTintIsAccent()) return theme;
+    var ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent-on-dark').trim();
+    ctx.fillRect(0, 0, 1, 1);
+    var p = ctx.getImageData(0, 0, 1, 1).data;
+    var rgb = p[0] + ', ' + p[1] + ', ' + p[2];
+    var bright = [0, 1, 2].map(function(i) { return Math.round(p[i] + (255 - p[i]) * 0.3); }).join(', ');
+    theme.cursor = 'rgb(' + rgb + ')';
+    theme.selectionBackground = 'rgba(' + rgb + ', 0.3)';
+    theme.blue = 'rgb(' + rgb + ')';
+    theme.brightBlue = 'rgb(' + bright + ')';
+    return theme;
+  }
   var term = new Terminal({
     fontFamily: '"JetBrains Mono", "Cascadia Code", Menlo, monospace',
     fontSize: 13,
     cursorBlink: true,
     allowProposedApi: true,
-    theme: { background: '#000000', foreground: '#e2e2e9', cursor: '#7c3aed', selectionBackground: 'rgba(124, 58, 237, 0.3)' }
+    theme: terminalTheme()
   });
+  function refreshTheme() { term.options.theme = terminalTheme(); }
+  document.getElementById('terminal-header').appendChild(terminalTintToggle(refreshTheme));
+  // The accent picker and theme toggle rewrite --accent-on-dark on <html> without a reload.
+  new MutationObserver(refreshTheme)
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-accent'] });
   var attachAddon = new AttachAddon.AttachAddon(socket, true);
   wrap(attachAddon, '_sendData', function(original, data) { original('\x00' + data); });
   var fitAddon = new FitAddon.FitAddon(socket, true);
@@ -3021,6 +3288,18 @@ function initLokiLogViewer() {
 }
 
 /* Compact Topbar (scroll collapse) */
+// Sticky page furniture (section rails, table headers) parks under the topbar,
+// whose height changes when it compacts on scroll. Publish it as --topbar-h on
+// <body>: several pages redraw charts when <html>'s inline style changes.
+function initTopbarOffset() {
+  var topbar = document.querySelector('[data-topbar]');
+  if (!topbar || !('ResizeObserver' in window)) return;
+  var bodyStyle = document.body.style;
+  new ResizeObserver(function () {
+    bodyStyle.setProperty('--topbar-h', topbar.getBoundingClientRect().height + 'px');
+  }).observe(topbar);
+}
+
 function initCompactTopbar() {
   var topbar = document.querySelector('[data-topbar]');
   var tabBarWrapper = document.querySelector('[data-tab-bar-wrapper]');
@@ -3134,6 +3413,7 @@ document.addEventListener('click', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
+  initTopbarOffset();
   initCountInputs();
   initJobToggles();
   initEnvReveal();
@@ -3166,6 +3446,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initTfSelect();
   initSecuritySettings();
   initHdrActionTips();
+  initClusterSwitcher();
   window.addEventListener('resize', function () {
     autoExpandCollapsibleCards();
     syncDetailLogHeight();
@@ -3699,4 +3980,642 @@ function initSecuritySettings() {
       });
     });
   });
+}
+
+/* ====================================================================== */
+/* Cluster switcher: ⌘J jump palette across Cabotage installs             */
+/* ====================================================================== */
+
+var CLUSTER_STORE_KEY = 'cabotage-clusters';
+var CLUSTER_PICKS_KEY = 'cabotage-cluster-colors';
+var CLUSTER_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+
+// A jump lands with #from-cluster=<name>&colors=<name>:<color>:<ms>,…, carrying the
+// accents picked on each cluster. Consume it before initTabs reads the hash.
+var _clusterArrival = (function () {
+  var m = /^#from-cluster=([A-Za-z0-9._-]{1,40})(?:&colors=([A-Za-z0-9._:,-]{0,4000}))?$/.exec(window.location.hash);
+  if (!m) return null;
+  history.replaceState(history.state, '', window.location.pathname + window.location.search);
+  return { from: m[1], colors: m[2] || '' };
+})();
+
+function initClusterSwitcher() {
+  var dataEl = document.getElementById('cluster-switcher-data');
+  if (!dataEl) return;
+  var data = JSON.parse(dataEl.textContent);
+  var crumbWrap = document.querySelector('[data-cluster-crumb]');
+  var face = document.querySelector('[data-cluster-face]');
+  var topbar = document.querySelector('[data-topbar]');
+  var horizon = document.querySelector('[data-cluster-horizon]');
+  var appShell = document.querySelector('.app-shell');
+  var isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  var shortcut = isMac ? '⌘J' : 'Ctrl J';
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var DEST_ORDER = ['shared', 'exact', 'home'];
+  var DEST_LABEL = { shared: 'Nearest shared page', exact: 'Same page', home: 'Home' };
+
+  document.querySelectorAll('[data-cluster-kbd]').forEach(function (k) { k.textContent = shortcut; });
+  document.querySelectorAll('.cluster-crumb').forEach(function (b) { b.title = 'Switch cluster (' + shortcut + ')'; });
+
+  // ---- Data ----------------------------------------------------------------
+  function originOf(value) {
+    var raw = String(value || '').trim();
+    if (!raw) return null;
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) raw = 'https://' + raw;
+    try {
+      var u = new URL(raw);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+      return u.origin;
+    } catch {
+      return null;
+    }
+  }
+
+  function readPersonal() {
+    var list;
+    try { list = JSON.parse(localStorage.getItem(CLUSTER_STORE_KEY) || '[]'); } catch { return []; }
+    if (!Array.isArray(list)) return [];
+    return list.filter(function (c) {
+      return c && CLUSTER_NAME_RE.test(c.name) && originOf(c.url) === c.url && data.colors.indexOf(c.color) >= 0;
+    });
+  }
+
+  function writePersonal(list) {
+    localStorage.setItem(CLUSTER_STORE_KEY, JSON.stringify(list.map(function (c) {
+      return { name: c.name, url: c.url, color: c.color };
+    })));
+  }
+
+  // Accents picked on the other listed clusters, as "name:color:ms,…". Each install only
+  // sees its own localStorage, so jumps carry these along; the newest pick wins.
+  function parsePicks(text) {
+    var picks = {};
+    String(text || '').split(',').forEach(function (entry) {
+      var p = entry.split(':'), at = Number(p[2]);
+      if (p[0] === data.current || !data.clusters.some(function (c) { return c.name === p[0]; })) return;
+      if (data.colors.indexOf(p[1]) < 0 || !(at >= 0 && at <= Date.now())) return;
+      if (!picks[p[0]] || picks[p[0]].at < at) picks[p[0]] = { color: p[1], at: at };
+    });
+    return picks;
+  }
+
+  function writePicks(picks) {
+    localStorage.setItem(CLUSTER_PICKS_KEY, Object.keys(picks).map(function (name) {
+      return name + ':' + picks[name].color + ':' + picks[name].at;
+    }).join(','));
+  }
+
+  // What a jump carries: the picks known here, plus this cluster's own color as of now,
+  // default included, so it replaces anything older relayed about this cluster.
+  function outgoingPicks() {
+    var mine = localStorage.getItem('accent-color') || document.documentElement.getAttribute('data-accent-default');
+    var own = data.current ? data.current + ':' + mine + ':' + Date.now() : '';
+    return [own, localStorage.getItem(CLUSTER_PICKS_KEY)].filter(Boolean).join(',');
+  }
+
+  function clusters() {
+    var picks = parsePicks(localStorage.getItem(CLUSTER_PICKS_KEY));
+    var configured = data.clusters.map(function (c) {
+      return { name: c.name, url: c.url, region: c.region, color: (picks[c.name] || c).color, personal: false };
+    });
+    var taken = configured.map(function (c) { return c.url; });
+    var list = configured.concat(readPersonal().filter(function (c) {
+      return taken.indexOf(c.url) < 0;
+    }).map(function (c) {
+      return { name: c.name, url: c.url, region: null, color: c.color, personal: true };
+    }));
+    var here = currentIn(list);
+    if (!here) {
+      // An install outside the operators' list still appears, so "you are here" is never missing.
+      list.unshift({ name: window.location.host, url: window.location.origin, region: null, color: 'current', personal: false, unnamed: true });
+    }
+    return list;
+  }
+
+  function currentIn(list) {
+    for (var i = 0; i < list.length; i++) {
+      if (data.current ? list[i].name === data.current && !list[i].personal : list[i].url === window.location.origin) return list[i];
+    }
+    return null;
+  }
+
+  function isCurrent(c) {
+    return c.unnamed || (data.current ? c.name === data.current && !c.personal : c.url === window.location.origin);
+  }
+
+  function destPath(mode) {
+    if (mode === 'home') return '/';
+    if (mode === 'exact') return window.location.pathname + window.location.search;
+    var path = window.location.pathname, best = '/';
+    data.shared.forEach(function (root) {
+      var r = root.replace(/\/$/, '');
+      if ((path === r || path.indexOf(r + '/') === 0) && root.length > best.length) best = root;
+    });
+    return best;
+  }
+
+  function syncCrumb() {
+    var others = clusters().filter(function (c) { return !isCurrent(c); });
+    if (crumbWrap) crumbWrap.hidden = !data.current && others.length === 0;
+  }
+
+  // ---- Live link: preconnect + reachability --------------------------------
+  var reach = {};
+  var preconnected = {};
+  var pingTimer = null;
+
+  function warm(c) {
+    if (preconnected[c.url]) return;
+    preconnected[c.url] = true;
+    var link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = c.url;
+    document.head.appendChild(link);
+  }
+
+  function ping(c) {
+    if (window.location.protocol === 'https:' && c.url.indexOf('http:') === 0) {
+      reach[c.url] = { unchecked: true };
+      return;
+    }
+    var started = performance.now();
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 4000);
+    // no-cors: an opaque answer proves the host is up, and needs no CORS on older installs.
+    fetch(c.url + '/_cabotage/ping', { mode: 'no-cors', cache: 'no-store', credentials: 'omit', signal: ctl ? ctl.signal : undefined })
+      .then(function () { reach[c.url] = { ms: Math.round(performance.now() - started) }; })
+      .catch(function () { reach[c.url] = { down: true }; })
+      .then(function () { clearTimeout(timer); paintReach(c); });
+  }
+
+  function pingAll() {
+    clusters().forEach(function (c) {
+      if (isCurrent(c)) return;
+      warm(c);
+      ping(c);
+    });
+  }
+
+  // ---- DOM helpers ---------------------------------------------------------
+  function h(tag, attrs, children) {
+    var el = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') el.textContent = attrs[k];
+      else if (k === 'className') el.className = attrs[k];
+      else if (attrs[k] === true) el.setAttribute(k, '');
+      else if (attrs[k] !== false && attrs[k] != null) el.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (child) {
+      if (child != null) el.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+    });
+    return el;
+  }
+  function svg(paths, cls) {
+    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('fill', 'none');
+    s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-linecap', 'round');
+    s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    if (cls) s.setAttribute('class', cls);
+    s.innerHTML = paths;
+    return s;
+  }
+  function kbd(text) { return h('kbd', { text: text }); }
+  var ICON_SEARCH = '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>';
+  var ICON_PLUS = '<path d="M12 5v14M5 12h14"/>';
+  var ICON_X = '<path d="M18 6 6 18M6 6l12 12"/>';
+  var ICON_BACK = '<path d="m15 18-6-6 6-6"/>';
+  var ICON_FROM = '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>';
+
+  // ---- Palette -------------------------------------------------------------
+  var root, input, listEl, scopeBtn, addForm, footNote;
+  var state = { open: false, query: '', sel: 0, mode: 'shared', rows: [], adding: false, returnFocus: null };
+
+  function build() {
+    input = h('input', {
+      type: 'text', className: 'cp-input', role: 'combobox', 'aria-expanded': 'true',
+      'aria-controls': 'cp-list', 'aria-autocomplete': 'list', placeholder: 'Jump to cluster…',
+      autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Filter clusters',
+    });
+    scopeBtn = h('button', { type: 'button', className: 'cp-scope', title: 'Where the jump lands (Tab)' });
+    listEl = h('div', { className: 'cp-list', id: 'cp-list', role: 'listbox', 'aria-label': 'Clusters' });
+    footNote = h('span', { className: 'cp-foot-note' });
+    addForm = buildAddForm();
+    var palette = h('div', { className: 'cluster-palette', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Jump to cluster' }, [
+      h('div', { className: 'cp-search' }, [svg(ICON_SEARCH, 'cp-search-icon'), input, scopeBtn]),
+      listEl,
+      addForm,
+      h('div', { className: 'cp-foot' }, [
+        footNote,
+        h('span', { className: 'cp-keys' }, [
+          h('span', {}, [kbd('↑'), kbd('↓'), ' move']),
+          h('span', {}, [kbd('tab'), ' lands on']),
+          h('span', {}, [kbd('↵'), ' jump']),
+          h('span', {}, [kbd(isMac ? '⌘↵' : 'Ctrl ↵'), ' new tab']),
+        ]),
+      ]),
+    ]);
+    root = h('div', { className: 'cluster-palette-root', hidden: true }, [h('div', { className: 'cp-scrim', 'data-cp-close': true }), palette]);
+    document.body.appendChild(root);
+
+    input.addEventListener('input', function () {
+      state.query = input.value;
+      state.sel = 0;
+      renderList();
+    });
+    input.addEventListener('keydown', onListKey);
+    scopeBtn.addEventListener('click', function () { cycleMode(1); input.focus(); });
+    root.addEventListener('click', function (e) {
+      if (e.target.closest('[data-cp-close]')) { close(); return; }
+      var remove = e.target.closest('[data-cp-remove]');
+      if (remove) { removePersonal(remove.getAttribute('data-cp-remove')); return; }
+      var row = e.target.closest('.cp-row');
+      if (row) activate(Number(row.getAttribute('data-index')), e.metaKey || e.ctrlKey);
+    });
+    listEl.addEventListener('mousemove', function (e) {
+      var row = e.target.closest('.cp-row');
+      if (!row) return;
+      var i = Number(row.getAttribute('data-index'));
+      if (i !== state.sel) { state.sel = i; paintSelection(); }
+    });
+    root.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        // The page's own Escape handlers (modals, tab nav blur) must not see it.
+        e.preventDefault();
+        e.stopPropagation();
+        if (state.adding) showList(); else close();
+      }
+    });
+  }
+
+  function visibleRows() {
+    var q = state.query.trim().toLowerCase();
+    var rows = clusters().filter(function (c) {
+      if (!q) return true;
+      var host = c.url.replace(/^https?:\/\//, '');
+      return c.name.toLowerCase().indexOf(q) >= 0 || host.indexOf(q) >= 0 || (c.region || '').toLowerCase().indexOf(q) >= 0;
+    }).map(function (c) { return { cluster: c }; });
+    rows.push({ action: 'add' });
+    return rows;
+  }
+
+  function renderList() {
+    state.rows = visibleRows();
+    var firstJumpable = 0;
+    for (var k = 0; k < state.rows.length; k++) {
+      if (state.rows[k].cluster && !isCurrent(state.rows[k].cluster)) { firstJumpable = k; break; }
+    }
+    if (state.sel === -1) state.sel = firstJumpable;
+    if (state.sel >= state.rows.length) state.sel = state.rows.length - 1;
+
+    var path = destPath(state.mode);
+    listEl.textContent = '';
+    var number = 0;
+    state.rows.forEach(function (row, i) {
+      var id = 'cp-opt-' + i;
+      if (row.action === 'add') {
+        if (state.query && state.rows.length === 1) {
+          listEl.appendChild(h('div', { className: 'cp-empty', text: 'No cluster matches “' + state.query.trim() + '”.' }));
+        }
+        listEl.appendChild(h('div', { className: 'cp-row cp-row-action', role: 'option', id: id, 'data-index': i }, [
+          h('span', { className: 'cp-action-icon' }, [svg(ICON_PLUS)]),
+          h('span', { className: 'cp-name', text: 'Add a cluster…' }),
+          h('span', { className: 'cp-dest', text: 'Saved in this browser' }),
+        ]));
+        return;
+      }
+      var c = row.cluster;
+      var here = isCurrent(c);
+      number += 1;
+      var host = c.url.replace(/^https?:\/\//, '');
+      var dest = here
+        ? h('span', { className: 'cp-dest', text: 'You are here' })
+        : h('span', { className: 'cp-dest' }, [c.url.slice(0, c.url.length - host.length), h('span', { className: 'cp-host', text: host }), h('b', { text: path })]);
+      var meta = h('span', { className: 'cp-meta' }, [
+        c.personal ? h('span', { className: 'cp-tag', text: 'personal' }) : null,
+        here ? h('span', { className: 'cp-tag', text: 'current' }) : h('span', { className: 'cp-reach', 'data-reach': c.url }),
+        c.personal ? h('button', { type: 'button', className: 'cp-remove', tabindex: '-1', 'data-cp-remove': c.url, 'aria-label': 'Remove ' + c.name, title: 'Remove ' + c.name + ' (' + (isMac ? '⌘⌫' : 'Ctrl ⌫') + ')' }, [svg(ICON_X)]) : null,
+        h('span', { className: 'cp-num', text: number <= 9 ? String(number) : '' }),
+      ]);
+      listEl.appendChild(h('div', {
+        className: 'cp-row' + (here ? ' cp-row-current' : ''), role: 'option', id: id, 'data-index': i,
+        'aria-disabled': here ? 'true' : null,
+      }, [
+        // Here, the swatch is the accent actually in use; elsewhere, the one picked there, or the configured one.
+        h('span', { className: 'cluster-swatch', 'data-cluster-color': here ? 'current' : c.color, 'aria-hidden': 'true' }),
+        h('span', { className: 'cp-name' }, [c.name, c.region ? h('span', { className: 'cp-region', text: c.region }) : null]),
+        dest,
+        meta,
+      ]));
+      if (!here) paintReach(c);
+    });
+    scopeBtn.textContent = '';
+    scopeBtn.appendChild(document.createTextNode(DEST_LABEL[state.mode] + ' '));
+    scopeBtn.appendChild(kbd('tab'));
+    footNote.textContent = data.clusters.length ? 'Clusters come from your operators' : 'Clusters you add live in this browser';
+    paintSelection();
+  }
+
+  function paintSelection() {
+    listEl.querySelectorAll('.cp-row').forEach(function (row) {
+      row.setAttribute('aria-selected', String(Number(row.getAttribute('data-index')) === state.sel));
+    });
+    var selected = document.getElementById('cp-opt-' + state.sel);
+    if (selected) {
+      input.setAttribute('aria-activedescendant', selected.id);
+      selected.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function paintReach(c) {
+    if (!listEl) return;
+    var r = reach[c.url];
+    listEl.querySelectorAll('[data-reach]').forEach(function (el) {
+      if (el.getAttribute('data-reach') !== c.url) return;
+      var row = el.closest('.cp-row');
+      row.classList.toggle('cp-row-down', !!(r && r.down));
+      el.className = 'cp-reach' + (r ? (r.down ? ' is-down' : r.unchecked ? ' is-unchecked' : ' is-up') : ' is-pending');
+      el.textContent = !r ? '' : r.down ? 'unreachable' : r.unchecked ? 'not checked' : r.ms + ' ms';
+      el.title = !r ? 'Checking…' : r.down ? 'No answer within 4 seconds' : r.unchecked ? 'An https page can’t probe an http cluster' : 'Round trip from this browser';
+    });
+  }
+
+  function cycleMode(step) {
+    var i = DEST_ORDER.indexOf(state.mode);
+    state.mode = DEST_ORDER[(i + step + DEST_ORDER.length) % DEST_ORDER.length];
+    renderList();
+  }
+
+  function move(step) {
+    var n = state.rows.length;
+    if (!n) return;
+    state.sel = (state.sel + step + n) % n;
+    paintSelection();
+  }
+
+  function onListKey(e) {
+    if (e.isComposing) return;
+    var k = e.key;
+    if (k === 'ArrowDown') { e.preventDefault(); move(1); }
+    else if (k === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (k === 'Tab') { e.preventDefault(); cycleMode(e.shiftKey ? -1 : 1); }
+    else if (k === 'Enter') { e.preventDefault(); activate(state.sel, e.metaKey || e.ctrlKey); }
+    else if (k === 'Backspace' && (e.metaKey || e.ctrlKey)) {
+      var row = state.rows[state.sel];
+      if (row && row.cluster && row.cluster.personal) { e.preventDefault(); removePersonal(row.cluster.url); }
+    } else if (/^[1-9]$/.test(k) && !state.query && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      var jumpable = state.rows.filter(function (r) { return r.cluster; });
+      var target = jumpable[Number(k) - 1];
+      if (target) { e.preventDefault(); activate(state.rows.indexOf(target), false); }
+    }
+  }
+
+  function activate(index, newTab) {
+    var row = state.rows[index];
+    if (!row) return;
+    if (row.action === 'add') { showAdd(); return; }
+    if (isCurrent(row.cluster)) { close(); return; }
+    jump(row.cluster, newTab);
+  }
+
+  function open() {
+    if (state.open) return;
+    if (!root) build();
+    state.open = true;
+    state.query = '';
+    state.sel = -1;
+    state.mode = 'shared';
+    state.returnFocus = document.activeElement;
+    input.value = '';
+    showList();
+    root.hidden = false;
+    if (appShell) appShell.inert = true;
+    document.querySelectorAll('[data-cluster-open][aria-haspopup]').forEach(function (b) { b.setAttribute('aria-expanded', 'true'); });
+    input.focus();
+    pingAll();
+    pingTimer = setInterval(pingAll, 5000);
+  }
+
+  function close(restoreFocus) {
+    if (!state.open) return;
+    state.open = false;
+    root.hidden = true;
+    if (appShell) appShell.inert = false;
+    clearInterval(pingTimer);
+    document.querySelectorAll('[data-cluster-open][aria-haspopup]').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+    if (restoreFocus !== false && state.returnFocus && state.returnFocus.focus) state.returnFocus.focus();
+  }
+
+  // ---- Personal clusters ---------------------------------------------------
+  function buildAddForm() {
+    var swatches = h('div', { className: 'cp-swatches', role: 'radiogroup', 'aria-label': 'Color' });
+    data.colors.forEach(function (color) {
+      swatches.appendChild(h('label', { className: 'cp-swatch-opt', title: color }, [
+        h('input', { type: 'radio', name: 'color', value: color, 'aria-label': color }),
+        h('span', { className: 'cluster-swatch', 'data-cluster-color': color, 'aria-hidden': 'true' }),
+      ]));
+    });
+    var form = h('form', { className: 'cp-add', hidden: true, novalidate: true }, [
+      h('div', { className: 'cp-add-head' }, [
+        h('button', { type: 'button', className: 'cp-back', 'data-cp-back': true, 'aria-label': 'Back to clusters' }, [svg(ICON_BACK)]),
+        h('span', { text: 'Add a cluster' }),
+      ]),
+      h('label', { className: 'cp-field' }, [h('span', { text: 'URL' }), h('input', { name: 'url', type: 'url', inputmode: 'url', placeholder: 'https://cabotage.example.com', autocomplete: 'off', spellcheck: 'false', required: true })]),
+      h('label', { className: 'cp-field' }, [h('span', { text: 'Name' }), h('input', { name: 'name', type: 'text', autocomplete: 'off', spellcheck: 'false', maxlength: '40' })]),
+      h('div', { className: 'cp-field' }, [h('span', { text: 'Color' }), swatches]),
+      h('p', { className: 'cp-add-error', role: 'alert' }),
+      h('div', { className: 'cp-add-actions' }, [
+        h('span', { className: 'cp-add-note', text: 'Saved in this browser, for ' + window.location.host + ' only.' }),
+        h('button', { type: 'button', className: 'btn btn-ghost btn-sm', 'data-cp-back': true, text: 'Cancel' }),
+        h('button', { type: 'submit', className: 'btn btn-primary btn-sm', text: 'Add cluster' }),
+      ]),
+    ]);
+    var urlField = form.querySelector('input[name="url"]');
+    var nameField = form.querySelector('input[name="name"]');
+    form.addEventListener('click', function (e) { if (e.target.closest('[data-cp-back]')) showList(); });
+    urlField.addEventListener('input', function () {
+      var origin = originOf(urlField.value);
+      nameField.placeholder = origin ? suggestName(origin) : '';
+    });
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var err = form.querySelector('.cp-add-error');
+      var origin = originOf(urlField.value);
+      var name = (nameField.value || (origin ? suggestName(origin) : '')).trim();
+      var list = clusters();
+      var clash = origin && list.filter(function (c) { return c.url === origin; })[0];
+      var problem = !origin ? 'Enter the cluster’s address, like https://cabotage.example.com.'
+        : clash ? 'Already listed as ' + clash.name + '.'
+        : !CLUSTER_NAME_RE.test(name) ? 'Names use letters, digits, “.”, “_” and “-”, up to 40 characters.'
+        : list.some(function (c) { return c.name.toLowerCase() === name.toLowerCase(); }) ? 'A cluster named ' + name + ' already exists.'
+        : null;
+      err.textContent = problem || '';
+      if (problem) { (origin && !clash ? nameField : urlField).focus(); return; }
+      var personal = readPersonal();
+      personal.push({ name: name, url: origin, color: form.querySelector('input[name="color"]:checked').value });
+      writePersonal(personal);
+      syncCrumb();
+      showList();
+      state.query = '';
+      input.value = '';
+      renderList();
+      pingAll();
+    });
+    return form;
+  }
+
+  function suggestName(origin) {
+    var host = origin.replace(/^https?:\/\//, '').replace(/:\d+$/, '');
+    if (/^[\d.]+$/.test(host) || host.indexOf('.') < 0) return host.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 40);
+    var labels = host.split('.');
+    return labels[labels.length - 2].slice(0, 40);
+  }
+
+  function showAdd() {
+    state.adding = true;
+    listEl.hidden = true;
+    input.closest('.cp-search').hidden = true;
+    root.querySelector('.cp-foot').hidden = true;
+    addForm.hidden = false;
+    addForm.reset();
+    addForm.querySelector('input[name="name"]').placeholder = '';
+    addForm.querySelector('.cp-add-error').textContent = '';
+    var used = clusters().map(function (c) { return c.color; });
+    var free = data.colors.filter(function (c) { return used.indexOf(c) < 0; })[0] || data.colors[0];
+    addForm.querySelector('input[value="' + free + '"]').checked = true;
+    addForm.querySelector('input[name="url"]').focus();
+  }
+
+  function showList() {
+    state.adding = false;
+    addForm.hidden = true;
+    listEl.hidden = false;
+    input.closest('.cp-search').hidden = false;
+    root.querySelector('.cp-foot').hidden = false;
+    renderList();
+    input.focus();
+  }
+
+  function removePersonal(url) {
+    writePersonal(readPersonal().filter(function (c) { return c.url !== url; }));
+    syncCrumb();
+    renderList();
+    input.focus();
+  }
+
+  // ---- Handoff: the jump itself --------------------------------------------
+  function jump(c, newTab) {
+    var url = c.url + destPath(state.mode);
+    var here = currentIn(clusters());
+    // Only operator-listed clusters share this list and consume the marker; personal ones may run anything.
+    var marker = here && !c.personal ? '#from-cluster=' + encodeURIComponent(here.name) + '&colors=' + outgoingPicks() : '';
+    if (newTab) {
+      follow(url + marker, true);
+      close();
+      return;
+    }
+    close(false);
+    if (!reduceMotion.matches) playHandoff(c);
+    // Two frames so the handoff paints before the browser starts unloading.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        follow(url + marker, false);
+        // Still here means the jump stalled or was stopped: show where we really are.
+        setTimeout(resetHandoff, 5000);
+      });
+    });
+  }
+
+  // The page's referrer policy is same-origin; a jump sends its origin so the
+  // destination can tell a real jump from a crafted link.
+  function follow(href, newTab) {
+    var a = h('a', { href: href, referrerpolicy: 'origin', target: newTab ? '_blank' : null, rel: newTab ? 'noopener' : null, hidden: true });
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  var EASE_OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
+  function playHandoff(c) {
+    document.body.classList.add('cluster-leaving');
+    if (face) {
+      var next = face.cloneNode(true);
+      next.removeAttribute('data-cluster-face');
+      next.setAttribute('data-cluster-color', c.color);
+      next.querySelector('[data-cluster-name]').textContent = c.name;
+      next.classList.add('cluster-crumb-face-next');
+      face.parentNode.appendChild(next);
+      face.animate([{ transform: 'translateY(0)', opacity: 1 }, { transform: 'translateY(-105%)', opacity: 0 }], { duration: 280, easing: EASE_OUT, fill: 'forwards' });
+      next.animate([{ transform: 'translateY(105%)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 340, delay: 40, easing: EASE_OUT, fill: 'both' });
+    }
+    if (horizon) {
+      var sweep = h('div', { className: 'cluster-horizon-sweep', 'data-cluster-color': c.color });
+      horizon.appendChild(sweep);
+      // Runs to 85% and holds; the destination's arrival finishes the line.
+      sweep.animate([
+        { transform: 'scaleX(0)' },
+        { transform: 'scaleX(0.6)', offset: 0.4 },
+        { transform: 'scaleX(0.85)' },
+      ], { duration: 1400, easing: 'cubic-bezier(0.22, 1, 0.36, 1)', fill: 'forwards' });
+    }
+  }
+
+  function resetHandoff() {
+    document.body.classList.remove('cluster-leaving');
+    document.querySelectorAll('.cluster-crumb-face-next, .cluster-horizon-sweep').forEach(function (el) { el.remove(); });
+    if (face && face.getAnimations) face.getAnimations().forEach(function (a) { a.cancel(); });
+  }
+
+  // Back/forward cache restores the page mid-handoff; put it back the way it was.
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) resetHandoff();
+  });
+
+  function arrive() {
+    if (!_clusterArrival) return;
+    var from = clusters().filter(function (c) { return c.name === _clusterArrival.from && !isCurrent(c); })[0];
+    if (!from) return;
+    var label = document.querySelector('[data-cluster-arrival]');
+    if (label) {
+      label.textContent = '';
+      label.appendChild(svg(ICON_FROM));
+      label.appendChild(h('span', { text: 'from ' + from.name }));
+      label.classList.add('is-on');
+      setTimeout(function () { label.classList.remove('is-on'); }, 4200);
+    }
+    if (horizon && !reduceMotion.matches) {
+      // Finish the line the previous cluster started.
+      horizon.animate([{ transform: 'scaleX(0.85)' }, { transform: 'scaleX(1)' }], { duration: 420, easing: EASE_OUT });
+    }
+  }
+
+  // ---- Wiring --------------------------------------------------------------
+  document.addEventListener('keydown', function (e) {
+    if ((isMac ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && (e.key === 'j' || e.key === 'J')) {
+      e.preventDefault();
+      if (state.open) close(); else open();
+    }
+  });
+  // Intent to switch: open the connections now, so pings and the jump land warm.
+  function warmAll() {
+    clusters().forEach(function (c) { if (!isCurrent(c)) warm(c); });
+  }
+  document.querySelectorAll('[data-cluster-open]').forEach(function (b) {
+    b.addEventListener('pointerenter', warmAll, { once: true });
+    b.addEventListener('focus', warmAll, { once: true });
+    b.addEventListener('click', function () {
+      if (document.activeElement && document.activeElement.blur && b.closest('.dropdown')) document.activeElement.blur();
+      open();
+    });
+  });
+
+  var sender = _clusterArrival && data.clusters.filter(function (c) { return c.name === _clusterArrival.from; })[0];
+  if (sender && originOf(document.referrer) === sender.url) {
+    writePicks(parsePicks([localStorage.getItem(CLUSTER_PICKS_KEY), _clusterArrival.colors].join(',')));
+  }
+  syncCrumb();
+  arrive();
 }

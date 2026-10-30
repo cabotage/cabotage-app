@@ -254,6 +254,11 @@ html:not([data-theme-pref]) .theme-icon-system {
     padding: 0.25rem 0.375rem;
   }
 }
+.topbar-inline-tabs .tab-item .tab-caret {
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-left: -0.25rem;
+}
 
 .app-content {
   flex: 1;
@@ -298,7 +303,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   padding: 0.75rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--text-muted);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
   border-bottom: 2px solid transparent;
   white-space: nowrap;
   text-decoration: none;
@@ -322,6 +327,26 @@ html:not([data-theme-pref]) .theme-icon-system {
   pointer-events: none;
 }
 
+/* Dropdown tabs: small caret beside the label that flips while the menu is open */
+.tab-item .tab-caret {
+  width: 0.75rem;
+  height: 0.75rem;
+  margin-left: -0.125rem;
+  opacity: 0.45;
+  transition:
+    transform 0.2s cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 0.15s ease;
+}
+.tab-item:hover .tab-caret,
+.tab-item.tab-active .tab-caret {
+  opacity: 0.8;
+}
+.dropdown-hover:hover > .tab-item .tab-caret,
+.dropdown:focus-within > .tab-item .tab-caret {
+  opacity: 0.8;
+  transform: rotate(180deg);
+}
+
 @media (max-width: 810px) {
   .tab-item {
     font-size: 0;
@@ -342,6 +367,11 @@ html:not([data-theme-pref]) .theme-icon-system {
     min-width: 0.875rem;
     margin-left: 0.125rem;
   }
+  .tab-item svg.tab-caret {
+    width: 0.625rem;
+    height: 0.625rem;
+    margin-left: 0.125rem;
+  }
 }
 
 .tab-panel {
@@ -359,7 +389,7 @@ html:not([data-theme-pref]) .theme-icon-system {
 .card-interactive:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 24px var(--shadow-card);
-  border-color: rgba(124, 58, 237, 0.3);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 
 /* Service Card */
@@ -374,7 +404,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   transition: all 0.2s ease;
 }
 .service-card:hover {
-  border-color: rgba(124, 58, 237, 0.3);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
   box-shadow: 0 4px 16px var(--shadow-card);
   transform: translateY(-1px);
 }
@@ -412,7 +442,7 @@ html:not([data-theme-pref]) .theme-icon-system {
   transition: all 0.2s ease;
 }
 .org-card:hover {
-  border-color: rgba(124, 58, 237, 0.3);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
   box-shadow: 0 4px 16px var(--shadow-card);
   transform: translateY(-1px);
 }
@@ -431,7 +461,6 @@ html:not([data-theme-pref]) .theme-icon-system {
   flex-shrink: 0;
   font-size: 0.75rem;
   font-weight: 700;
-  color: #fff;
   letter-spacing: 0.05em;
 }
 .org-card-stats {
@@ -1315,7 +1344,6 @@ button.dash-kpi:focus-visible .dash-kpi-go {
   font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
-  color: #fff;
 }
 .dash-org-title {
   display: flex;
@@ -2329,7 +2357,7 @@ a.dash-env:hover {
   transition: background 0.1s ease;
 }
 .count-input .incr-btn:hover {
-  background: rgba(124, 58, 237, 0.15);
+  background: color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .count-input .incr-btn.inactive {
   opacity: 0.3;
@@ -2371,7 +2399,7 @@ a.dash-env:hover {
   border-radius: 2px;
 }
 .log-viewer .log-line:hover {
-  background: rgba(124, 58, 237, 0.06);
+  background: color-mix(in srgb, var(--color-primary) 6%, transparent);
 }
 .loki-log-lines { font-family: ui-monospace, monospace; font-size: 0.65rem; line-height: 1.3; }
 .loki-log-lines .log-line { padding: 0.15rem 0.4rem; border-bottom: 1px solid oklch(var(--bc) / 0.03); }
@@ -2545,9 +2573,9 @@ a.dash-env:hover {
   border: 1px solid color-mix(in oklch, var(--color-warning, oklch(0.8 0.15 85)) 18%, transparent);
 }
 .env-badge-shared {
-  background: color-mix(in oklch, var(--color-info, oklch(0.7 0.15 230)) 10%, transparent);
-  color: var(--color-info, oklch(0.7 0.15 230));
-  border: 1px solid color-mix(in oklch, var(--color-info, oklch(0.7 0.15 230)) 30%, transparent);
+  background: color-mix(in oklch, var(--color-primary) 10%, transparent);
+  color: var(--accent-text);
+  border: 1px solid color-mix(in oklch, var(--color-primary) 30%, transparent);
 }
 .env-badge-neutral {
   background: color-mix(in oklch, currentColor 5%, transparent);
@@ -2555,13 +2583,14 @@ a.dash-env:hover {
   border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
   padding-left: 0.5rem;
 }
-/* Semantic Badges & Alerts
+/* Semantic & Accent Badges, Alerts
    Tinted like .flash-* below instead of daisyUI's solid fill, which can't clear
-   4.5:1 on this palette. Unlayered, so these win over @layer daisyui. */
+   4.5:1 on this palette (or on dim accent presets). Unlayered, so these win over @layer daisyui. */
 .badge-error,
 .badge-warning,
 .badge-success,
-.badge-info {
+.badge-info,
+.badge-accent {
   --badge-bg: color-mix(in srgb, var(--badge-color) 12%, transparent);
   --badge-fg: color-mix(in srgb, var(--badge-color) 75%, var(--color-base-content));
   border-color: color-mix(in srgb, var(--badge-color) 40%, transparent);
@@ -2596,6 +2625,30 @@ a.dash-env:hover {
 [data-theme='terminal'] :is(.badge-error, .badge-warning, .badge-success, .badge-info) {
   --badge-fg: var(--badge-color);
 }
+/* Each accent preset sets --accent-text as its legible text shade for the current theme. */
+[data-theme] .badge-accent {
+  --badge-fg: var(--accent-text);
+}
+[data-theme='light'] .badge-accent {
+  --badge-fg: color-mix(in srgb, var(--accent-text) 60%, var(--color-base-content));
+}
+/* Outline primary buttons: the primary fill is too dark to read as text on dark
+   surfaces (and borderline on light), so their resting text uses the text shade. */
+.btn-outline.btn-primary {
+  --btn-rest-fg: var(--accent-text);
+}
+[data-theme='light'] .btn-outline.btn-primary {
+  --btn-rest-fg: color-mix(in srgb, var(--accent-text) 75%, var(--color-base-content));
+}
+/* Solid error buttons: dark text on the dark-theme red reads muddy at 4.6:1, so
+   a deeper fill takes white text (5.9:1); terminal's neon red takes black. */
+[data-theme='dark'] .btn-error:not(.btn-outline, :disabled, [disabled], .btn-disabled) {
+  --btn-color: oklch(0.53 0.21 25);
+  --btn-fg: oklch(1 0 0);
+}
+[data-theme='terminal'] .btn-error:not(.btn-outline, :disabled, [disabled], .btn-disabled) {
+  --btn-fg: #0a0a0a;
+}
 [data-theme='terminal'] :is(.alert-error, .alert-warning, .alert-success, .alert-info) {
   color: var(--alert-tint);
 }
@@ -2620,14 +2673,16 @@ a.dash-env:hover {
 .flash-dismiss {
   background: none;
   border: none;
+  border-radius: 0.25rem;
   cursor: pointer;
   font-size: 1.1rem;
   line-height: 1;
   padding: 0 0.25rem;
-  opacity: 0.5;
-  transition: opacity 0.15s;
+  /* Status tint pulled toward the text color, like alert text, so the × clears AA. */
+  color: color-mix(in oklab, currentColor 70%, var(--color-base-content));
+  transition: background-color 0.15s;
 }
-.flash-dismiss:hover { opacity: 1; }
+.flash-dismiss:hover { background: color-mix(in srgb, currentColor 12%, transparent); }
 .flash-success {
   background: color-mix(in oklch, var(--color-success) 10%, transparent);
   color: var(--color-success);
@@ -2906,7 +2961,7 @@ details[open] summary .collapse-icon {
 /* Auth Card */
 /* Hero Section (Landing) */
 .hero-gradient {
-  background: radial-gradient(ellipse at 50% 0%, rgba(124, 58, 237, 0.12) 0%, transparent 60%);
+  background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-primary) 12%, transparent) 0%, transparent 60%);
 }
 
 /* Table Styles */
@@ -2993,7 +3048,7 @@ details[open] summary .collapse-icon {
 }
 .process-card:hover {
   background: var(--hover-overlay, rgba(124, 58, 237, 0.04));
-  border-color: rgba(124, 58, 237, 0.15);
+  border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .process-card .process-name {
   display: flex;
@@ -3007,24 +3062,21 @@ details[open] summary .collapse-icon {
   gap: 0.5rem;
   margin-left: auto;
 }
-.process-card-idle {
+/* Idle dims the name and status, not the controls, so Logs/History stay readable. */
+.process-card-idle > :not(.process-controls) {
   opacity: 0.5;
 }
-.process-card-idle:hover {
+.process-card-idle:hover > :not(.process-controls) {
   opacity: 0.75;
 }
 .process-log-btn {
   min-height: 1.5rem;
   height: 1.5rem;
   padding: 0 0.375rem;
-  opacity: 0.4;
-  transition: opacity 0.15s ease;
-}
-.process-card:hover .process-log-btn {
-  opacity: 0.7;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
 }
 .process-log-btn:hover {
-  opacity: 1 !important;
+  color: var(--color-base-content);
 }
 .job-card {
   display: grid;
@@ -3044,7 +3096,7 @@ details[open] summary .collapse-icon {
 }
 .job-card:hover {
   background: var(--hover-overlay, rgba(124, 58, 237, 0.04));
-  border-color: rgba(124, 58, 237, 0.15);
+  border-color: color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .job-card .process-name {
   grid-column: 1;
@@ -3504,7 +3556,7 @@ a.pipeline-stage-body:hover {
 /* Deploy Steps (vertical) */
 .getting-started {
   background: var(--hover-overlay);
-  border: 1px solid rgba(124, 58, 237, 0.1);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 10%, transparent);
   border-radius: 0.75rem;
   padding: 1rem 1.25rem;
 }
@@ -3548,7 +3600,7 @@ a.pipeline-stage-body:hover {
 .deploy-step-active .deploy-step-number {
   background: var(--color-primary);
   color: white;
-  box-shadow: 0 0 12px rgba(124, 58, 237, 0.3);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
 }
 .deploy-step-pending .deploy-step-number {
   background: var(--surface-neutral);
@@ -3634,8 +3686,8 @@ a.pipeline-stage-body:hover {
   line-height: 1.4;
 }
 .change-pill-image {
-  background: rgba(59, 130, 246, 0.08);
-  color: rgba(59, 130, 246, 0.85);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: color-mix(in srgb, var(--color-accent) 85%, transparent);
 }
 .change-pill-config {
   background: color-mix(in srgb, var(--color-primary) 8%, transparent);
@@ -3648,7 +3700,7 @@ a.pipeline-stage-body:hover {
   align-items: center;
   gap: 0.25rem;
   font-size: 0.75rem;
-  color: var(--text-faintest);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
   transition: color 0.15s ease;
 }
 .change-details-toggle:hover {
@@ -3809,11 +3861,11 @@ a.pipeline-stage-body:hover {
   background: oklch(var(--bc) / 0.06);
   color: oklch(var(--bc) / 0.4);
 }
-.audit-verb-create { background: rgba(34, 197, 94, 0.1); color: rgba(34, 197, 94, 0.7); }
-.audit-verb-edit { background: rgba(59, 130, 246, 0.1); color: rgba(59, 130, 246, 0.7); }
-.audit-verb-delete { background: rgba(239, 68, 68, 0.1); color: rgba(239, 68, 68, 0.7); }
-.audit-verb-deploy { background: rgba(124, 58, 237, 0.1); color: rgba(124, 58, 237, 0.7); }
-.audit-verb-complete { background: rgba(34, 197, 94, 0.1); color: rgba(34, 197, 94, 0.7); }
+.audit-verb-create { background: color-mix(in srgb, var(--color-success) 10%, transparent); color: color-mix(in srgb, var(--color-success) 70%, transparent); }
+.audit-verb-edit { background: color-mix(in srgb, var(--color-info) 10%, transparent); color: color-mix(in srgb, var(--color-info) 70%, transparent); }
+.audit-verb-delete { background: color-mix(in srgb, var(--color-error) 10%, transparent); color: color-mix(in srgb, var(--color-error) 70%, transparent); }
+.audit-verb-deploy { background: color-mix(in srgb, var(--color-primary) 10%, transparent); color: color-mix(in srgb, var(--color-primary) 70%, transparent); }
+.audit-verb-complete { background: color-mix(in srgb, var(--color-success) 10%, transparent); color: color-mix(in srgb, var(--color-success) 70%, transparent); }
 .audit-row-body { flex: 1; min-width: 0; }
 .audit-row-primary {
   display: flex;
@@ -3961,7 +4013,7 @@ a.pipeline-stage-body:hover {
   max-height: 90vh;
   overflow-y: auto;
   background: var(--surface-card);
-  border: 1px solid rgba(124, 58, 237, 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
   border-radius: 0.75rem;
   padding: 1.5rem;
   box-shadow: 0 24px 48px var(--shadow-card);
@@ -3994,6 +4046,10 @@ a.pipeline-stage-body:hover {
   color: var(--color-primary-content);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
+.raw-editor-tab-active:hover {
+  /* Keep the hover rule above from darkening text on the primary background. */
+  color: var(--color-primary-content);
+}
 .raw-editor-textarea {
   width: 100%;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
@@ -4008,8 +4064,8 @@ a.pipeline-stage-body:hover {
   outline: none;
 }
 .raw-editor-textarea:focus {
-  border-color: rgba(124, 58, 237, 0.3);
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.1);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 .raw-editor-textarea::placeholder {
   color: #6b7280;
@@ -4084,8 +4140,8 @@ a.pipeline-stage-body:hover {
 }
 .guide-shortcut-active {
   color: var(--accent-text);
-  background: rgba(124, 58, 237, 0.08);
-  border: 1px solid rgba(124, 58, 237, 0.15);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 .guide-shortcut-arrow {
   font-size: 1rem;
@@ -4120,7 +4176,7 @@ a.pipeline-stage-body:hover {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.8125rem;
   color: var(--accent-text);
-  background: rgba(124, 58, 237, 0.08);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
 }
@@ -4139,6 +4195,11 @@ a.pipeline-stage-body:hover {
   color: var(--text-faint);
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* Git refs without a link: accent-tinted but pulled toward the text color, so
+   they read as refs at AA contrast without looking like the linked ones. */
+.ref-muted {
+  color: color-mix(in oklab, var(--accent-text) 55%, var(--color-base-content));
 }
 .build-meta-value,
 .deploy-meta-value {
@@ -5036,7 +5097,7 @@ a.pipeline-stage-body:hover {
   margin-top: 0.625rem;
   padding: 0.375rem 0.5rem;
   border-radius: 0.375rem;
-  background: color-mix(in oklch, var(--color-info, oklch(0.7 0.15 230)) 5%, transparent);
+  background: color-mix(in srgb, var(--color-primary) 5%, transparent);
   font-size: 0.6875rem;
   color: var(--text-faint);
   line-height: 1.4;
@@ -5926,9 +5987,9 @@ a.obs-pod-link:hover {
   border: 1px solid color-mix(in srgb, var(--color-accent, oklch(var(--a))) 12%, transparent);
 }
 .dpl-badge-manual {
-  background: color-mix(in srgb, var(--color-info, oklch(var(--in))) 6%, transparent);
-  color: var(--color-info, oklch(var(--in)));
-  border: 1px solid color-mix(in srgb, var(--color-info, oklch(var(--in))) 12%, transparent);
+  background: color-mix(in srgb, var(--text-bright) 5%, transparent);
+  color: var(--text-muted);
+  border: 1px solid color-mix(in srgb, var(--text-bright) 8%, transparent);
 }
 .dpl-badge-latest {
   background: color-mix(in srgb, oklch(var(--bc)) 5%, transparent);
@@ -6302,13 +6363,17 @@ a.obs-pod-link:hover {
   flex: 1;
   min-height: 0;
   width: 100%;
+  --log-tint: var(--text-bright);
 }
-/* The log box stays dark (#0a0a0f) in every theme. Outside the terminal theme,
+.struct-log[data-tint="accent"] {
+  --log-tint: var(--accent-on-dark);
+}
+/* The log and shell boxes stay dark (#0a0a0f / #000) in every theme. Outside the terminal theme,
    the neutral tokens used inside it take light-on-dark values that pass AA
    there, and the light theme's status colors (tuned for white) are swapped
    for the dark theme's. */
-[data-theme="light"] .struct-log,
-[data-theme="dark"] .struct-log {
+[data-theme="light"] :is(.struct-log, .term-box),
+[data-theme="dark"] :is(.struct-log, .term-box) {
   --text-bright: rgba(226, 226, 233, 0.9);
   --text-muted: rgba(226, 226, 233, 0.65);
   --text-faint: rgba(226, 226, 233, 0.55);
@@ -6368,6 +6433,24 @@ a.obs-pod-link:hover {
   color: var(--text-bright);
   background: var(--surface-neutral);
 }
+.term-tint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+/* Previews the accent; dimmed until the toggle is on. Square: circles mean status. */
+.term-tint-swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 0.125rem;
+  background: var(--accent-on-dark);
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+.term-tint-btn:hover .term-tint-swatch,
+.term-tint-btn[aria-pressed="true"] .term-tint-swatch {
+  opacity: 1;
+}
 .struct-log-jump-error {
   color: var(--color-error);
 }
@@ -6417,8 +6500,8 @@ a.obs-pod-link:hover {
   font-weight: 500;
   padding: 0.3rem 0.625rem;
   border-radius: 9999px;
-  background: var(--color-primary);
-  color: var(--color-primary-content, #fff);
+  background: var(--log-tint);
+  color: #0a0a0f;
   border: none;
   cursor: pointer;
   box-shadow: 0 4px 16px var(--shadow-card);
@@ -6469,7 +6552,7 @@ a.obs-pod-link:hover {
   text-align: left;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.75rem;
-  color: var(--text-bright);
+  color: var(--log-tint);
 }
 .log-step-toggle:hover {
   background: var(--hover-overlay);
@@ -6572,6 +6655,756 @@ a.obs-pod-link:hover {
     animation: none;
   }
   .log-step-chevron {
+    transition: none;
+  }
+  .tab-item .tab-caret {
+    transition: none;
+  }
+}
+
+/* ====================================================================== */
+/* Cluster switcher                                                       */
+/* ====================================================================== */
+
+/* Cluster colors are the theme accent presets (accentText in _base.html's ACCENT_PRESETS).
+   'current' is the accent actually in use here, which is the cluster's color unless the
+   user picked another. Status is round; identity is square. */
+[data-cluster-color='current'] { --cluster-hue: var(--accent-text); }
+[data-cluster-color='purple']  { --cluster-hue: #a78bfa; }
+[data-cluster-color='blue']    { --cluster-hue: #60a5fa; }
+[data-cluster-color='teal']    { --cluster-hue: #2dd4bf; }
+[data-cluster-color='rose']    { --cluster-hue: #fb7185; }
+[data-cluster-color='amber']   { --cluster-hue: #fbbf24; }
+[data-cluster-color='emerald'] { --cluster-hue: #34d399; }
+[data-cluster-color='white']   { --cluster-hue: #e8e8e8; }
+[data-cluster-color='dark']    { --cluster-hue: #888888; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='purple']  { --cluster-hue: #7c3aed; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='blue']    { --cluster-hue: #2563eb; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='teal']    { --cluster-hue: #0d9488; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='rose']    { --cluster-hue: #e11d48; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='amber']   { --cluster-hue: #d97706; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='emerald'] { --cluster-hue: #059669; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='white']   { --cluster-hue: #4b5563; }
+:is([data-theme='light'], [data-theme='contrast-light']) [data-cluster-color='dark']    { --cluster-hue: #1f2937; }
+
+.cluster-swatch {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 0.1875rem;
+  background: var(--cluster-hue);
+  box-shadow: inset 0 0 0 1px oklch(1 0 0 / 0.14);
+  flex-shrink: 0;
+}
+:is([data-theme='light'], [data-theme='contrast-light']) .cluster-swatch {
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.12);
+}
+
+/* The horizon: a 2px line in the current cluster's hue across the top of every page. */
+.cluster-horizon {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--cluster-hue, transparent);
+  transform-origin: left center;
+  pointer-events: none;
+  z-index: 1;
+}
+.cluster-horizon-sweep {
+  position: absolute;
+  inset: 0;
+  background: var(--cluster-hue);
+  transform: scaleX(0);
+  transform-origin: left center;
+}
+
+/* Root crumb: cluster, then organization, then project. */
+.cluster-crumb-wrap {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex-shrink: 0;
+  margin: 0 -0.625rem 0 -0.5rem;
+}
+.cluster-crumb-wrap[hidden] {
+  display: none;
+}
+.cluster-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.875rem;
+  max-width: 14rem;
+  padding: 0 0.3125rem 0 0.5rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: var(--text-bright);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.cluster-crumb:hover,
+.cluster-crumb[aria-expanded='true'] {
+  background: var(--hover-overlay-strong);
+}
+.cluster-crumb:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+/* Users without switcher access still see where they are; it just isn't a control. */
+.cluster-crumb-static,
+.cluster-crumb-static:hover {
+  padding-right: 0.5rem;
+  background: transparent;
+  cursor: default;
+}
+.cluster-crumb-roll {
+  display: inline-grid;
+  min-width: 0;
+  overflow: hidden;
+}
+.cluster-crumb-roll > * {
+  grid-area: 1 / 1;
+}
+.cluster-crumb-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.cluster-crumb-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cluster-crumb-chev {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.cluster-arrival {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    max-width 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    margin 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.4s ease;
+}
+.cluster-arrival.is-on {
+  max-width: 12rem;
+  margin-left: 0.25rem;
+  opacity: 1;
+}
+.cluster-arrival svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex-shrink: 0;
+}
+.cluster-kbd {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.625rem;
+  color: var(--text-faint);
+}
+
+/* Leaving for another cluster: the page steps back while the next one loads. */
+.cluster-leaving .app-content {
+  opacity: 0.4;
+  filter: saturate(0.7);
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+/* Jump palette */
+.cluster-palette-root {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+.cluster-palette-root[hidden] {
+  display: none;
+}
+.cp-scrim {
+  position: absolute;
+  inset: 0;
+  background: oklch(0.08 0.015 275 / 0.55);
+  animation: cp-fade 0.15s ease-out;
+}
+:is([data-theme='light'], [data-theme='contrast-light']) .cp-scrim {
+  background: oklch(0.25 0.02 275 / 0.2);
+}
+.cluster-palette {
+  position: relative;
+  width: min(38rem, calc(100vw - 2rem));
+  margin: 12vh auto 0;
+  overflow: hidden;
+  background: var(--color-base-300);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  box-shadow: 0 24px 56px var(--shadow-card), 0 2px 8px var(--shadow-card);
+  animation: cp-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes cp-fade {
+  from { opacity: 0; }
+}
+@keyframes cp-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+}
+.cp-search {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  height: 3.25rem;
+  padding: 0 0.875rem 0 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.cp-search[hidden] {
+  display: none;
+}
+.cp-search-icon {
+  width: 1rem;
+  height: 1rem;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.cp-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-bright);
+  font-size: 0.9375rem;
+  caret-color: var(--color-primary);
+}
+.cp-input::placeholder {
+  color: var(--text-faint);
+}
+.cp-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3125rem 0.375rem 0.3125rem 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.cp-scope:hover {
+  color: var(--text-bright);
+  background: var(--hover-overlay);
+}
+.cp-scope:focus-visible,
+.cp-back:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.cluster-palette kbd {
+  display: inline-block;
+  min-width: 1.125rem;
+  padding: 0.125rem 0.3125rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.25rem;
+  background: var(--surface-inset);
+  color: var(--text-muted);
+  font: 500 0.625rem/1 'JetBrains Mono', ui-monospace, monospace;
+  text-align: center;
+}
+.cp-list {
+  max-height: min(23rem, 58vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.3125rem;
+  scrollbar-width: thin;
+}
+.cp-list[hidden] {
+  display: none;
+}
+.cp-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
+  row-gap: 0.1875rem;
+  align-items: center;
+  padding: 0.5625rem 0.75rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+}
+.cp-row[aria-selected='true'] {
+  background: color-mix(in oklab, var(--color-primary) 13%, transparent);
+}
+:is([data-theme='light'], [data-theme='contrast-light']) .cp-row[aria-selected='true'] {
+  background: color-mix(in oklab, var(--color-primary) 8%, transparent);
+}
+.cp-row .cluster-swatch,
+.cp-action-icon {
+  grid-row: 1 / span 2;
+  align-self: start;
+  margin-top: 0.25rem;
+}
+.cp-name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  color: var(--text-bright);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.cp-region {
+  color: var(--text-faint);
+  font: 500 0.6875rem/1 'JetBrains Mono', ui-monospace, monospace;
+}
+.cp-dest {
+  grid-column: 2;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font: 400 0.6875rem/1.35 'JetBrains Mono', ui-monospace, monospace;
+  white-space: nowrap;
+}
+/* The landing path is the point of the preview; the host gives way first. */
+.cp-host {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+}
+.cp-dest b {
+  flex-shrink: 0;
+  color: var(--text-bright);
+  font-weight: 500;
+}
+.cp-meta {
+  grid-column: 3;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--text-faint);
+  font: 500 0.6875rem/1 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.cp-reach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4375rem;
+  min-width: 4.5rem;
+}
+.cp-reach.is-up::after,
+.cp-reach.is-down::after {
+  content: '';
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--color-success);
+}
+.cp-reach.is-down {
+  color: var(--color-error);
+}
+.cp-reach.is-down::after {
+  background: var(--color-error);
+}
+.cp-reach.is-pending::after {
+  content: '';
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--text-ghost);
+  animation: cp-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cp-pulse {
+  50% { opacity: 0.35; }
+}
+.cp-row-down .cp-name,
+.cp-row-down .cluster-swatch {
+  opacity: 0.6;
+}
+.cp-row-current {
+  cursor: default;
+}
+.cp-tag {
+  padding: 0.1875rem 0.4375rem;
+  border: 1px solid var(--border-color);
+  border-radius: 9999px;
+  font: 500 0.625rem/1 Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.cp-num {
+  width: 0.75rem;
+  text-align: center;
+}
+.cp-remove {
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0 -0.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.cp-remove svg {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+.cp-row:hover .cp-remove,
+.cp-row[aria-selected='true'] .cp-remove {
+  opacity: 1;
+}
+.cp-remove:hover {
+  color: var(--color-error);
+}
+.cp-row-action .cp-name {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.cp-row-action[aria-selected='true'] .cp-name {
+  color: var(--text-bright);
+}
+.cp-action-icon {
+  display: grid;
+  place-items: center;
+  width: 0.625rem;
+  height: 0.625rem;
+  color: var(--text-faint);
+}
+.cp-action-icon svg {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+.cp-empty {
+  padding: 0.625rem 0.75rem 0.375rem;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+.cp-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5625rem 0.875rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+}
+.cp-foot[hidden] {
+  display: none;
+}
+.cp-keys {
+  display: flex;
+  gap: 0.875rem;
+  white-space: nowrap;
+}
+.cp-keys kbd + kbd {
+  margin-left: 0.125rem;
+}
+
+/* Add a personal cluster */
+.cp-add {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 1.125rem 1.125rem;
+}
+.cp-add[hidden] {
+  display: none;
+}
+.cp-add-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: -0.25rem 0 0 -0.375rem;
+  color: var(--text-bright);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.cp-back {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 0.375rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.cp-back:hover {
+  background: var(--hover-overlay-strong);
+  color: var(--text-bright);
+}
+.cp-back svg {
+  width: 1rem;
+  height: 1rem;
+}
+.cp-field {
+  display: grid;
+  gap: 0.375rem;
+}
+.cp-field > span {
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.cp-field input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--surface-inset);
+  color: var(--text-bright);
+  font-size: 0.8125rem;
+}
+.cp-field input[name='url'] {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 0.75rem;
+}
+.cp-field input::placeholder {
+  color: var(--text-faint);
+}
+.cp-field input:focus {
+  outline: 0;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+.cp-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.cp-swatch-opt {
+  display: grid;
+  place-items: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  cursor: pointer;
+}
+.cp-swatch-opt input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.cp-swatch-opt .cluster-swatch {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 0.25rem;
+}
+.cp-swatch-opt:hover {
+  background: var(--hover-overlay-strong);
+}
+.cp-swatch-opt:has(input:checked) {
+  border-color: var(--text-faint);
+  background: var(--hover-overlay-strong);
+}
+.cp-swatch-opt:has(input:focus-visible) {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.cp-add-error {
+  margin: -0.5rem 0 0;
+  color: var(--color-error);
+  font-size: 0.75rem;
+}
+.cp-add-error:empty {
+  display: none;
+}
+.cp-add-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.cp-add-note {
+  flex: 1;
+  color: var(--text-faint);
+  font-size: 0.6875rem;
+}
+
+@media (hover: none) {
+  .cp-keys,
+  .cp-num,
+  .cp-scope kbd {
+    display: none;
+  }
+  .cp-remove {
+    opacity: 1;
+  }
+}
+@media (max-width: 639px) {
+  .cluster-palette {
+    width: calc(100vw - 1rem);
+    margin-top: 0.5rem;
+  }
+  .cp-keys,
+  .cp-num,
+  .cp-scope kbd {
+    display: none;
+  }
+  .cp-meta {
+    gap: 0.5rem;
+  }
+  .cp-reach {
+    min-width: 0;
+  }
+  .cp-foot {
+    justify-content: flex-start;
+  }
+  .cluster-crumb {
+    max-width: 9rem;
+  }
+  .cp-dest b {
+    font-weight: 400;
+  }
+  .cp-add-actions {
+    flex-wrap: wrap;
+  }
+  .cp-add-note {
+    flex-basis: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cluster-palette,
+  .cp-scrim,
+  .cp-reach.is-pending::after {
+    animation: none;
+  }
+  .cluster-arrival,
+  .cluster-leaving .app-content {
+    transition: none;
+  }
+}
+
+/* Find on page: the filter field on long infra pages. '/' focuses it. */
+.page-find {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.page-find > svg {
+  position: absolute;
+  left: 0.5625rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  pointer-events: none;
+}
+.page-find input {
+  height: 1.875rem;
+  width: 15rem;
+  max-width: 100%;
+  padding: 0 3.25rem 0 1.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--surface-inset);
+  color: var(--text-bright);
+  font-size: 0.75rem;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out, width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.page-find input::placeholder {
+  color: color-mix(in oklab, var(--color-base-content) 62%, transparent);
+}
+.page-find input::-webkit-search-cancel-button {
+  display: none;
+}
+.page-find input:focus {
+  outline: none;
+  width: 19rem;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+.page-find kbd,
+.page-find-count {
+  position: absolute;
+  right: 0.4375rem;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.page-find-count {
+  font: 500 0.6875rem/1 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  opacity: 0;
+}
+.page-find input:not(:placeholder-shown) ~ .page-find-count {
+  opacity: 1;
+}
+.page-find input:focus ~ kbd,
+.page-find input:not(:placeholder-shown) ~ kbd {
+  opacity: 0;
+}
+.key-hint,
+.page-find kbd {
+  display: inline-block;
+  min-width: 1.125rem;
+  padding: 0.125rem 0.3125rem;
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  border-radius: 0.3125rem;
+  background: var(--surface-card);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  font: 500 0.625rem/1 'JetBrains Mono', ui-monospace, monospace;
+  text-align: center;
+}
+.key-hints {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  color: color-mix(in oklab, var(--color-base-content) 62%, transparent);
+  white-space: nowrap;
+}
+.key-hints .key-hint + span {
+  margin-right: 0.375rem;
+}
+mark.find-hit {
+  background: color-mix(in srgb, var(--color-primary) 24%, transparent);
+  color: inherit;
+  border-radius: 0.1875rem;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, transparent);
+}
+/* Keyboard hints only where a keyboard is likely. */
+@media (hover: none), (max-width: 639px) {
+  .page-find kbd,
+  .key-hints {
+    display: none;
+  }
+}
+@media (max-width: 639px) {
+  .page-find,
+  .page-find input,
+  .page-find input:focus {
+    width: 100%;
+  }
+  .page-find input {
+    padding-right: 2.75rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-find input {
     transition: none;
   }
 }

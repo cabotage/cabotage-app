@@ -113,7 +113,6 @@ class OrgRow:
     is_member: bool
     is_org_admin: bool
     member_count: int
-    color_index: int
     projects: list[ProjectRow]
     expanded: bool = True
 
@@ -367,7 +366,6 @@ def _build_org_rows(
                 is_member=org.id in memberships,
                 is_org_admin=memberships.get(org.id, False),
                 member_count=member_counts.get(org.id, 0),
-                color_index=org.id.int % 6,
                 projects=project_rows,
             )
         )

@@ -46,12 +46,15 @@ from cabotage.celery.tasks import (
     deploy_tailscale_operator,
     dispatch_pipeline_notification,
     process_github_hook,
-    run_deploy,
     run_image_build,
     run_release_build,
     teardown_tailscale_operator,
 )
-from cabotage.celery.tasks.deploy import resize_deployment, scale_deployment
+from cabotage.celery.tasks.deploy import (
+    resize_deployment,
+    scale_deployment,
+    start_deployment,
+)
 from cabotage.celery.tasks.github import discover_check_names
 from cabotage.celery.tasks.notify import dispatch_autodeploy_notification
 from cabotage.server import (
@@ -3423,6 +3426,7 @@ def project_application(org_slug, project_slug, app_slug, env_slug=None):
         environment=environment,
         environments=environments,
         deploy_form=ReleaseDeployForm(),
+        can_administer=AdministerApplicationPermission(application.id).can(),
         scale_form=scale_form,
         view_releases=version_class(Release)
         .query.filter_by(application_id=application.id)
@@ -3995,8 +3999,48 @@ def _add_raw_config_entry(
     entries[name] = value
 
 
+_ENV_ESCAPES = {'"': '"', "\\": "\\", "n": "\n"}
+
+
+def _read_quoted_value(lines: list[str], lineno: int, rest: str) -> tuple[str, int]:
+    """Read a double-quoted ENV value, which may span lines.
+
+    ``rest`` is the text after the opening quote on 1-based line ``lineno``.
+    Supports the escapes ``\"``, ``\\`` and ``\n``; any other backslash is kept.
+    Returns the value and the line the closing quote was found on.
+    """
+    start = lineno
+    chars: list[str] = []
+    while True:
+        i = 0
+        while i < len(rest):
+            ch = rest[i]
+            if ch == "\\" and i + 1 < len(rest):
+                chars.append(_ENV_ESCAPES.get(rest[i + 1], "\\" + rest[i + 1]))
+                i += 2
+                continue
+            if ch == '"':
+                if rest[i + 1 :].strip():
+                    raise ValueError(
+                        f"Line {lineno}: unexpected text after closing quote."
+                    )
+                return "".join(chars), lineno
+            chars.append(ch)
+            i += 1
+        if lineno >= len(lines):
+            raise ValueError(f"Line {start}: unterminated quote.")
+        chars.append("\n")
+        rest = lines[lineno]
+        lineno += 1
+
+
 def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
-    """Parse Raw Editor input into ``{name: value}``, keeping values verbatim."""
+    """Parse Raw Editor input into ``{name: value}``.
+
+    Unquoted ENV values are kept verbatim; a value starting with a double quote
+    is read by ``_read_quoted_value``. The editor's preview and tab conversion
+    (``parseEditor`` in main.js) mirror these rules; keep them in step.
+    """
     entries: dict[str, str] = {}
     seen_names: set[str] = set()
     if fmt == "json":
@@ -4013,16 +4057,38 @@ def _parse_raw_config(raw_text: str, fmt: str) -> dict[str, str]:
             _add_raw_config_entry(entries, seen_names, name, value, f"JSON key {name}")
         return entries
 
-    for lineno, line in enumerate(raw_text.splitlines(), start=1):
+    lines = raw_text.splitlines()
+    lineno = 0
+    while lineno < len(lines):
+        lineno += 1
+        start = lineno
+        line = lines[lineno - 1]
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         name, sep, value = line.partition("=")
         if not sep:
             raise ValueError(f"Line {lineno}: expected KEY=VALUE.")
-        _add_raw_config_entry(
-            entries, seen_names, name.strip(), value, f"Line {lineno}"
-        )
+        if value.startswith('"'):
+            value, lineno = _read_quoted_value(lines, lineno, value[1:])
+        _add_raw_config_entry(entries, seen_names, name.strip(), value, f"Line {start}")
     return entries
+
+
+def _parse_raw_config_baseline(raw: str) -> dict[str, str]:
+    """Parse the ``[{name, value, secret}]`` the editor opened with into ``{NAME: value}``."""
+    if not raw:
+        return {}
+    data = json.loads(raw)
+    if not isinstance(data, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("name"), str)
+        and isinstance(item.get("value"), str)
+        for item in data
+    ):
+        raise ValueError(
+            "Could not read the editor's starting values; reload and try again."
+        )
+    return {item["name"].upper(): item["value"] for item in data}
 
 
 @user_blueprint.route(
@@ -4051,6 +4117,7 @@ def project_application_configuration_bulk(
         entries = _parse_raw_config(
             request.form.get("raw_text", ""), request.form.get("format", "env")
         )
+        baseline = _parse_raw_config_baseline(request.form.get("baseline", ""))
         existing_configurations = {
             c.name.upper(): c
             for c in Configuration.query.filter_by(
@@ -4062,6 +4129,10 @@ def project_application_configuration_bulk(
         for name, value in entries.items():
             if len(value) > 2048:
                 raise ValueError(f"{name}: Value must be 2048 characters or fewer.")
+            if value == baseline.get(name.upper()):
+                # Same as when the editor opened, so skip; checked before
+                # create so a variable deleted meanwhile isn't recreated.
+                continue
             configuration = existing_configurations.get(name.upper())
             fields = {
                 "application_id": str(application.id),
@@ -4079,7 +4150,11 @@ def project_application_configuration_bulk(
                     name=name,
                 )
                 verb = "create"
-            elif value == configuration.value:  # unchanged, or a copied **secure**
+            elif value == configuration.value or (
+                configuration.secret and value == "**secure**"
+            ):
+                # Unchanged in the DB, or the secret placeholder; the latter is
+                # needed without a baseline, e.g. seeded rows holding real values.
                 continue
             else:
                 form = EditConfigurationForm(
@@ -4097,6 +4172,22 @@ def project_application_configuration_bulk(
                 )
                 raise ValueError(f"{name}: {error}")
             pending.append((configuration, value, verb))
+        # Opt-in: delete variables the editor opened with that are no longer in
+        # the text. Keyed on the baseline, so nothing added meanwhile is touched.
+        deletions: list[Configuration] = []
+        if request.form.get("delete_missing") == "y":
+            submitted = {name.upper() for name in entries}
+            for upper_name in baseline:
+                configuration = existing_configurations.get(upper_name)
+                if (
+                    upper_name in submitted
+                    or configuration is None
+                    or configuration.name == "CABOTAGE_SENTINEL"
+                ):
+                    continue
+                deletions.append(configuration)
+            if deletions and len(deletions) >= len(existing_configurations):
+                raise ValueError("Cannot delete every variable.")
     except ValueError as exc:
         flash(str(exc), "error")
     else:
@@ -4108,6 +4199,21 @@ def project_application_configuration_bulk(
                     org, project, application, app_env, configuration, verb
                 )
                 saved_names.append(configuration.name)
+            for configuration in deletions:
+                db.session.delete(configuration)
+                db.session.flush()
+                db.session.add(
+                    Activity(
+                        verb="delete",
+                        object=configuration,
+                        data={
+                            "user_id": str(current_user.id),
+                            "timestamp": datetime.datetime.now(
+                                datetime.UTC
+                            ).isoformat(),
+                        },
+                    )
+                )
             db.session.commit()
         except Exception:
             db.session.rollback()
@@ -4121,7 +4227,12 @@ def project_application_configuration_bulk(
             else:
                 flash("Failed to save variables.", "error")
         else:
-            flash(f"Saved {len(pending)} variable(s).", "success")
+            message = f"Saved {len(pending)} variable(s)."
+            if deletions:
+                message = (
+                    f"Saved {len(pending)} and deleted {len(deletions)} variable(s)."
+                )
+            flash(message, "success")
     return redirect(redirect_url)
 
 
@@ -5895,16 +6006,25 @@ def deployment_detail_legacy(deployment_id):
 )
 @login_required
 def application_release_create(org_slug: str, project_slug: str, app_slug: str):
-    org, _project, application = _lookup_app_context(org_slug, project_slug, app_slug)
+    deploy = request.form.get("deploy") == "true"
+    org, project, application = _lookup_app_context(
+        org_slug, project_slug, app_slug, require_admin=deploy
+    )
 
     environment_id = request.form.get("environment_id")
     app_env = _resolve_app_env(application, environment_id=environment_id)
 
     release = application.create_release(app_env=app_env)
-    release.release_metadata = {
-        "trigger": "manual_release",
-        "triggered_by": current_user.username,
-    }
+    release.release_metadata = (
+        {
+            "deploy_after_release": True,
+            "trigger": "manual_release_deploy",
+            "triggered_by": current_user.username,
+            "triggered_by_user_id": str(current_user.id),
+        }
+        if deploy
+        else {"trigger": "manual_release", "triggered_by": current_user.username}
+    )
     db.session.add(release)
     db.session.flush()
     activity = Activity(
@@ -5927,6 +6047,20 @@ def application_release_create(org_slug: str, project_slug: str, app_slug: str):
         str(app_env.id),
         detail=f"Triggered by: {current_user.username}",
     )
+    if deploy:
+        return redirect(
+            url_for(
+                "user.project_application",
+                org_slug=org_slug,
+                project_slug=project_slug,
+                app_slug=app_slug,
+                env_slug=(
+                    app_env.environment.slug
+                    if app_env.environment_id and project.environments_enabled
+                    else None
+                ),
+            )
+        )
     return redirect(
         url_for(
             "user.release_detail",
@@ -6522,66 +6656,17 @@ def application_scale_legacy(application_id):
 )
 @login_required
 def release_deploy(org_slug, project_slug, app_slug, release_id):
-    org, _project, application = _lookup_app_context(
+    _org, _project, application = _lookup_app_context(
         org_slug, project_slug, app_slug, require_admin=True
     )
     release = Release.query.filter_by(
         id=release_id, application_id=application.id
     ).first_or_404()
-    deployment = Deployment(
-        application_id=release.application.id,
-        application_environment_id=release.application_environment_id,
-        release=release.asdict,
-        deploy_metadata={
-            "trigger": "manual_deploy",
-            "triggered_by": current_user.username,
-        },
+    deployment = start_deployment(
+        release,
+        {"trigger": "manual_deploy", "triggered_by": current_user.username},
+        str(current_user.id),
     )
-    db.session.add(deployment)
-    db.session.flush()
-    activity = Activity(
-        verb="deploy",
-        object=deployment,
-        data={
-            "user_id": str(current_user.id),
-            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
-        },
-    )
-    db.session.add(activity)
-    db.session.commit()
-    if current_app.config["KUBERNETES_ENABLED"]:
-        dispatch_pipeline_notification.delay(
-            "pipeline.deploy",
-            "Deployment",
-            str(deployment.id),
-            str(org.id),
-            str(application.id),
-            str(release.application_environment_id)
-            if release.application_environment_id
-            else None,
-            detail=f"Triggered by: {current_user.username}",
-        )
-        deployment_id = deployment.id
-        run_deploy.delay(deployment_id=deployment.id)
-        deployment = Deployment.query.filter_by(id=deployment_id).first_or_404()
-    else:
-        from cabotage.celery.tasks.deploy import fake_deploy_release
-
-        fake_deploy_release(deployment)
-        deployment.complete = True
-        db.session.commit()
-        dispatch_pipeline_notification.delay(
-            "pipeline.deploy",
-            "Deployment",
-            str(deployment.id),
-            str(org.id),
-            str(application.id),
-            str(release.application_environment_id)
-            if release.application_environment_id
-            else None,
-            detail=f"Triggered by: {current_user.username}",
-            complete=True,
-        )
     return redirect(
         url_for(
             "user.deployment_detail",

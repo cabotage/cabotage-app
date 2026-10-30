@@ -177,6 +177,17 @@ class Config(metaclass=MetaFlaskEnv):
     KUBERNETES_BUILD_NAMESPACE = "cabotage-tenant-builds"
     NETWORK_POLICIES_ENABLED = False
     ORGANIZATION_REQUESTS_ENABLED = False
+    LEGAL_PROFILE = None
+    LEGAL_URL = None
+    LEGAL_TERMS_URL = None
+    LEGAL_PRIVACY_URL = None
+    LEGAL_ACCEPTABLE_USE_URL = None
+    # JSON list of sibling Cabotage installs for the cluster switcher; see
+    # cabotage/server/main/clusters.py.
+    CLUSTERS = None
+    CLUSTER_NAME = None
+    # Who sees other clusters and the jump palette: "admins" or "users".
+    CLUSTER_SWITCHER_ACCESS = "admins"
     BACKING_SERVICE_POSTGRES_ENABLED = False
     BACKING_SERVICE_REDIS_ENABLED = False
     BACKING_SERVICES_POOL = None
@@ -232,3 +243,8 @@ class Config(metaclass=MetaFlaskEnv):
     COST_AWS_REGION = "us-east-2"
     COST_AWS_PRICING_API_REGION = "us-east-1"
     COST_STORAGE_CLASS = None
+    COST_AWS_ACTUALS_ENABLED = False
+    COST_AWS_ACTUALS_TAG = None
+    COST_AWS_ACCOUNT_ID = None
+    # JSON array of Cost Explorer service names.
+    COST_AWS_ACTUALS_SERVICES = None
