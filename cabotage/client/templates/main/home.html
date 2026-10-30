@@ -1030,7 +1030,12 @@
             .then(function (response) { return response.ok ? response.text() : Promise.reject(response.status); })
             .then(function (html) {
               var next = new DOMParser().parseFromString(html, 'text/html').querySelector('[data-dash]');
-              if (!next) return;
+              // Signed out or no dashboard any more: stop live updates.
+              if (!next) {
+                root.setAttribute('data-refresh', '0');
+                root.querySelector('[data-dash-live]').hidden = true;
+                return;
+              }
               if (next.getAttribute('data-signature') !== root.getAttribute('data-signature')) {
                 ['calm', 'kpis', 'tree', 'rail'].forEach(function (name) {
                   var selector = '[data-dash-region="' + name + '"]';
