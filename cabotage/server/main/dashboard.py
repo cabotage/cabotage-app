@@ -19,7 +19,7 @@ from typing import cast
 
 from flask import url_for
 from sqlalchemy import and_, case, func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from cabotage.server import db
 from cabotage.server.models.auth import Organization, User
@@ -476,6 +476,7 @@ def _newest_deploys(
         return []
     deployments = db.session.scalars(
         select(Deployment)
+        .options(defer(Deployment.deploy_log), defer(Deployment.release))
         .where(Deployment.application_environment_id.in_(list(environments)))
         .order_by(Deployment.created.desc())
         .limit(limit)
