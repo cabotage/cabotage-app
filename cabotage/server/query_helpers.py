@@ -138,11 +138,13 @@ def compute_ae_status_sets(ae_ids):
     """Batch-compute deployment/image status for a list of ApplicationEnvironment IDs.
 
     Returns dict with keys: deploying_ae_ids, completed_ae_ids, running_ae_ids,
-    building_ae_ids, errored_ae_ids, last_deploy_by_ae, deploy_count
+    deploy_failed_ae_ids, building_ae_ids, errored_ae_ids, last_deploy_by_ae,
+    deploy_count
     """
     deploying_ae_ids = set()
     completed_ae_ids = set()
     running_ae_ids = set()
+    deploy_failed_ae_ids = set()
     building_ae_ids = set()
     errored_ae_ids = set()
     last_deploy_by_ae = {}
@@ -153,6 +155,7 @@ def compute_ae_status_sets(ae_ids):
             "deploying_ae_ids": deploying_ae_ids,
             "completed_ae_ids": completed_ae_ids,
             "running_ae_ids": running_ae_ids,
+            "deploy_failed_ae_ids": deploy_failed_ae_ids,
             "building_ae_ids": building_ae_ids,
             "errored_ae_ids": errored_ae_ids,
             "last_deploy_by_ae": last_deploy_by_ae,
@@ -187,6 +190,7 @@ def compute_ae_status_sets(ae_ids):
     )
     deploying_ae_ids = {r[0] for r in latest_deploys if not r[1] and not r[2]}
     running_ae_ids = {r[0] for r in latest_deploys if r[1] or not r[2]}
+    deploy_failed_ae_ids = {r[0] for r in latest_deploys if r[2]}
 
     # Completed deploy stats: count + last deploy per ae
     deploy_stats = (
@@ -241,6 +245,7 @@ def compute_ae_status_sets(ae_ids):
         "deploying_ae_ids": deploying_ae_ids,
         "completed_ae_ids": completed_ae_ids,
         "running_ae_ids": running_ae_ids,
+        "deploy_failed_ae_ids": deploy_failed_ae_ids,
         "building_ae_ids": building_ae_ids,
         "errored_ae_ids": errored_ae_ids,
         "last_deploy_by_ae": last_deploy_by_ae,
