@@ -78,6 +78,18 @@ window.pageFind = window.pageFind || (function() {
       }
     });
   }
-  return { esc: esc, terms: terms, matches: matches, mark: mark, isTyping: isTyping, bindSlash: bindSlash };
+  // Sticky headers need the table's wrapper to stop scrolling sideways, which
+  // is only safe while the table fits. Flag the wrapper .is-fit when it does,
+  // so a narrow window or a large default font keeps horizontal scrolling.
+  function stickWhenFits(wrap) {
+    var table = wrap && wrap.querySelector('table');
+    if (!table || !('ResizeObserver' in window)) return;
+    var check = function() { wrap.classList.toggle('is-fit', table.offsetWidth <= wrap.clientWidth + 1); };
+    var ro = new ResizeObserver(check);
+    ro.observe(wrap);
+    ro.observe(table);
+  }
+  return { esc: esc, terms: terms, matches: matches, mark: mark, isTyping: isTyping, bindSlash: bindSlash,
+    stickWhenFits: stickWhenFits };
 })();
 </script>

@@ -340,14 +340,17 @@
   .cost-rail:focus-within .page-find, .cost-rail:focus-within .page-find input { width: 100%; flex: 1; }
 }
 
-/* ── Long tables: column headers (and the open namespace) stay in view ── */
+/* ── Long tables: column headers (and the open namespace) stay in view ──
+   Only while the table fits its card (.is-fit, set by pageFind.stickWhenFits);
+   otherwise the wrapper keeps scrolling sideways. */
 .cost-sticky-table thead th { background: var(--surface-card); }
 @media (min-width: 768px) {
-  .cost-table-scroll.is-sticky { overflow-x: visible; }
+  .cost-table-scroll.is-sticky.is-fit { overflow-x: visible; }
+  /* Box model stays the same either way, so toggling .is-fit never changes the width it measures. */
   .cost-sticky-table { border-collapse: separate; border-spacing: 0; }
-  .cost-sticky-table thead th { position: sticky; top: calc(var(--topbar-h, 0px) + var(--cost-rail-h, 0px)); z-index: 3;
-    border-bottom: 0; box-shadow: inset 0 -1px 0 var(--border-color); }
-  .cost-sticky-table tr.cost-wl-group.is-open > td { position: sticky; top: calc(var(--topbar-h, 0px) + var(--cost-rail-h, 0px) + var(--thead-h, 2.0625rem));
+  .cost-sticky-table thead th { border-bottom: 0; box-shadow: inset 0 -1px 0 var(--border-color); }
+  .is-fit > .cost-sticky-table thead th { position: sticky; top: calc(var(--topbar-h, 0px) + var(--cost-rail-h, 0px)); z-index: 3; }
+  .is-fit > .cost-sticky-table tr.cost-wl-group.is-open > td { position: sticky; top: calc(var(--topbar-h, 0px) + var(--cost-rail-h, 0px) + var(--thead-h, 2.0625rem));
     z-index: 2; background: var(--surface-card); }
 }
 
@@ -2690,6 +2693,7 @@ tr.cost-wl-child > td { color: var(--text-muted); }
     if (hit) railJump(hit, true);
   });
   find.bindSlash(findInput);
+  document.querySelectorAll('.cost-table-scroll.is-sticky').forEach(find.stickWhenFits);
 
   function renderAll() {
     var report = state.report;
