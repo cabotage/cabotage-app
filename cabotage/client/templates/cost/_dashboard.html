@@ -2667,7 +2667,8 @@ tr.cost-wl-child > td { color: var(--text-muted); }
     var url = new URL(location.href);
     if (findInput.value.trim()) url.searchParams.set('q', findInput.value.trim());
     else url.searchParams.delete('q');
-    history.replaceState(null, '', url);
+    // Safari throws once replaceState passes its rate limit; the URL is a nicety.
+    try { history.replaceState(null, '', url); } catch (e) { /* rate limited */ }
   }
 
   var spyFrame = 0;
@@ -2683,7 +2684,12 @@ tr.cost-wl-child > td { color: var(--text-muted); }
     if (chip) railJump(chip, true);
   });
   findInput.value = new URLSearchParams(location.search).get('q') || '';
-  findInput.addEventListener('input', function() { applyFind(); syncFindUrl(); });
+  var findSyncTimer = 0;
+  findInput.addEventListener('input', function() {
+    applyFind();
+    clearTimeout(findSyncTimer);
+    findSyncTimer = setTimeout(syncFindUrl, 250);
+  });
   // Enter jumps to the first section holding a match.
   findInput.addEventListener('keydown', function(e) {
     if (e.key !== 'Enter') return;

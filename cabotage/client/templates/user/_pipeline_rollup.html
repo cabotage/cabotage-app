@@ -558,7 +558,8 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
     url.searchParams.set('range', state.range);
     if (state.query.trim()) url.searchParams.set('q', state.query.trim());
     else url.searchParams.delete('q');
-    history.replaceState(null, '', url);
+    // Safari throws once replaceState passes its rate limit; the URL is a nicety.
+    try { history.replaceState(null, '', url); } catch (e) { /* rate limited */ }
   }
 
   function load(includeInactive) {
@@ -657,11 +658,13 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
 
   if (filterInput) {
     filterInput.value = state.query;
+    var syncTimer = 0;
     filterInput.addEventListener('input', function() {
       state.query = filterInput.value;
-      syncUrl();
       render();
       searchIdle();
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(syncUrl, 250);
     });
     find.bindSlash(filterInput);
   }
