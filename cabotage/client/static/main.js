@@ -2764,12 +2764,16 @@ function initAppShell() {
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
   var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
   // xterm needs concrete colors, so resolve the accent to rgb for the cursor and selection.
+  // The terminal is always black; accents too dark to see on it (the "dark" preset) fall back to the foreground.
   function terminalTheme() {
     var ctx = document.createElement('canvas').getContext('2d');
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
     ctx.fillRect(0, 0, 1, 1);
     var p = ctx.getImageData(0, 0, 1, 1).data;
-    var rgb = p[0] + ', ' + p[1] + ', ' + p[2];
+    var lin = function(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    var luminance = 0.2126 * lin(p[0]) + 0.7152 * lin(p[1]) + 0.0722 * lin(p[2]);
+    // (L + 0.05) / 0.05 >= 3 is a 3:1 contrast ratio against black.
+    var rgb = luminance >= 0.1 ? p[0] + ', ' + p[1] + ', ' + p[2] : '226, 226, 233';
     return { background: '#000000', foreground: '#e2e2e9', cursor: 'rgb(' + rgb + ')', selectionBackground: 'rgba(' + rgb + ', 0.3)' };
   }
   var term = new Terminal({
