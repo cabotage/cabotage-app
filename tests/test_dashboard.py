@@ -16,7 +16,9 @@ from cabotage.server.models.projects import (
     ApplicationEnvironment,
     Deployment,
     Environment,
+    Image,
     Project,
+    Release,
 )
 from cabotage.server.wsgi import app as _app
 
@@ -96,7 +98,9 @@ def _app_env(db_session, org, slug):
     return application, ae
 
 
-def _deploy(db_session, application, ae, *, minutes_ago, complete, error):
+def _deploy(
+    db_session, application, ae, *, minutes_ago, complete, error, metadata=None
+):
     db_session.add(
         Deployment(
             application_id=application.id,
@@ -104,8 +108,40 @@ def _deploy(db_session, application, ae, *, minutes_ago, complete, error):
             release={},
             complete=complete,
             error=error,
+            deploy_metadata=metadata,
             created=datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
             - datetime.timedelta(minutes=minutes_ago),
+        )
+    )
+    db_session.flush()
+
+
+def _image(db_session, application, ae, *, built, error):
+    db_session.add(
+        Image(
+            application_id=application.id,
+            application_environment_id=ae.id,
+            _repository_name="dash/test",
+            build_ref="main",
+            built=built,
+            error=error,
+        )
+    )
+    db_session.flush()
+
+
+def _release(db_session, application, ae, *, built, error):
+    db_session.add(
+        Release(
+            application_id=application.id,
+            application_environment_id=ae.id,
+            _repository_name="dash/test",
+            image={},
+            configuration={},
+            image_changes={},
+            configuration_changes={},
+            built=built,
+            error=error,
         )
     )
     db_session.flush()
@@ -157,6 +193,42 @@ def test_app_status_reflects_latest_deployment(app, db_session, history, expecte
     assert item.status == expected
 
 
+def test_retry_after_a_failure_shows_as_in_progress(app, db_session):
+    user = _user(db_session)
+    org = _org(db_session, member=user)
+    application, ae = _app_env(db_session, org, f"app-{uuid.uuid4().hex[:8]}")
+    _deploy(db_session, application, ae, minutes_ago=30, complete=False, error=True)
+    _image(db_session, application, ae, built=False, error=False)  # the retry
+
+    context = _context(app, user)
+
+    assert context["app_items"][0].status == "building"
+    assert context["failing"] == []
+    assert len(context["in_progress"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("releases", "expected"),
+    [
+        # (built, error), oldest first
+        ([(True, False), (False, False)], "building"),
+        ([(True, False), (False, True)], "build-failed"),
+        ([(False, True), (True, False)], "live"),
+    ],
+)
+def test_release_builds_count_as_part_of_the_build(app, db_session, releases, expected):
+    user = _user(db_session)
+    org = _org(db_session, member=user)
+    application, ae = _app_env(db_session, org, f"app-{uuid.uuid4().hex[:8]}")
+    _deploy(db_session, application, ae, minutes_ago=60, complete=True, error=False)
+    for built, error in releases:
+        _release(db_session, application, ae, built=built, error=error)
+
+    (item,) = _context(app, user)["app_items"]
+
+    assert item.status == expected
+
+
 def test_deploy_numbers_come_from_deployment_rows(app, db_session):
     user = _user(db_session)
     org = _org(db_session, member=user)
@@ -191,6 +263,41 @@ def test_deploy_numbers_come_from_deployment_rows(app, db_session):
         "succeeded",
         "succeeded",
     ]
+
+
+def test_completed_deploys_include_deleted_environments(app, db_session):
+    user = _user(db_session)
+    org = _org(db_session, member=user)
+    application, ae = _app_env(db_session, org, f"app-{uuid.uuid4().hex[:8]}")
+    _deploy(db_session, application, ae, minutes_ago=30, complete=True, error=False)
+    ae.deleted_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    db_session.flush()
+
+    assert _context(app, user)["completed_deploys"] == 1
+
+
+def test_only_automatic_deploys_are_marked_auto(app, db_session):
+    user = _user(db_session)
+    org = _org(db_session, member=user)
+    application, ae = _app_env(db_session, org, f"app-{uuid.uuid4().hex[:8]}")
+    for minutes_ago, metadata in [
+        (30, {"auto_deploy": True}),
+        (20, {"auto_deploy": True, "trigger": "manual_deploy"}),
+        (10, None),
+    ]:
+        _deploy(
+            db_session,
+            application,
+            ae,
+            minutes_ago=minutes_ago,
+            complete=True,
+            error=False,
+            metadata=metadata,
+        )
+
+    deploys = _context(app, user)["deploys"]
+
+    assert [d.automatic for d in deploys] == [False, False, True]
 
 
 def test_all_orgs_scope_is_ignored_for_non_admins(client, db_session):
