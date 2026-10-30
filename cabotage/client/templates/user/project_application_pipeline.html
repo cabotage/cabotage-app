@@ -20,12 +20,14 @@
 
 {% block content %}
 <style>
-/* Stages are the accent stepping toward the foreground: build → release → deploy.
+/* Stages are the accent fading toward the card: build → release → deploy.
+   Fading toward the surface, not the foreground, keeps them apart when the
+   accent is the foreground color (white accent, terminal theme).
    Status colors stay reserved for outcomes. */
 .pipe {
   --pipe-image: var(--color-primary);
-  --pipe-release: color-mix(in oklab, var(--color-primary) 62%, var(--text-bright));
-  --pipe-deploy: color-mix(in oklab, var(--color-primary) 30%, var(--text-bright));
+  --pipe-release: color-mix(in oklab, var(--color-primary) 70%, var(--surface-card));
+  --pipe-deploy: color-mix(in oklab, var(--color-primary) 45%, var(--surface-card));
   --pipe-ok: var(--color-success);
   --pipe-fail: var(--color-error);
   --pipe-run: var(--color-warning);
