@@ -2734,6 +2734,11 @@ a.pipeline-stage-body:hover {
   white-space: nowrap;
   flex-shrink: 0;
 }
+/* Git refs without a link: accent-tinted but pulled toward the text color, so
+   they read as refs at AA contrast without looking like the linked ones. */
+.ref-muted {
+  color: color-mix(in oklab, var(--accent-text) 55%, var(--color-base-content));
+}
 .build-meta-value,
 .deploy-meta-value {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
