@@ -442,7 +442,9 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
   function idleHeaderHtml(count, open, ts) {
     var days = parseInt(state.range, 10);
     var label, sub;
-    if (!state.inactiveIncluded && !open) {
+    if (!state.inactiveIncluded && ts.length && state.loadingIdle) {
+      label = 'Searching ' + plural(count, 'idle app environment');
+    } else if (!state.inactiveIncluded && !open) {
       label = 'Show ' + plural(count, 'idle app environment');
     } else if (ts.length) {
       label = plural(count, 'idle app environment') + ' match';
@@ -514,8 +516,10 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
     body.innerHTML = html || '<tr><td colspan="9" class="roll-note">No application environments match.</td></tr>';
 
     if (filterCount) {
-      var total = state.inactiveIncluded ? state.rows.length : state.rows.length + state.inactiveTotal;
-      filterCount.textContent = ts.length ? matched.length + ' of ' + total : '';
+      // Until idle rows arrive only the loaded rows were searched; say so.
+      filterCount.textContent = !ts.length ? ''
+        : !state.inactiveIncluded && state.loadingIdle ? 'searching…'
+        : matched.length + ' of ' + state.rows.length;
     }
     if (foldAllBtn) {
       // Grouped: fold or unfold every project. Sorted flat: the way back to groups.
@@ -569,19 +573,29 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
         state.inactiveIncluded = payload.inactive_included !== false;
         render();
         renderSummary(payload);
+        if (!includeInactive) searchIdle();
       })
       .catch(function() {
         document.getElementById('roll-error').hidden = false;
       });
   }
 
+  // The server leaves idle rows out of very large installs until asked.
+  function loadIdle(open) {
+    if (state.loadingIdle || state.inactiveIncluded) return;
+    state.loadingIdle = true;
+    render();
+    load(true).then(function() { state.loadingIdle = false; if (open) state.idleOpen = true; render(); });
+  }
+  // A query has to search idle environments too, so fetch them on first use.
+  function searchIdle() {
+    if (find.terms(state.query).length) loadIdle(false);
+  }
+
   function openIdle() {
     if (state.loadingIdle) return;
     if (state.inactiveIncluded) { state.idleOpen = !state.idleOpen; render(); return; }
-    // The server leaves idle rows out of very large installs until asked.
-    state.loadingIdle = true;
-    render();
-    load(true).then(function() { state.loadingIdle = false; state.idleOpen = true; render(); });
+    loadIdle(true);
   }
 
   document.getElementById('roll-range-selector').addEventListener('click', function(e) {
@@ -647,6 +661,7 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
       state.query = filterInput.value;
       syncUrl();
       render();
+      searchIdle();
     });
     find.bindSlash(filterInput);
   }
