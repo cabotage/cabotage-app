@@ -1137,7 +1137,7 @@ a.pipe-slow:focus-visible { outline: 2px solid var(--color-primary); outline-off
     resizeTimer = setTimeout(renderCharts, 150);
   });
   new MutationObserver(function() { if (HAS_UPLOT) resolvePalette(); renderCharts(); })
-    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'data-accent', 'style'] });
 })();
 </script>
 {% endblock js %}
