@@ -60,6 +60,9 @@ window.pageFind = window.pageFind || (function() {
     document.addEventListener('keydown', function(e) {
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
       if (document.querySelector('dialog[open]')) return;
+      // Field not rendered yet (still loading, or nothing to filter): leave '/'
+      // to the browser, e.g. Firefox quick find.
+      if (!input.getClientRects().length) return;
       e.preventDefault();
       input.focus();
       input.select();
