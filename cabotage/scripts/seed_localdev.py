@@ -10,7 +10,9 @@ realistic data so the UI is fully populated:
 
 import datetime
 import os
+import random
 import sys
+import uuid
 from typing import TypedDict
 
 from sqlalchemy import text, update
@@ -438,6 +440,31 @@ def _fast_forward_image_release_versions(
     db.session.flush()
     db.session.expire(latest_img)
     db.session.expire(latest_rel)
+
+
+def _bulk_backdate(
+    sql: str, rows: list[tuple[uuid.UUID, datetime.datetime, datetime.datetime]]
+) -> None:
+    """Backdate many rows' `created`/`updated` columns in one round trip
+    via `UPDATE ... FROM unnest(...)`, bypassing the ORM's `onupdate`
+    (which would otherwise reset `updated` to now()), the same way the
+    small Acme Corp backdate loop near the end of `seed()` does -- but
+    batched, since giant-scale pipeline history means thousands of rows
+    per table and one `UPDATE ... WHERE id = :id` per row would be
+    thousands of round trips. `sql` must be a literal `UPDATE ... FROM
+    unnest(CAST(:ids AS uuid[]), CAST(:createds AS timestamp[]), CAST(
+    :updateds AS timestamp[])) AS u(id, created, updated) WHERE t.id =
+    u.id` statement naming one specific table."""
+    if not rows:
+        return
+    _ = db.session.execute(
+        text(sql),
+        {
+            "ids": [str(row[0]) for row in rows],
+            "createds": [row[1] for row in rows],
+            "updateds": [row[2] for row in rows],
+        },
+    )
 
 
 def _seed_simple_app(
@@ -1231,6 +1258,369 @@ def seed_pypi_scale(admin: User, dev_user: User) -> None:
     db.session.commit()
 
 
+# ---------------------------------------------------------------------------
+# Giant-scale seed scenario (opt-in via SEED_SCALE=giant; implies
+# SEED_SCALE=pypi -- seed_pypi_scale() also runs)
+# ---------------------------------------------------------------------------
+
+#: (display name, slug) -- realistic Python-community-ish orgs, distinct
+#: from the acme-corp/pypi/inspector/linehaul/camo/conveyor/psf/pycon/docs
+#: /sandbox slugs seed_pypi_scale() already uses.
+GIANT_ORGS: list[tuple[str, str]] = [
+    ("Django Software Foundation", "django-software-foundation"),
+    ("NumFOCUS", "numfocus"),
+    ("Project Jupyter", "jupyter"),
+    ("PyLadies", "pyladies"),
+    ("Python Packaging Authority", "pypa"),
+    ("FastAPI", "fastapi"),
+    ("Pallets Projects", "pallets"),
+    ("SciPy", "scipy"),
+    ("NumPy", "numpy"),
+    ("pandas", "pandas-dev"),
+    ("Matplotlib", "matplotlib"),
+    ("scikit-learn", "scikit-learn"),
+    ("PyTorch Foundation", "pytorch"),
+    ("Python Discord", "pythondiscord"),
+    ("Real Python", "realpython"),
+    ("Talk Python", "talkpython"),
+    ("EuroPython Society", "europython"),
+    ("PyOhio", "pyohio"),
+    ("DjangoCon US", "djangocon-us"),
+    ("Zope Foundation", "zope"),
+]
+
+#: A handful of app envs with a visibly higher failure rate, so "~5-10%
+#: failed, concentrated in a few apps" is an actual pattern rather than
+#: flat noise. Keyed as "org-slug/project-slug/app-slug/env-slug".
+GIANT_TROUBLE_APP_ENVS = {
+    "django-software-foundation/core/web/production",
+    "pytorch/core/api/production",
+    "jupyter/services/jobs/production",
+    "numfocus/services/scheduler/production",
+    "pandas-dev/core/worker/production",
+}
+#: Of the trouble app envs above, these two additionally get their most
+#: recent run forced to fail ("a couple of apps whose latest run failed").
+GIANT_LATEST_FAILED_APP_ENVS = {
+    "django-software-foundation/core/web/production",
+    "pytorch/core/api/production",
+}
+
+
+def _giant_processes(kind: str) -> dict[str, ProcessSpec]:
+    """Process definitions per app "kind" in the giant-scale topology."""
+    by_kind: dict[str, dict[str, ProcessSpec]] = {
+        "web": {
+            "web": {"cmd": "gunicorn app:application --bind 0.0.0.0:8000", "env": []},
+            "worker": {"cmd": "celery -A app.celery worker --loglevel=info", "env": []},
+            "release": {"cmd": "bin/release", "env": []},
+        },
+        "worker": {
+            "worker": {"cmd": "celery -A app.celery worker --loglevel=info", "env": []},
+        },
+        "api": {
+            "web": {"cmd": "gunicorn api:application --bind 0.0.0.0:8001", "env": []},
+        },
+        "jobs": {
+            "worker": {"cmd": "celery -A jobs worker --loglevel=info", "env": []},
+        },
+        "scheduler": {
+            "worker": {"cmd": "celery -A scheduler beat --loglevel=info", "env": []},
+        },
+        "site": {
+            "web": {"cmd": "nginx -g 'daemon off;'", "env": []},
+        },
+        "cli": {
+            "job-run": {"cmd": "python manage.py run", "env": []},
+        },
+        "mobile": {
+            "release": {"cmd": "fastlane build", "env": []},
+        },
+    }
+    return by_kind[kind]
+
+
+def _giant_process_counts(kind: str, env_slug: str) -> dict[str, int]:
+    """Replica counts per app "kind", scaled down for non-production envs
+    so cost seeding (which reads `process_counts`) has realistic variety."""
+    base: dict[str, dict[str, int]] = {
+        "web": {"web": 3, "worker": 1, "release": 0},
+        "worker": {"worker": 2},
+        "api": {"web": 2},
+        "jobs": {"worker": 2},
+        "scheduler": {"worker": 1},
+        "site": {"web": 1},
+        "cli": {"job-run": 0},
+        "mobile": {"release": 0},
+    }
+    counts = {k: v for k, v in base[kind].items() if v}
+    if env_slug == "production":
+        return counts
+    if env_slug == "staging":
+        return {k: max(1, v // 2) for k, v in counts.items()}
+    return dict.fromkeys(counts, 1)  # pr-preview / default
+
+
+def _seed_giant_topology(
+    admin: User, dev_user: User
+) -> list[tuple[Application, ApplicationEnvironment, str, str]]:
+    """Build ~20 orgs x ~3 projects x ~250 app envs: a mix of
+    environments_enabled projects (Production/Staging/PR-preview) and
+    legacy default-env projects. Idempotent via the same
+    `_get_or_create_*` helpers as seed_pypi_scale(). Returns
+    `(app, app_env, kind, key)` for every app env, where `key` is
+    "org-slug/project-slug/app-slug/env-slug"."""
+    created: list[tuple[Application, ApplicationEnvironment, str, str]] = []
+
+    for i, (name, slug) in enumerate(GIANT_ORGS):
+        org = _get_or_create_org(name, slug, admin, dev_user)
+
+        proj_core = _get_or_create_project(
+            org, "Core", "core", environments_enabled=True
+        )
+        env_prod = _get_or_create_environment(
+            proj_core, "Production", "production", is_default=True, sort_order=100
+        )
+        env_staging = _get_or_create_environment(
+            proj_core, "Staging", "staging", sort_order=50
+        )
+        env_preview = _get_or_create_environment(
+            proj_core, "PR Preview", "pr-preview", sort_order=10
+        )
+
+        app_web = _get_or_create_app(proj_core, "Web", "web")
+        for env in (env_prod, env_staging, env_preview):
+            app_env = _get_or_create_app_env(app_web, env)
+            created.append((app_web, app_env, "web", f"{slug}/core/web/{env.slug}"))
+
+        app_worker = _get_or_create_app(proj_core, "Worker", "worker")
+        for env in (env_prod, env_staging):
+            app_env = _get_or_create_app_env(app_worker, env)
+            created.append(
+                (app_worker, app_env, "worker", f"{slug}/core/worker/{env.slug}")
+            )
+
+        if i % 2 == 0:
+            app_api = _get_or_create_app(proj_core, "API", "api")
+            app_env = _get_or_create_app_env(app_api, env_prod)
+            created.append((app_api, app_env, "api", f"{slug}/core/api/production"))
+
+        proj_services = _get_or_create_project(
+            org, "Services", "services", environments_enabled=True
+        )
+        svc_prod = _get_or_create_environment(
+            proj_services, "Production", "production", is_default=True, sort_order=100
+        )
+        svc_staging = _get_or_create_environment(
+            proj_services, "Staging", "staging", sort_order=50
+        )
+
+        app_jobs = _get_or_create_app(proj_services, "Jobs", "jobs")
+        for env in (svc_prod, svc_staging):
+            app_env = _get_or_create_app_env(app_jobs, env)
+            created.append(
+                (app_jobs, app_env, "jobs", f"{slug}/services/jobs/{env.slug}")
+            )
+
+        if i % 2 == 1:
+            app_scheduler = _get_or_create_app(proj_services, "Scheduler", "scheduler")
+            for env in (svc_prod, svc_staging):
+                app_env = _get_or_create_app_env(app_scheduler, env)
+                created.append(
+                    (
+                        app_scheduler,
+                        app_env,
+                        "scheduler",
+                        f"{slug}/services/scheduler/{env.slug}",
+                    )
+                )
+
+        proj_docs = _get_or_create_project(
+            org, "Docs", "docs", environments_enabled=False
+        )
+        env_docs = _get_or_create_default_environment(proj_docs)
+        app_site = _get_or_create_app(proj_docs, "Site", "site")
+        app_env = _get_or_create_app_env(app_site, env_docs, legacy=True)
+        created.append((app_site, app_env, "site", f"{slug}/docs/site/default"))
+
+        if i % 2 == 0:
+            proj_tools = _get_or_create_project(
+                org, "Tools", "tools", environments_enabled=False
+            )
+            env_tools = _get_or_create_default_environment(proj_tools)
+            app_cli = _get_or_create_app(proj_tools, "CLI", "cli")
+            app_env = _get_or_create_app_env(app_cli, env_tools, legacy=True)
+            created.append((app_cli, app_env, "cli", f"{slug}/tools/cli/default"))
+
+        proj_mobile = _get_or_create_project(
+            org, "Mobile", "mobile", environments_enabled=False
+        )
+        env_mobile = _get_or_create_default_environment(proj_mobile)
+        for app_name, app_slug in (
+            ("iOS App", "ios-app"),
+            ("Android App", "android-app"),
+        ):
+            app_mobile = _get_or_create_app(proj_mobile, app_name, app_slug)
+            app_env = _get_or_create_app_env(app_mobile, env_mobile, legacy=True)
+            created.append(
+                (app_mobile, app_env, "mobile", f"{slug}/mobile/{app_slug}/default")
+            )
+
+    for app, app_env, kind, key in created:
+        env_slug = key.rsplit("/", 1)[-1]
+        app_env.process_counts = _giant_process_counts(kind, env_slug)
+    db.session.flush()
+    db.session.commit()
+    return created
+
+
+def _seed_giant_history(
+    app_envs: list[tuple[Application, ApplicationEnvironment, str, str]],
+) -> dict[str, int]:
+    """Give ~70% of `app_envs` a realistic deploy history spread over the
+    last 90 days (varying cadence, ~5-10% failures concentrated in a few
+    apps, mixed auto_deploy/deploy_after_release/plain deploy_metadata so
+    `pipeline_run_duration()` exercises all three branches), leaving the
+    rest with zero runs (inactive). Image/Release/Deployment rows are
+    created via the ORM (their ids must round-trip through
+    `Deployment.release`/`Release.image` JSON snapshots for the pipeline
+    rollup's joins to work), but `created`/`updated` are backdated in bulk
+    afterwards rather than one `UPDATE ... WHERE id = :id` per row."""
+    now_naive = datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    image_backdates: list[tuple[uuid.UUID, datetime.datetime, datetime.datetime]] = []
+    release_backdates: list[tuple[uuid.UUID, datetime.datetime, datetime.datetime]] = []
+    deploy_backdates: list[tuple[uuid.UUID, datetime.datetime, datetime.datetime]] = []
+    active_count = 0
+    run_count = 0
+    failed_count = 0
+
+    for app, app_env, kind, key in app_envs:
+        if app_env.images.count() != 0:
+            continue  # already seeded by an earlier run
+        is_trouble = key in GIANT_TROUBLE_APP_ENVS
+        history_rng = random.Random(f"giant-history-{key}")  # nosec B311
+        if not (is_trouble or history_rng.random() < 0.70):
+            continue  # stays inactive: zero runs
+        active_count += 1
+
+        tier_roll = history_rng.random()
+        if tier_roll < 0.10:
+            runs = history_rng.randint(40, 75)
+        elif tier_roll < 0.35:
+            runs = history_rng.randint(15, 32)
+        elif tier_roll < 0.70:
+            runs = history_rng.randint(8, 13)
+        elif tier_roll < 0.90:
+            runs = history_rng.randint(2, 5)
+        else:
+            runs = 1
+
+        ages = sorted(
+            (history_rng.uniform(0.1, 89.5) for _ in range(runs)), reverse=True
+        )
+        fail_prob = 0.08 if is_trouble else 0.02
+        failed_flags = [history_rng.random() < fail_prob for _ in ages]
+        if key in GIANT_LATEST_FAILED_APP_ENVS:
+            ages[-1] = history_rng.uniform(0.05, 0.3)
+            failed_flags[-1] = True
+
+        processes = _giant_processes(kind)
+        for age, failed in zip(ages, failed_flags, strict=True):
+            started = now_naive - datetime.timedelta(days=age)
+            pipeline_kind = history_rng.choice(["build", "release", "deploy"])
+            img_secs = history_rng.uniform(25, 180)
+            rel_secs = history_rng.uniform(5, 25)
+            dep_secs = history_rng.uniform(10, 90)
+            if history_rng.random() < 0.04:
+                extra = history_rng.uniform(2400, 5400)
+                if pipeline_kind == "build":
+                    which = history_rng.choice(["image", "deploy"])
+                elif pipeline_kind == "release":
+                    which = history_rng.choice(["release", "deploy"])
+                else:
+                    which = "deploy"
+                if which == "image":
+                    img_secs += extra
+                elif which == "release":
+                    rel_secs += extra
+                else:
+                    dep_secs += extra
+
+            img = _make_image(
+                app,
+                app_env,
+                build_ref=f"main@{started:%Y%m%d%H%M%S}",
+                processes=processes,
+            )
+            rel = _make_release(app, app_env, img, [])
+            dep = _make_deployment(app, app_env, rel, complete=not failed)
+            if pipeline_kind == "build":
+                dep.deploy_metadata = {"auto_deploy": True}
+            elif pipeline_kind == "release":
+                dep.deploy_metadata = {"deploy_after_release": True}
+            else:
+                dep.deploy_metadata = {}
+            if failed:
+                dep.error = True
+                dep.error_detail = "Readiness probe failed"
+                failed_count += 1
+            run_count += 1
+
+            img_created = started
+            img_updated = img_created + datetime.timedelta(seconds=img_secs)
+            rel_created = img_updated
+            rel_updated = rel_created + datetime.timedelta(seconds=rel_secs)
+            dep_created = rel_updated
+            dep_updated = dep_created + datetime.timedelta(seconds=dep_secs)
+            image_backdates.append((img.id, img_created, img_updated))
+            release_backdates.append((rel.id, rel_created, rel_updated))
+            deploy_backdates.append((dep.id, dep_created, dep_updated))
+
+        app_env.process_counts = _giant_process_counts(kind, key.rsplit("/", 1)[-1])
+
+    db.session.commit()
+
+    _bulk_backdate(
+        "UPDATE project_app_images AS t SET created = u.created, updated = u.updated "
+        "FROM unnest(CAST(:ids AS uuid[]), CAST(:createds AS timestamp[]), "
+        "CAST(:updateds AS timestamp[])) AS u(id, created, updated) WHERE t.id = u.id",
+        image_backdates,
+    )
+    _bulk_backdate(
+        "UPDATE project_app_releases AS t SET created = u.created, updated = u.updated "
+        "FROM unnest(CAST(:ids AS uuid[]), CAST(:createds AS timestamp[]), "
+        "CAST(:updateds AS timestamp[])) AS u(id, created, updated) WHERE t.id = u.id",
+        release_backdates,
+    )
+    _bulk_backdate(
+        "UPDATE deployments AS t SET created = u.created, updated = u.updated "
+        "FROM unnest(CAST(:ids AS uuid[]), CAST(:createds AS timestamp[]), "
+        "CAST(:updateds AS timestamp[])) AS u(id, created, updated) WHERE t.id = u.id",
+        deploy_backdates,
+    )
+    db.session.commit()
+
+    return {
+        "app_envs": len(app_envs),
+        "active_app_envs": active_count,
+        "runs": run_count,
+        "failed_runs": failed_count,
+    }
+
+
+def seed_giant_scale(admin: User, dev_user: User) -> dict[str, int]:
+    """Seed a production-scale scenario: ~20 realistic Python-community
+    orgs, ~250 application environments across environments_enabled and
+    legacy projects, and a 90-day deploy history for ~70% of them with
+    varying cadence/failures/metadata -- so `/infra/pipeline` looks like
+    production. Reuses the same idempotent helpers as seed_pypi_scale(),
+    so re-running this with SEED_SCALE=giant set is a no-op after the
+    first run."""
+    app_envs = _seed_giant_topology(admin, dev_user)
+    history_stats = _seed_giant_history(app_envs)
+    return {"organizations": len(GIANT_ORGS), **history_stats}
+
+
 def seed():
     app = create_app()
 
@@ -1243,7 +1633,7 @@ def seed():
     with app.app_context():
         # ── Run create_admin logic first ──────────────────────────────
         # Check if admin already exists (idempotent)
-        admin = User.query.filter_by(username="admin").first()
+        admin: User | None = User.query.filter_by(username="admin").first()
         if admin is None:
             print("Running create_admin bootstrap...")
             admin = User(  # nosec
@@ -1270,7 +1660,7 @@ def seed():
                 sys.exit(1)
 
         # ── Extra dev user ────────────────────────────────────────────
-        dev_user = User.query.filter_by(username="dev").first()
+        dev_user: User | None = User.query.filter_by(username="dev").first()
         if dev_user is None:
             dev_user = User(  # nosec
                 email="dev@acme.corp",
@@ -1696,8 +2086,12 @@ def seed():
                 started += datetime.timedelta(seconds=secs)
         db.session.commit()
 
-        if os.environ.get("SEED_SCALE") == "pypi":
+        giant_scale = os.environ.get("SEED_SCALE") == "giant"
+        if os.environ.get("SEED_SCALE") in ("pypi", "giant"):
             seed_pypi_scale(admin, dev_user)
+        giant_stats: dict[str, int] | None = None
+        if giant_scale:
+            giant_stats = seed_giant_scale(admin, dev_user)
 
         # ── Synthetic cost history (every organization, not just Acme) ───
         # CostCollectionRun is one row per cluster-wide hour shared by every
@@ -1725,6 +2119,11 @@ def seed():
         # math holds across the whole demo window, not just real-collector
         # hours.
         _ = finalize_platform_stats(all_orgs, days=90)
+        node_platform_stats: dict[str, int] | None = None
+        if giant_scale:
+            from cabotage.server.applets.cost.demo import seed_cost_nodes_and_platform
+
+            node_platform_stats = seed_cost_nodes_and_platform(all_orgs, days=90)
         print()
         print("Seed complete!")
         print("  Organizations: 1 (Acme Corp)")
@@ -1736,10 +2135,27 @@ def seed():
             f"  Cost history: {cost_items} line items over 90 days "
             f"across {len(cost_items_by_org)} organization(s)"
         )
-        if os.environ.get("SEED_SCALE") == "pypi":
+        if os.environ.get("SEED_SCALE") in ("pypi", "giant"):
             print(
                 "  PyPI-scale orgs also seeded (SEED_SCALE=pypi): pypi, "
                 "inspector, linehaul, camo, conveyor, psf, pycon, docs, sandbox"
+            )
+        if giant_stats is not None:
+            print(
+                "  Giant-scale orgs also seeded (SEED_SCALE=giant): "
+                f"{giant_stats['organizations']} organizations, "
+                f"{giant_stats['app_envs']} application environments "
+                f"({giant_stats['active_app_envs']} active), "
+                f"{giant_stats['runs']} pipeline runs "
+                f"({giant_stats['failed_runs']} failed)"
+            )
+        if node_platform_stats is not None:
+            print(
+                "  Giant-scale platform cost data: "
+                f"{node_platform_stats['nodes']} nodes, "
+                f"{node_platform_stats['node_hours']} node-hours, "
+                f"{node_platform_stats['components']} platform workloads, "
+                f"{node_platform_stats['aws_actuals_rows']} AWS actuals rows"
             )
         print()
         print("Login at http://localhost:5000 with admin/admin or dev/dev")
