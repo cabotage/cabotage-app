@@ -1,0 +1,68 @@
+{#
+  Find-on-page helpers shared by long infra pages (cost dashboard, pipeline
+  rollup). Inline because page scripts run before main.js loads.
+#}
+<script>
+window.pageFind = window.pageFind || (function() {
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
+  }
+  // Whitespace-separated terms; a row matches when every term appears somewhere in it.
+  function terms(q) {
+    return String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  }
+  function matches(haystack, ts) {
+    if (!ts.length) return true;
+    var h = String(haystack || '').toLowerCase();
+    for (var i = 0; i < ts.length; i++) if (h.indexOf(ts[i]) === -1) return false;
+    return true;
+  }
+  // Escaped text with every term occurrence wrapped in <mark class="find-hit">.
+  function mark(text, ts) {
+    text = String(text == null ? '' : text);
+    if (!ts.length) return esc(text);
+    var lower = text.toLowerCase(), ranges = [];
+    ts.forEach(function(t) {
+      for (var at = lower.indexOf(t); at !== -1; at = lower.indexOf(t, at + t.length)) ranges.push([at, at + t.length]);
+    });
+    if (!ranges.length) return esc(text);
+    ranges.sort(function(a, b) { return a[0] - b[0]; });
+    var merged = [ranges[0]];
+    ranges.slice(1).forEach(function(r) {
+      var last = merged[merged.length - 1];
+      if (r[0] <= last[1]) last[1] = Math.max(last[1], r[1]); else merged.push(r);
+    });
+    var out = '', pos = 0;
+    merged.forEach(function(r) {
+      out += esc(text.slice(pos, r[0])) + '<mark class="find-hit">' + esc(text.slice(r[0], r[1])) + '</mark>';
+      pos = r[1];
+    });
+    return out + esc(text.slice(pos));
+  }
+  function isTyping(target) {
+    if (!target || !target.closest) return false;
+    return !!target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]');
+  }
+  // '/' focuses the field from anywhere on the page; Escape clears it, then leaves it.
+  function bindSlash(input) {
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target)) return;
+      if (document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      input.focus();
+      input.select();
+    });
+    input.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      if (input.value) {
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        input.blur();
+      }
+    });
+  }
+  return { esc: esc, terms: terms, matches: matches, mark: mark, isTyping: isTyping, bindSlash: bindSlash };
+})();
+</script>
