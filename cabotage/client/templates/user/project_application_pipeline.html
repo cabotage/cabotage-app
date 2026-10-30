@@ -130,7 +130,7 @@ a.pipe-row:focus-visible { outline: 2px solid var(--color-primary); outline-offs
 .pipe-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 0.5rem; background: var(--surface-inset);
   border: 1px solid var(--border-color); }
 .pipe-seg button { padding: 0.25rem 0.625rem; border-radius: 0.375rem; font-size: 0.75rem; font-weight: 500;
-  color: var(--text-muted); transition: background-color 150ms ease-out, color 150ms ease-out; }
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent); transition: background-color 150ms ease-out, color 150ms ease-out; }
 .pipe-seg button:hover { color: var(--text-bright); }
 .pipe-seg button[aria-pressed="true"] { background: var(--surface-card); color: var(--text-bright);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); }

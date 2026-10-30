@@ -316,18 +316,18 @@
             {% if current_user.is_authenticated %}
               <nav class="hidden md:flex items-center gap-1">
                 <a href="{{ url_for('user.organizations') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Orgs</a>
+                   class="btn btn-ghost btn-sm text-base-content/70 hover:text-base-content text-xs font-medium">Orgs</a>
                 <a href="{{ url_for('user.projects') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Projects</a>
+                   class="btn btn-ghost btn-sm text-base-content/70 hover:text-base-content text-xs font-medium">Projects</a>
                 <a href="{{ url_for('user.guide') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Guide</a>
+                   class="btn btn-ghost btn-sm text-base-content/70 hover:text-base-content text-xs font-medium">Guide</a>
                 {% if current_user.admin %}
                 {% if config.ORGANIZATION_REQUESTS_ENABLED %}
                 <a href="{{ url_for('user.organization_requests') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Requests</a>
+                   class="btn btn-ghost btn-sm text-base-content/70 hover:text-base-content text-xs font-medium">Requests</a>
                 {% endif %}
                 <a href="{{ url_for('user.infra_observe') }}"
-                   class="btn btn-ghost btn-sm text-base-content/60 hover:text-base-content text-xs font-medium">Infra</a>
+                   class="btn btn-ghost btn-sm text-base-content/70 hover:text-base-content text-xs font-medium">Infra</a>
                 {% endif %}
               </nav>
               <div class="dropdown dropdown-hover dropdown-end theme-toggle-wrap">
@@ -778,7 +778,7 @@
         <div class="flex items-center justify-between mb-4">
           <h3 class="expand-modal-title text-base font-semibold text-base-content"></h3>
           <div class="flex items-center gap-2">
-            <button class="expand-modal-copy btn btn-ghost btn-xs gap-1 text-base-content/40 hover:text-base-content">
+            <button class="expand-modal-copy btn btn-ghost btn-xs gap-1 text-base-content/70 hover:text-base-content">
               <svg class="w-3 h-3"
                    viewBox="0 0 24 24"
                    fill="none"

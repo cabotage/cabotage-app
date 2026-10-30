@@ -46,7 +46,7 @@ table.roll-table { width: 100%; min-width: 44rem; border-collapse: collapse; tab
   text-transform: uppercase; color: var(--text-faint); text-align: right; border-bottom: 1px solid var(--border-color); }
 .roll-table thead th.roll-status, .roll-table thead th.roll-name, .roll-table thead th.roll-trend-head { text-align: left; }
 .roll-table thead button { all: unset; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit;
-  color: inherit; display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0; border-radius: 0.25rem; }
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent); display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0; border-radius: 0.25rem; }
 .roll-table thead th:not(.roll-status):not(.roll-name):not(.roll-trend-head) button { justify-content: flex-end; }
 .roll-table thead button:hover { color: var(--text-bright); }
 .roll-table thead button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
