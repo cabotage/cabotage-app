@@ -3288,6 +3288,18 @@ function initLokiLogViewer() {
 }
 
 /* Compact Topbar (scroll collapse) */
+// Sticky page furniture (section rails, table headers) parks under the topbar,
+// whose height changes when it compacts on scroll. Publish it as --topbar-h on
+// <body>: several pages redraw charts when <html>'s inline style changes.
+function initTopbarOffset() {
+  var topbar = document.querySelector('[data-topbar]');
+  if (!topbar || !('ResizeObserver' in window)) return;
+  var bodyStyle = document.body.style;
+  new ResizeObserver(function () {
+    bodyStyle.setProperty('--topbar-h', topbar.getBoundingClientRect().height + 'px');
+  }).observe(topbar);
+}
+
 function initCompactTopbar() {
   var topbar = document.querySelector('[data-topbar]');
   var tabBarWrapper = document.querySelector('[data-tab-bar-wrapper]');
@@ -3401,6 +3413,7 @@ document.addEventListener('click', function (e) {
 document.addEventListener('DOMContentLoaded', function () {
   initTabs();
   initCompactTopbar();
+  initTopbarOffset();
   initCountInputs();
   initJobToggles();
   initEnvReveal();

@@ -10,25 +10,31 @@
     rollup_empty_text teaching sentence shown when nothing has run in range
     show_summary      true to render the pooled summary line
 #}
+{% set groupable = rollup_level in ('infra', 'organization') %}
+{% include "_find_on_page.html" %}
 <style>
 .roll { --roll-ok: var(--color-success); --roll-fail: var(--color-error);
-  --roll-mono: 'JetBrains Mono', ui-monospace, monospace; }
+  --roll-mono: 'JetBrains Mono', ui-monospace, monospace;
+  /* Sticky stack under the topbar: column headers, then the current group. */
+  --roll-head-h: 2.25rem; }
 .roll .num { font-family: var(--roll-mono); font-variant-numeric: tabular-nums; }
 .roll.roll-wide { max-width: 80rem; }
-.roll-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; overflow: hidden; }
+/* clip, not hidden: hidden makes the card a scroll container and kills sticky. */
+.roll-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; overflow: clip; }
 .roll-note { padding: 1.5rem 1rem; text-align: center; font-size: 0.875rem; color: var(--text-muted); }
 .roll-note.mb { margin-bottom: 0.75rem; }
 
-.roll-summary { display: flex; flex-wrap: wrap; gap: 0.375rem 1.75rem; padding: 0.875rem 1.25rem;
+.roll-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem 1.75rem; padding: 0.875rem 1.25rem;
   font-size: 0.8125rem; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
 .roll-summary b { font-family: var(--roll-mono); color: var(--text-bright); font-weight: 600; margin-left: 0.3rem; }
+.roll-summary .key-hints { margin-left: auto; }
 
 /* Scroll-edge fade: a cue that content continues past the card's edge,
    never a resting shadow on the card itself. The two outer layers are
    fixed to the viewport (background-attachment: scroll) and only peek out
    from under the two content-colored mask layers (attachment: local) once
-   there is more to scroll in that direction. Columns below are sized to
-   avoid this entirely at ≥768px; it only engages on narrow viewports. */
+   there is more to scroll in that direction. It engages whenever the table
+   is wider than its card. */
 .roll-table-wrap { overflow-x: auto; background-color: var(--surface-card);
   background-repeat: no-repeat;
   background-image:
@@ -40,10 +46,11 @@
   background-size: 1.5rem 100%, 1.5rem 100%, 0.75rem 100%, 0.75rem 100%;
   background-attachment: local, local, scroll, scroll;
 }
-table.roll-table { width: 100%; min-width: 44rem; border-collapse: collapse; table-layout: fixed; }
+table.roll-table { width: 100%; min-width: 44rem; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
 .roll-table th, .roll-table td { padding: 0 0.75rem; white-space: nowrap; }
-.roll-table thead th { height: 2.25rem; font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--text-faint); text-align: right; border-bottom: 1px solid var(--border-color); }
+.roll-table thead th { height: var(--roll-head-h); font-size: 0.6875rem; font-weight: 500; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--text-faint); text-align: right; background: var(--surface-card);
+  box-shadow: inset 0 -1px 0 var(--border-color); }
 .roll-table thead th.roll-status, .roll-table thead th.roll-name, .roll-table thead th.roll-trend-head { text-align: left; }
 .roll-table thead button { all: unset; cursor: pointer; font: inherit; letter-spacing: inherit; text-transform: inherit;
   color: color-mix(in oklab, var(--color-base-content) 70%, transparent); display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0; border-radius: 0.25rem; }
@@ -54,6 +61,10 @@ table.roll-table { width: 100%; min-width: 44rem; border-collapse: collapse; tab
 .roll-table thead th[aria-sort="descending"] button { color: var(--text-bright); }
 .roll-sort-arrow { font-size: 0.625rem; width: 0.75rem; display: inline-block; opacity: 0; flex: none; }
 th[aria-sort="ascending"] .roll-sort-arrow, th[aria-sort="descending"] .roll-sort-arrow { opacity: 1; }
+.roll-name-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.roll-name-head > span { overflow: hidden; text-overflow: ellipsis; }
+.roll-table thead button.roll-fold-all { text-transform: none; letter-spacing: 0; font-size: 0.6875rem; padding: 0.125rem 0.375rem; flex: none; }
+.roll-table thead button.roll-fold-all:hover { background: var(--hover-overlay); }
 
 /* Column plan: status + every trailing metric/trend column is a fixed
    width sized to its content with room to spare, never truncated or
@@ -67,13 +78,16 @@ th[aria-sort="ascending"] .roll-sort-arrow, th[aria-sort="descending"] .roll-sor
 .roll-trend-head, .roll-trend { width: 7.5rem; }
 
 tr.roll-row { position: relative; height: 2.75rem; font-size: 0.875rem; color: var(--text-muted);
-  border-bottom: 1px solid var(--border-color-subtle); transition: background-color 150ms ease-out; }
-tr.roll-row:last-child { border-bottom: 0; }
+  transition: background-color 150ms ease-out; }
+tr.roll-row > td { border-bottom: 1px solid var(--border-color-subtle); }
+tbody > tr:last-child > td { border-bottom: 0; }
 tr.roll-row:hover { background: var(--hover-overlay); }
+tr.roll-row:has(.roll-link:focus-visible) { background: var(--hover-overlay-strong); }
 tr.roll-row.is-empty { color: var(--text-faint); }
 .roll-table td.num { text-align: right; }
 .roll-name { overflow: hidden; }
-.roll-link { display: block; color: var(--text-bright); text-decoration: none; overflow: hidden; }
+.roll-link { display: block; color: var(--text-bright); text-decoration: none; overflow: hidden;
+  scroll-margin-top: calc(var(--topbar-h, 0px) + var(--roll-head-h) + 2.75rem); scroll-margin-bottom: 1rem; }
 .roll-link:focus-visible { outline: none; }
 .roll-link:focus-visible::after { outline: 2px solid var(--color-primary); outline-offset: -2px; border-radius: 0.375rem; }
 .roll-link::after { content: ''; position: absolute; inset: 0; }
@@ -88,13 +102,37 @@ tr.roll-row.is-empty { color: var(--text-faint); }
   background: color-mix(in srgb, var(--text-muted) 55%, transparent); }
 .roll-spark > span.has-fail { background: var(--roll-fail); }
 
-/* Taxonomy subheaders (org · project), shown only while the table is in
-   its default unsorted order; see render()/groupedRowsHtml() below. Uses
-   the shared section_label recipe (DESIGN.md): text-xs font-medium
-   text-base-content/40 uppercase tracking-wider. */
-tr.roll-group-row th { text-align: left; font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--text-faint); padding: 0.5rem 0.75rem 0.375rem; }
-tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-color-subtle); padding-top: 0.75rem; }
+/* Taxonomy subheaders (org · project) and the idle-section header. Each one
+   folds its rows away; the current one parks under the column headers while
+   its rows scroll past. Uses the shared section_label recipe (DESIGN.md):
+   text-xs font-medium uppercase tracking-wider. */
+tr.roll-group-row > th { text-align: left; font-weight: 400; padding: 0; background: var(--surface-card);
+  box-shadow: inset 0 -1px 0 var(--border-color-subtle); }
+tr.roll-group-row:not(:first-child) > th { border-top: 1px solid var(--border-color-subtle); }
+.roll-group { display: flex; align-items: center; gap: 0.75rem; min-height: 2.25rem; padding: 0 0.75rem 0 0.375rem; }
+.roll-group-toggle { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 0.375rem; min-width: 0;
+  min-height: 1.75rem; padding: 0 0.375rem; border-radius: 0.375rem; cursor: pointer;
+  font-size: 0.75rem; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+  color: color-mix(in oklab, var(--color-base-content) 72%, transparent);
+  scroll-margin-top: calc(var(--topbar-h, 0px) + var(--roll-head-h)); }
+.roll-group-toggle:hover { color: var(--text-bright); background: var(--hover-overlay); }
+.roll-group-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; color: var(--text-bright); }
+.roll-group-toggle > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roll-chev { width: 0.875rem; height: 0.875rem; flex: none; transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.roll-group-toggle[aria-expanded="true"] .roll-chev { transform: rotate(90deg); }
+.roll-group-meta { margin-left: auto; display: inline-flex; gap: 0.875rem; font-size: 0.75rem; white-space: nowrap;
+  color: color-mix(in oklab, var(--color-base-content) 62%, transparent); }
+.roll-group-meta .is-fail { color: var(--roll-fail); }
+tr.roll-idle-row > th { background: color-mix(in oklab, var(--surface-inset) 55%, var(--surface-card)); }
+tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; font-size: 0.8125rem; }
+
+/* Sticky headers only while the table fits its card (.is-fit, set by
+   pageFind.stickWhenFits); otherwise the wrapper keeps scrolling sideways. */
+@media (min-width: 768px) {
+  .roll-table-wrap.is-fit { overflow-x: visible; }
+  .roll-table-wrap.is-fit .roll-table thead th { position: sticky; top: var(--topbar-h, 0px); z-index: 3; }
+  .roll-table-wrap.is-fit tr.roll-group-row > th { position: sticky; top: calc(var(--topbar-h, 0px) + var(--roll-head-h)); z-index: 2; }
+}
 
 .roll-skel { border-radius: 0.375rem; background: linear-gradient(90deg, var(--surface-inset) 0%,
   color-mix(in srgb, var(--surface-inset) 60%, var(--surface-card)) 50%, var(--surface-inset) 100%);
@@ -102,7 +140,7 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
 @keyframes roll-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) {
   .roll-skel { animation: none; }
-  tr.roll-row { transition: none; }
+  tr.roll-row, .roll-chev { transition: none; }
 }
 </style>
 
@@ -121,10 +159,15 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
       </p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
-      {% if rollup_level == 'infra' %}
-      <label class="sr-only" for="roll-org-filter">Filter by organization</label>
-      <input type="text" id="roll-org-filter" class="input input-xs input-bordered w-44"
-             placeholder="Filter by organization…" autocomplete="off">
+      {% if groupable %}
+      <label class="page-find">
+        {{ icon('search', '') }}
+        <span class="sr-only">Filter application environments</span>
+        <input type="search" id="roll-filter" autocomplete="off" spellcheck="false"
+               placeholder="{{ 'Filter orgs, projects, apps…' if rollup_level == 'infra' else 'Filter projects, apps…' }}">
+        <span class="page-find-count" id="roll-filter-count" aria-live="polite"></span>
+        <kbd aria-hidden="true">/</kbd>
+      </label>
       {% endif %}
       <div class="flex gap-1.5" id="roll-range-selector" role="group" aria-label="Time range">
         {% for r in ['7d', '30d', '90d'] %}
@@ -153,6 +196,13 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
       <span>p95 run<b data-summary="p95">—</b></span>
       <span>Active app envs<b data-summary="active">—</b></span>
       {% endif %}
+      {% if groupable %}
+      <span class="key-hints" aria-hidden="true">
+        <kbd class="key-hint">j</kbd><kbd class="key-hint">k</kbd><span>move</span>
+        <kbd class="key-hint">↵</kbd><span>open</span>
+        <kbd class="key-hint">/</kbd><span>filter</span>
+      </span>
+      {% endif %}
     </div>
     {% endif %}
     <div class="roll-table-wrap">
@@ -162,9 +212,16 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
           <tr>
             <th scope="col" class="roll-status"><span class="sr-only">Status</span></th>
             <th scope="col" class="roll-name">
-              {% if rollup_level == 'infra' %}Org / Project / App · Environment
-              {% elif rollup_level == 'organization' %}Project / App · Environment
-              {% else %}App · Environment{% endif %}
+              <div class="roll-name-head">
+                <span>
+                {% if rollup_level == 'infra' %}Org / Project / App · Environment
+                {% elif rollup_level == 'organization' %}Project / App · Environment
+                {% else %}App · Environment{% endif %}
+                </span>
+                {% if groupable %}
+                <button type="button" class="roll-fold-all" id="roll-fold-all" hidden>Collapse all</button>
+                {% endif %}
+              </div>
             </th>
             <th scope="col" class="roll-runs" aria-sort="none">
               <button type="button" data-sort="runs">Runs<span class="roll-sort-arrow"></span></button>
@@ -192,11 +249,6 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
         </tbody>
       </table>
     </div>
-    <div id="roll-inactive" class="roll-note" hidden>
-      <button type="button" class="btn btn-xs btn-ghost" id="roll-inactive-toggle">
-        Show <span id="roll-inactive-count">0</span> inactive app environments
-      </button>
-    </div>
   </div>
 </div>
 
@@ -206,14 +258,32 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
   var level = {{ rollup_level|tojson }};
   var groupable = (level === 'infra' || level === 'organization');
   var rollupUrl = {{ rollup_url|tojson }};
+  var SPRITE = {{ url_for('static', filename='lucide-sprite.svg')|tojson }};
   var DAY = 86400;
+  var find = window.pageFind;
+  var esc = find.esc;
 
+  // Fold state survives reloads: a default (from Collapse/Expand all) plus
+  // the groups toggled away from it, so groups that appear later (another
+  // range, idle rows loaded) follow the last Collapse all.
+  var FOLD_KEY = 'pipeline-rollup-fold:' + location.pathname;
+  var savedFold = null;
+  try { savedFold = JSON.parse(localStorage.getItem(FOLD_KEY)); } catch (e) { /* unavailable or corrupt */ }
+  if (!savedFold || typeof savedFold.flip !== 'object' || savedFold.flip === null) savedFold = { all: false, flip: {} };
+
+  // Only pages that render the filter field honour ?q=; elsewhere it would
+  // hide rows with no visible way to clear it.
+  var initialQuery = groupable ? new URL(location.href).searchParams.get('q') || '' : '';
   var state = { range: {{ current_range|tojson }}, sort: { key: 'last_at', dir: 'desc' }, rows: null,
-    orgFilter: '', inactiveTotal: 0, inactiveIncluded: true, grouped: groupable };
+    query: initialQuery, inactiveTotal: 0, inactiveIncluded: true, grouped: groupable,
+    // On the wide rollups the idle section starts folded; a project's few rows stay open.
+    foldAll: !!savedFold.all, foldFlip: savedFold.flip, idleOpen: !groupable, loadingIdle: false };
 
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, function(c) { return '&#' + c.charCodeAt(0) + ';'; });
+  function isFolded(key) { return state.foldAll !== !!state.foldFlip[key]; }
+  function saveFold() {
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify({ all: state.foldAll, flip: state.foldFlip })); } catch (e) { /* private mode */ }
   }
+
   function fmtDur(v) {
     if (v == null) return '—';
     v = +v;
@@ -235,6 +305,10 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
   function absTime(iso) { return iso ? new Date(iso).toLocaleString() : ''; }
+  function plural(n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); }
+  function chevron() {
+    return '<svg class="roll-chev" aria-hidden="true"><use href="' + SPRITE + '#chevron-right"></use></svg>';
+  }
 
   function dayList() {
     var n = parseInt(state.range, 10), days = [], now = new Date();
@@ -250,16 +324,19 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
     if (level === 'organization') return row.project_name + ' / ' + row.app_name + ' \u00b7 ' + row.env_name;
     return row.app_name + ' \u00b7 ' + row.env_name;
   }
+  function haystack(row) {
+    return [row.org_name, row.org_slug, row.project_name, row.project_slug,
+      row.app_name, row.app_slug, row.env_name, row.env_slug].join(' ');
+  }
 
   // Grouped rows (default order) repeat org/project as subheaders, so the
   // label is just the app · environment. Flat rows (any explicit sort)
   // interleave organizations/projects, so the path becomes a muted prefix
   // on the same line; the org is dropped from it when every visible row
   // already shares one (e.g. after filtering to a single organization).
-  function labelHtml(row, grouped, showOrg) {
-    if (grouped) {
-      return '<span class="roll-name-main">' + esc(row.app_name) + ' \u00b7 ' + esc(row.env_name) + '</span>';
-    }
+  function labelHtml(row, grouped, showOrg, ts) {
+    var leaf = find.mark(row.app_name, ts) + ' \u00b7 ' + find.mark(row.env_name, ts);
+    if (grouped) return '<span class="roll-name-main">' + leaf + '</span>';
     var parts = [];
     if (level === 'infra') {
       if (showOrg) parts.push(row.org_name);
@@ -267,10 +344,9 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
     } else if (level === 'organization') {
       parts.push(row.project_name);
     }
-    var prefix = parts.length ? esc(parts.join(' / ')) + ' / ' : '';
+    var prefix = parts.length ? find.mark(parts.join(' / '), ts) + ' / ' : '';
     return '<span class="roll-name-main">' +
-      (prefix ? '<span class="roll-name-prefix">' + prefix + '</span>' : '') +
-      esc(row.app_name) + ' \u00b7 ' + esc(row.env_name) + '</span>';
+      (prefix ? '<span class="roll-name-prefix">' + prefix + '</span>' : '') + leaf + '</span>';
   }
 
   function sparkHtml(row) {
@@ -292,7 +368,7 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
       days.length + ' days">' + bars + '</span>';
   }
 
-  function rowHtml(row, grouped, showOrg) {
+  function rowHtml(row, grouped, showOrg, ts) {
     var empty = row.runs === 0;
     var dotClass = row.last_status === 'fail' ? 'roll-dot-fail'
       : row.last_status === 'ok' ? 'roll-dot-ok' : 'roll-dot-none';
@@ -300,8 +376,8 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
     return (
       '<tr class="roll-row' + (empty ? ' is-empty' : '') + '">' +
       '<td class="roll-status"><span class="roll-dot ' + dotClass + '" title="' + statusWord + '"></span></td>' +
-      '<td class="roll-name"><a class="roll-link" href="' + row.url + '" title="' + esc(fullPath(row)) + '">' +
-        labelHtml(row, grouped, showOrg) + '</a></td>' +
+      '<td class="roll-name"><a class="roll-link" data-nav="r:' + esc(row.url) + '" href="' + row.url + '" title="' + esc(fullPath(row)) + '">' +
+        labelHtml(row, grouped, showOrg, ts) + '</a></td>' +
       '<td class="num roll-runs">' + (empty ? '—' : row.runs) + '</td>' +
       '<td class="num roll-failed">' + (empty ? '—' : row.failed) + '</td>' +
       '<td class="num roll-success">' + (empty ? '—' : fmtPct(row.success_rate)) + '</td>' +
@@ -313,36 +389,84 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
     );
   }
 
-  // One subheader per org·project change, over the table's natural
-  // (already org/project/app/env-ordered) inventory. Used only while
-  // state.grouped is true.
-  function groupedRowsHtml(rows) {
-    var html = '', lastKey = null;
+  function groupLabel(row) {
+    return level === 'infra' ? row.org_name + ' \u00b7 ' + row.project_name : row.project_name;
+  }
+
+  // Bucket rows by org·project, keeping the inventory's own order.
+  function groupsOf(rows) {
+    var groups = [], byKey = {};
     rows.forEach(function(row) {
-      var key = row.org_slug + '\u0000' + row.project_slug;
-      if (key !== lastKey) {
-        var label = level === 'infra' ? row.org_name + ' \u00b7 ' + row.project_name : row.project_name;
-        html += '<tr class="roll-group-row"><th colspan="9" scope="colgroup">' + esc(label) + '</th></tr>';
-        lastKey = key;
-      }
-      html += rowHtml(row, true, false);
+      // Slugs never contain '/'; the key round-trips through a data attribute.
+      var key = row.org_slug + '/' + row.project_slug;
+      if (!byKey[key]) { byKey[key] = { key: key, label: groupLabel(row), rows: [] }; groups.push(byKey[key]); }
+      byKey[key].rows.push(row);
     });
+    return groups;
+  }
+
+  function groupMetaHtml(rows) {
+    var runs = 0, failed = 0, failing = 0;
+    rows.forEach(function(r) { runs += r.runs; failed += r.failed; if (r.last_status === 'fail') failing++; });
+    var parts = [plural(rows.length, 'env')];
+    if (runs) parts.push(plural(runs, 'run'));
+    var html = parts.map(function(p) { return '<span>' + p + '</span>'; }).join('');
+    if (failing) html += '<span class="is-fail">' + failing + ' failing</span>';
+    else if (failed) html += '<span class="is-fail">' + failed + ' failed</span>';
     return html;
   }
 
-  function filterRows(rows) {
-    var q = state.orgFilter.trim().toLowerCase();
-    if (!q || level !== 'infra') return rows;
-    return rows.filter(function(r) {
-      return (r.org_name + ' ' + r.org_slug).toLowerCase().indexOf(q) !== -1;
-    });
+  // One foldable subheader per org·project. While filtering, folds are
+  // ignored so every match shows.
+  function groupedRowsHtml(rows, section, ts) {
+    return groupsOf(rows).map(function(g) {
+      var foldKey = section + ':' + g.key;
+      var open = ts.length > 0 || !isFolded(foldKey);
+      var html = '<tr class="roll-group-row"><th colspan="9" scope="colgroup"><div class="roll-group">' +
+        '<button type="button" class="roll-group-toggle" data-fold="' + esc(foldKey) + '" data-nav="g:' + esc(foldKey) + '"' +
+        ' aria-expanded="' + open + '"' + (ts.length ? ' disabled' : '') + '>' + chevron() +
+        '<span>' + find.mark(g.label, ts) + '</span></button>' +
+        '<span class="roll-group-meta">' + groupMetaHtml(g.rows) + '</span></div></th></tr>';
+      if (open) html += g.rows.map(function(row) { return rowHtml(row, true, false, ts); }).join('');
+      return html;
+    }).join('');
+  }
+
+  function flatRowsHtml(rows, ts) {
+    var orgs = {};
+    rows.forEach(function(r) { orgs[r.org_slug] = true; });
+    var showOrg = level === 'infra' && Object.keys(orgs).length > 1;
+    return sortRows(rows).map(function(row) { return rowHtml(row, false, showOrg, ts); }).join('');
+  }
+
+  // Environments with no runs in range collect behind one header at the
+  // bottom, folded until asked for (or while a filter is searching them).
+  function idleHeaderHtml(count, open, ts) {
+    var days = parseInt(state.range, 10);
+    var label, sub;
+    if (!state.inactiveIncluded && ts.length && state.loadingIdle) {
+      label = 'Searching ' + plural(count, 'idle app environment');
+    } else if (!state.inactiveIncluded && !open) {
+      label = 'Show ' + plural(count, 'idle app environment');
+    } else if (ts.length) {
+      label = plural(count, 'idle app environment') + ' match';
+    } else {
+      label = plural(count, 'idle app environment');
+    }
+    sub = state.loadingIdle ? 'Loading…' : 'No deploys in the last ' + days + ' days';
+    return '<tr class="roll-group-row roll-idle-row"><th colspan="9" scope="colgroup"><div class="roll-group">' +
+      '<button type="button" class="roll-group-toggle" data-idle data-nav="idle" aria-expanded="' + open + '"' +
+      (state.loadingIdle || (ts.length && state.inactiveIncluded) ? ' disabled' : '') + '>' + chevron() + '<span>' + esc(label) + '</span></button>' +
+      '<span class="roll-group-meta"><span>' + esc(sub) + '</span></span></div></th></tr>';
   }
 
   function sortRows(rows) {
-    var withRuns = rows.filter(function(r) { return r.runs > 0; });
-    var withoutRuns = rows.filter(function(r) { return r.runs === 0; });
     var key = state.sort.key, dir = state.sort.dir;
-    withRuns.sort(function(a, b) {
+    return rows.slice().sort(function(a, b) {
+      if (!a.runs && !b.runs) {
+        return (a.org_slug + a.project_slug + a.app_slug + a.env_slug)
+          .localeCompare(b.org_slug + b.project_slug + b.app_slug + b.env_slug);
+      }
       var av = a[key], bv = b[key];
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
@@ -350,22 +474,23 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
       var cmp = av < bv ? -1 : av > bv ? 1 : 0;
       return dir === 'asc' ? cmp : -cmp;
     });
-    withoutRuns.sort(function(a, b) {
-      return (a.project_slug + a.app_slug + a.env_slug)
-        .localeCompare(b.project_slug + b.app_slug + b.env_slug);
-    });
-    return withRuns.concat(withoutRuns);
   }
 
   function markSortActive(key, dir) {
     root.querySelectorAll('.roll-table thead th').forEach(function(th) {
       var b = th.querySelector('button[data-sort]');
       if (!b) return;
-      var active = b.dataset.sort === key;
+      var active = !state.grouped && b.dataset.sort === key;
       th.setAttribute('aria-sort', active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none');
       b.querySelector('.roll-sort-arrow').textContent = active ? (dir === 'asc' ? '▲' : '▼') : '';
     });
   }
+
+  var body = document.getElementById('roll-body');
+  var filterInput = document.getElementById('roll-filter');
+  var filterCount = document.getElementById('roll-filter-count');
+  var foldAllBtn = document.getElementById('roll-fold-all');
+  find.stickWhenFits(root.querySelector('.roll-table-wrap'));
 
   function render() {
     if (!state.rows) return;
@@ -373,26 +498,48 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
     root.querySelectorAll('[data-range-label]').forEach(function(el) {
       el.textContent = 'in the last ' + parseInt(state.range, 10) + ' days';
     });
-    var inactiveEl = document.getElementById('roll-inactive');
-    if (inactiveEl) {
-      var hideDisclosure = state.inactiveIncluded || state.inactiveTotal === 0;
-      inactiveEl.hidden = hideDisclosure;
-      if (!hideDisclosure) {
-        document.getElementById('roll-inactive-count').textContent = state.inactiveTotal;
-      }
-    }
-    var filtered = filterRows(state.rows);
-    var body = document.getElementById('roll-body');
-    var html;
-    if (groupable && state.grouped) {
-      html = groupedRowsHtml(filtered);
-    } else {
-      var orgs = {};
-      filtered.forEach(function(r) { orgs[r.org_slug] = true; });
-      var showOrg = level === 'infra' && Object.keys(orgs).length > 1;
-      html = sortRows(filtered).map(function(row) { return rowHtml(row, false, showOrg); }).join('');
+
+    // Keep keyboard focus on the same row or header across re-renders.
+    var focused = document.activeElement && body.contains(document.activeElement)
+      ? document.activeElement.getAttribute('data-nav') : null;
+
+    var ts = find.terms(state.query);
+    var matched = state.rows.filter(function(r) { return find.matches(haystack(r), ts); });
+    var active = matched.filter(function(r) { return r.runs > 0; });
+    var idle = matched.filter(function(r) { return r.runs === 0; });
+    var idleCount = state.inactiveIncluded ? idle.length : state.inactiveTotal;
+    var idleOpen = state.inactiveIncluded && (state.idleOpen || ts.length > 0);
+
+    var html = state.grouped ? groupedRowsHtml(active, 'a', ts) : flatRowsHtml(active, ts);
+    if (idleCount > 0) {
+      html += idleHeaderHtml(idleCount, idleOpen, ts);
+      if (idleOpen) html += state.grouped ? groupedRowsHtml(idle, 'i', ts) : flatRowsHtml(idle, ts);
     }
     body.innerHTML = html || '<tr><td colspan="9" class="roll-note">No application environments match.</td></tr>';
+
+    if (filterCount) {
+      // Until idle rows arrive only the loaded rows were searched; say so.
+      filterCount.textContent = !ts.length ? ''
+        : !state.inactiveIncluded && state.loadingIdle ? 'searching…'
+        : matched.length + ' of ' + state.rows.length;
+    }
+    if (foldAllBtn) {
+      // Grouped: fold or unfold every project. Sorted flat: the way back to groups.
+      foldAllBtn.hidden = (state.grouped && (ts.length > 0 || !active.length));
+      foldAllBtn.textContent = !state.grouped ? 'Group by project' : anyActiveOpen() ? 'Collapse all' : 'Expand all';
+    }
+    if (focused) {
+      var again = body.querySelector('[data-nav="' + CSS.escape(focused) + '"]');
+      if (again) again.focus({ preventScroll: true });
+    }
+  }
+
+  function activeGroupKeys() {
+    return groupsOf(state.rows.filter(function(r) { return r.runs > 0; }))
+      .map(function(g) { return 'a:' + g.key; });
+  }
+  function anyActiveOpen() {
+    return activeGroupKeys().some(function(k) { return !isFolded(k); });
   }
 
   function renderSummary(payload) {
@@ -411,14 +558,17 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
   function syncUrl() {
     var url = new URL(location.href);
     url.searchParams.set('range', state.range);
-    history.replaceState(null, '', url);
+    if (state.query.trim()) url.searchParams.set('q', state.query.trim());
+    else url.searchParams.delete('q');
+    // Safari throws once replaceState passes its rate limit; the URL is a nicety.
+    try { history.replaceState(null, '', url); } catch (e) { /* rate limited */ }
   }
 
   function load(includeInactive) {
     document.getElementById('roll-error').hidden = true;
     var url = rollupUrl + '?range=' + encodeURIComponent(state.range);
     if (includeInactive) url += '&include_inactive=1';
-    fetch(url, { headers: { Accept: 'application/json' } })
+    return fetch(url, { headers: { Accept: 'application/json' } })
       .then(function(r) { if (!r.ok) throw new Error('request failed'); return r.json(); })
       .then(function(payload) {
         state.rows = payload.rows;
@@ -426,10 +576,29 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
         state.inactiveIncluded = payload.inactive_included !== false;
         render();
         renderSummary(payload);
+        if (!includeInactive) searchIdle();
       })
       .catch(function() {
         document.getElementById('roll-error').hidden = false;
       });
+  }
+
+  // The server leaves idle rows out of very large installs until asked.
+  function loadIdle(open) {
+    if (state.loadingIdle || state.inactiveIncluded) return;
+    state.loadingIdle = true;
+    render();
+    load(true).then(function() { state.loadingIdle = false; if (open) state.idleOpen = true; render(); });
+  }
+  // A query has to search idle environments too, so fetch them on first use.
+  function searchIdle() {
+    if (find.terms(state.query).length) loadIdle(false);
+  }
+
+  function openIdle() {
+    if (state.loadingIdle) return;
+    if (state.inactiveIncluded) { state.idleOpen = !state.idleOpen; render(); return; }
+    loadIdle(true);
   }
 
   document.getElementById('roll-range-selector').addEventListener('click', function(e) {
@@ -452,7 +621,7 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
   root.querySelectorAll('.roll-table thead button[data-sort]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var key = btn.dataset.sort;
-      if (state.sort.key === key) {
+      if (!state.grouped && state.sort.key === key) {
         state.sort.dir = state.sort.dir === 'asc' ? 'desc' : 'asc';
       } else {
         state.sort.key = key;
@@ -464,23 +633,73 @@ tr.roll-group-row:not(:first-child) th { border-top: 1px solid var(--border-colo
     });
   });
 
-  var orgFilterInput = document.getElementById('roll-org-filter');
-  if (orgFilterInput) {
-    orgFilterInput.addEventListener('input', function() {
-      state.orgFilter = orgFilterInput.value;
+  body.addEventListener('click', function(e) {
+    var toggle = e.target.closest('.roll-group-toggle');
+    if (!toggle || toggle.disabled) return;
+    if (toggle.hasAttribute('data-idle')) { openIdle(); return; }
+    var key = toggle.getAttribute('data-fold');
+    if (state.foldFlip[key]) delete state.foldFlip[key]; else state.foldFlip[key] = true;
+    saveFold();
+    render();
+  });
+
+  if (foldAllBtn) {
+    foldAllBtn.addEventListener('click', function() {
+      if (!state.grouped) {
+        state.grouped = true;
+        markSortActive(state.sort.key, state.sort.dir);
+      } else {
+        state.foldAll = anyActiveOpen();
+        state.foldFlip = {};
+        if (state.foldAll) state.idleOpen = false;
+        saveFold();
+      }
       render();
     });
   }
 
-  var inactiveToggle = document.getElementById('roll-inactive-toggle');
-  if (inactiveToggle) {
-    inactiveToggle.addEventListener('click', function() {
-      inactiveToggle.disabled = true;
-      load(true);
+  if (filterInput) {
+    filterInput.value = state.query;
+    var syncTimer = 0;
+    filterInput.addEventListener('input', function() {
+      state.query = filterInput.value;
+      render();
+      searchIdle();
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(syncUrl, 250);
+    });
+    find.bindSlash(filterInput);
+  }
+
+  // j / k (or ↓ / ↑ once inside the table) walk rows and group headers;
+  // Enter opens a row or folds a group, as the focused control does natively.
+  if (groupable) {
+    document.addEventListener('keydown', function(e) {
+      if (e.metaKey || e.ctrlKey || e.altKey || find.isTyping(e.target)) return;
+      var down = e.key === 'j' || (e.key === 'ArrowDown' && body.contains(document.activeElement));
+      var up = e.key === 'k' || (e.key === 'ArrowUp' && body.contains(document.activeElement));
+      if (!down && !up) return;
+      var items = Array.prototype.filter.call(body.querySelectorAll('[data-nav]'), function(el) { return !el.disabled; });
+      if (!items.length) return;
+      e.preventDefault();
+      var idx = items.indexOf(document.activeElement), next;
+      if (idx === -1) {
+        // Start from what's on screen rather than the top of the table.
+        var floor = parseFloat(getComputedStyle(document.body).getPropertyValue('--topbar-h')) || 0;
+        var onScreen = items.filter(function(el) {
+          var r = el.getBoundingClientRect();
+          return r.top >= floor + 60 && r.bottom <= window.innerHeight;
+        });
+        next = onScreen.length ? items.indexOf(down ? onScreen[0] : onScreen[onScreen.length - 1]) : 0;
+      } else {
+        next = Math.max(0, Math.min(items.length - 1, idx + (down ? 1 : -1)));
+      }
+      items[next].focus({ preventScroll: true });
+      items[next].scrollIntoView({ block: 'nearest' });
     });
   }
 
-  if (!groupable) markSortActive(state.sort.key, state.sort.dir);
+  markSortActive(state.sort.key, state.sort.dir);
   load();
 })();
 </script>

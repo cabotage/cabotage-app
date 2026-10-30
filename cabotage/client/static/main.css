@@ -5844,3 +5844,114 @@ a.obs-pod-link:hover {
     transition: none;
   }
 }
+
+/* Find on page: the filter field on long infra pages. '/' focuses it. */
+.page-find {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.page-find > svg {
+  position: absolute;
+  left: 0.5625rem;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: color-mix(in oklab, var(--color-base-content) 55%, transparent);
+  pointer-events: none;
+}
+.page-find input {
+  height: 1.875rem;
+  width: 15rem;
+  max-width: 100%;
+  padding: 0 3.25rem 0 1.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--surface-inset);
+  color: var(--text-bright);
+  font-size: 0.75rem;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out, width 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.page-find input::placeholder {
+  color: color-mix(in oklab, var(--color-base-content) 62%, transparent);
+}
+.page-find input::-webkit-search-cancel-button {
+  display: none;
+}
+.page-find input:focus {
+  outline: none;
+  width: 19rem;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+.page-find kbd,
+.page-find-count {
+  position: absolute;
+  right: 0.4375rem;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+.page-find-count {
+  font: 500 0.6875rem/1 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  opacity: 0;
+}
+.page-find input:not(:placeholder-shown) ~ .page-find-count {
+  opacity: 1;
+}
+.page-find input:focus ~ kbd,
+.page-find input:not(:placeholder-shown) ~ kbd {
+  opacity: 0;
+}
+.key-hint,
+.page-find kbd {
+  display: inline-block;
+  min-width: 1.125rem;
+  padding: 0.125rem 0.3125rem;
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  border-radius: 0.3125rem;
+  background: var(--surface-card);
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent);
+  font: 500 0.625rem/1 'JetBrains Mono', ui-monospace, monospace;
+  text-align: center;
+}
+.key-hints {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  color: color-mix(in oklab, var(--color-base-content) 62%, transparent);
+  white-space: nowrap;
+}
+.key-hints .key-hint + span {
+  margin-right: 0.375rem;
+}
+mark.find-hit {
+  background: color-mix(in srgb, var(--color-primary) 24%, transparent);
+  color: inherit;
+  border-radius: 0.1875rem;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-primary) 24%, transparent);
+}
+/* Keyboard hints only where a keyboard is likely. */
+@media (hover: none), (max-width: 639px) {
+  .page-find kbd,
+  .key-hints {
+    display: none;
+  }
+}
+@media (max-width: 639px) {
+  .page-find,
+  .page-find input,
+  .page-find input:focus {
+    width: 100%;
+  }
+  .page-find input {
+    padding-right: 2.75rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-find input {
+    transition: none;
+  }
+}

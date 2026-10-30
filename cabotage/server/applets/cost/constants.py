@@ -407,6 +407,28 @@ LINE_ITEM_COLUMNS = (
     "cost_usd",
 )
 
+NODE_HOUR_COLUMNS = (
+    "id",
+    "run_id",
+    "period_start",
+    "node_name",
+    "instance_type",
+    "capacity_type",
+    "cpu_capacity",
+    "memory_gib",
+    "node_hours",
+    "cpu_request_hours",
+    "cpu_usage_hours",
+    "cpu_billed_hours",
+    "memory_request_gib_hours",
+    "memory_usage_gib_hours",
+    "memory_billed_gib_hours",
+    "cost_usd",
+    "requested_cost_usd",
+    "used_cost_usd",
+    "idle_cost_usd",
+)
+
 # Candidate hours for a build to kick off, and the per-(app, hour) chance of
 # one happening — tuned so an active app sees roughly 3-5 builds/week.
 DEMO_BUILD_HOURS = (9, 10, 11, 13, 14, 16, 20)
