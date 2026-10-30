@@ -17,12 +17,26 @@
       {{ icon('users', 'w-4 h-4 text-primary') }}
       <h2 class="text-base font-semibold text-base-content">Organization roles</h2>
     </div>
-    <div class="text-sm text-base-content/70 leading-relaxed space-y-2 max-w-prose">
-      <p><strong class="text-base-content">Members</strong> can view the organization and all its projects and applications. They can also create projects from the organization's project creation page and create application releases, but cannot deploy them.</p>
-      <p><strong class="text-base-content">Admins</strong> can also manage members, organization settings, and all projects and applications, including configuration and deployments.</p>
-      <p>Access to projects comes from organization membership; these roles are not assigned separately per project. Creating a project does not grant a Member admin access to it.</p>
-      <p>New users are added as Members. An organization Admin can promote or demote other users on the organization's Members tab.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4 max-w-3xl">
+      <div class="guide-info-card">
+        <div class="flex items-center gap-2 mb-2">
+          {{ icon('user', 'w-3.5 h-3.5 text-base-content/50') }}
+          <span class="badge badge-xs badge-ghost">Member</span>
+        </div>
+        <p class="text-sm text-base-content/70 leading-relaxed">Views the organization and all its projects and applications. Creates projects from the organization's project creation page and creates application releases, but cannot deploy them.</p>
+      </div>
+      <div class="guide-info-card">
+        <div class="flex items-center gap-2 mb-2">
+          {{ icon('shield', 'w-3.5 h-3.5 text-primary') }}
+          <span class="badge badge-xs badge-primary">Admin</span>
+        </div>
+        <p class="text-sm text-base-content/70 leading-relaxed">Everything a Member can do, plus managing members, organization settings, and all projects and applications, including configuration and deployments.</p>
+      </div>
     </div>
+    <ul class="text-sm text-base-content/70 leading-relaxed space-y-1.5 max-w-3xl list-disc pl-5 marker:text-base-content/30">
+      <li>Roles apply across the whole organization; they are not assigned per project. Creating a project does not make a Member its admin.</li>
+      <li>New users join as Members. An Admin can promote or demote other users on the organization's <strong class="text-base-content">Members</strong> tab.</li>
+    </ul>
   </div>
 
   <div class="mb-10">
