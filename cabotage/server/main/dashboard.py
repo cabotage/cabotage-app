@@ -201,7 +201,6 @@ class EnvironmentStatuses:
     deploying: set[uuid.UUID]
     deployed: set[uuid.UUID]
     last_deploy: dict[uuid.UUID, datetime.datetime]
-    completed_deploys: int
 
     @classmethod
     def load(cls, app_environment_ids: list[uuid.UUID]) -> EnvironmentStatuses:
@@ -218,7 +217,6 @@ class EnvironmentStatuses:
             last_deploy=cast(
                 "dict[uuid.UUID, datetime.datetime]", sets["last_deploy_by_ae"]
             ),
-            completed_deploys=cast("int", sets["deploy_count"]),
         )
 
     def status_of(self, app_environment_id: uuid.UUID) -> str:
@@ -331,6 +329,26 @@ def _count_members(org_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
         .group_by(OrganizationMember.organization_id)
     )
     return {org_id: count for org_id, count in rows}
+
+
+def _count_completed_deploys(org_ids: list[uuid.UUID]) -> int:
+    """Completed deploys of live apps, including environments deleted since."""
+    if not org_ids:
+        return 0
+    return (
+        db.session.scalar(
+            select(func.count(Deployment.id))
+            .join(Application, Deployment.application_id == Application.id)
+            .join(Project, Application.project_id == Project.id)
+            .where(
+                Project.organization_id.in_(org_ids),
+                Project.deleted_at.is_(None),
+                Application.deleted_at.is_(None),
+                Deployment.complete.is_(True),
+            )
+        )
+        or 0
+    )
 
 
 def _build_org_rows(
@@ -571,7 +589,7 @@ def dashboard_context(user: User, show_all: bool) -> dict[str, object]:
         "app_items": app_items,
         "failing": failing,
         "in_progress": in_progress,
-        "completed_deploys": statuses.completed_deploys,
+        "completed_deploys": _count_completed_deploys([o.id for o in orgs]),
         "chart": chart,
         "chart_peak": max((d.total for d in chart), default=0),
         "chart_succeeded": sum(d.succeeded for d in chart),
