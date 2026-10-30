@@ -271,7 +271,9 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
   try { savedFold = JSON.parse(localStorage.getItem(FOLD_KEY)); } catch (e) { /* unavailable or corrupt */ }
   if (!savedFold || typeof savedFold.flip !== 'object' || savedFold.flip === null) savedFold = { all: false, flip: {} };
 
-  var initialQuery = new URL(location.href).searchParams.get('q') || '';
+  // Only pages that render the filter field honour ?q=; elsewhere it would
+  // hide rows with no visible way to clear it.
+  var initialQuery = groupable ? new URL(location.href).searchParams.get('q') || '' : '';
   var state = { range: {{ current_range|tojson }}, sort: { key: 'last_at', dir: 'desc' }, rows: null,
     query: initialQuery, inactiveTotal: 0, inactiveIncluded: true, grouped: groupable,
     // On the wide rollups the idle section starts folded; a project's few rows stay open.
