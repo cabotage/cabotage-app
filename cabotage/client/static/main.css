@@ -1130,13 +1130,14 @@ a.live-commit-sha:hover {
   border: 1px solid color-mix(in oklch, currentColor 15%, transparent);
   padding-left: 0.5rem;
 }
-/* Semantic Badges & Alerts
+/* Semantic & Accent Badges, Alerts
    Tinted like .flash-* below instead of daisyUI's solid fill, which can't clear
-   4.5:1 on this palette. Unlayered, so these win over @layer daisyui. */
+   4.5:1 on this palette (or on dim accent presets). Unlayered, so these win over @layer daisyui. */
 .badge-error,
 .badge-warning,
 .badge-success,
-.badge-info {
+.badge-info,
+.badge-accent {
   --badge-bg: color-mix(in srgb, var(--badge-color) 12%, transparent);
   --badge-fg: color-mix(in srgb, var(--badge-color) 75%, var(--color-base-content));
   border-color: color-mix(in srgb, var(--badge-color) 40%, transparent);
@@ -1170,6 +1171,13 @@ a.live-commit-sha:hover {
 /* terminal's base-content is green — mixing would tint everything green */
 [data-theme='terminal'] :is(.badge-error, .badge-warning, .badge-success, .badge-info) {
   --badge-fg: var(--badge-color);
+}
+/* Each accent preset sets --accent-text as its legible text shade for the current theme. */
+[data-theme] .badge-accent {
+  --badge-fg: var(--accent-text);
+}
+[data-theme='light'] .badge-accent {
+  --badge-fg: color-mix(in srgb, var(--accent-text) 60%, var(--color-base-content));
 }
 [data-theme='terminal'] :is(.alert-error, .alert-warning, .alert-success, .alert-info) {
   color: var(--alert-tint);
