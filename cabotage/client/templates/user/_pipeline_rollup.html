@@ -452,7 +452,7 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
     sub = state.loadingIdle ? 'Loading…' : 'No deploys in the last ' + days + ' days';
     return '<tr class="roll-group-row roll-idle-row"><th colspan="9" scope="colgroup"><div class="roll-group">' +
       '<button type="button" class="roll-group-toggle" data-idle data-nav="idle" aria-expanded="' + open + '"' +
-      (ts.length && state.inactiveIncluded ? ' disabled' : '') + '>' + chevron() + '<span>' + esc(label) + '</span></button>' +
+      (state.loadingIdle || (ts.length && state.inactiveIncluded) ? ' disabled' : '') + '>' + chevron() + '<span>' + esc(label) + '</span></button>' +
       '<span class="roll-group-meta"><span>' + esc(sub) + '</span></span></div></th></tr>';
   }
 
@@ -576,6 +576,7 @@ tr.roll-idle-row .roll-group-toggle { text-transform: none; letter-spacing: 0; f
   }
 
   function openIdle() {
+    if (state.loadingIdle) return;
     if (state.inactiveIncluded) { state.idleOpen = !state.idleOpen; render(); return; }
     // The server leaves idle rows out of very large installs until asked.
     state.loadingIdle = true;
