@@ -2064,6 +2064,8 @@ function terminalTintToggle(onChange) {
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     onChange(on);
   }
+  // A mouse click shouldn't pull focus out of the shell; keyboard users can still Tab here.
+  btn.addEventListener('mousedown', function (e) { e.preventDefault(); });
   btn.addEventListener('click', function () {
     if (terminalTintIsAccent()) localStorage.removeItem(TERMINAL_TINT_KEY);
     else localStorage.setItem(TERMINAL_TINT_KEY, 'accent');
