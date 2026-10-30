@@ -1771,7 +1771,7 @@ tr.cost-wl-child > td { color: var(--text-muted); }
       '<button type="button" data-sort="name">Name</button>' +
       '<button type="button" data-sort="efficiency">Efficiency</button></div></div>' +
       '<div data-rows></div>' +
-      (rows.length > 10 ? '<div class="cost-bd-footer"><button type="button" data-toggle-all hidden></button></div>' : '');
+      (rows.length > 10 ? '<div class="cost-bd-footer"><button type="button" class="cost-bd-show-all" data-toggle-all hidden></button></div>' : '');
     var rowsEl = section.querySelector('[data-rows]');
     var toggleBtn = section.querySelector('[data-toggle-all]');
 
