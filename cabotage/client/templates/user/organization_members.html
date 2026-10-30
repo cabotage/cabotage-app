@@ -35,11 +35,13 @@
       {% endif %}
     </div>
 
-    <div class="text-sm text-base-content/70 space-y-1 mb-4 max-w-prose">
-      <p id="member-role-help"><strong class="text-base-content">Member:</strong> Can view this organization and all its projects and applications, and create projects and application releases.</p>
-      <p id="admin-role-help"><strong class="text-base-content">Admin:</strong> Also manages members, organization settings, and all projects and applications, including configuration and deployments.</p>
-      <p>These roles apply across this organization, not just one project.</p>
-    </div>
+    <dl class="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-2 px-4 py-3 mb-4 rounded-lg border border-dashed border-base-content/10 text-xs">
+      <dt><span class="badge badge-xs badge-ghost w-14">Member</span></dt>
+      <dd id="member-role-help" class="text-base-content/70 leading-relaxed">Views this organization and all its projects and applications. Creates projects and application releases.</dd>
+      <dt><span class="badge badge-xs badge-primary w-14">Admin</span></dt>
+      <dd id="admin-role-help" class="text-base-content/70 leading-relaxed">Everything a Member can do, plus managing members, organization settings, and all projects and applications, including configuration and deployments.</dd>
+      <dd class="col-start-2 text-base-content/70">Roles apply across the whole organization, not per project.</dd>
+    </dl>
 
     {% if organization.members %}
       <div class="flex flex-col gap-2">
@@ -69,20 +71,20 @@
               <div class="flex items-center gap-1.5 flex-shrink-0">
                 {% if membership.admin %}
                   <button type="button"
-                          class="btn btn-ghost btn-xs gap-1 text-warning"
+                          class="btn btn-ghost btn-xs gap-1 text-base-content/70 hover:text-base-content"
                           title="Demote from admin"
                           aria-describedby="member-role-help"
                           onclick="document.getElementById('demote-{{ membership.user.id }}').showModal()">
-                    {{ icon('shield', 'w-3.5 h-3.5') }}
+                    {{ icon('shield-minus', 'w-3.5 h-3.5') }}
                     Demote
                   </button>
                 {% else %}
                   <button type="button"
-                          class="btn btn-ghost btn-xs gap-1"
+                          class="btn btn-ghost btn-xs gap-1 text-base-content/70 hover:text-base-content"
                           title="Promote to admin"
                           aria-describedby="admin-role-help"
                           onclick="document.getElementById('promote-{{ membership.user.id }}').showModal()">
-                    {{ icon('shield', 'w-3.5 h-3.5') }}
+                    {{ icon('shield-plus', 'w-3.5 h-3.5') }}
                     Promote
                   </button>
                 {% endif %}
