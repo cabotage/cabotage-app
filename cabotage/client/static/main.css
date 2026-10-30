@@ -4889,13 +4889,17 @@ a.obs-pod-link:hover {
   flex: 1;
   min-height: 0;
   width: 100%;
+  --log-tint: var(--text-bright);
 }
-/* The log box stays dark (#0a0a0f) in every theme. Outside the terminal theme,
+.struct-log[data-tint="accent"] {
+  --log-tint: var(--accent-on-dark);
+}
+/* The log and shell boxes stay dark (#0a0a0f / #000) in every theme. Outside the terminal theme,
    the neutral tokens used inside it take light-on-dark values that pass AA
    there, and the light theme's status colors (tuned for white) are swapped
    for the dark theme's. */
-[data-theme="light"] .struct-log,
-[data-theme="dark"] .struct-log {
+[data-theme="light"] :is(.struct-log, .term-box),
+[data-theme="dark"] :is(.struct-log, .term-box) {
   --text-bright: rgba(226, 226, 233, 0.9);
   --text-muted: rgba(226, 226, 233, 0.65);
   --text-faint: rgba(226, 226, 233, 0.55);
@@ -4955,6 +4959,24 @@ a.obs-pod-link:hover {
   color: var(--text-bright);
   background: var(--surface-neutral);
 }
+.term-tint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+/* Previews the accent; dimmed until the toggle is on. Square: circles mean status. */
+.term-tint-swatch {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 0.125rem;
+  background: var(--accent-on-dark);
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+.term-tint-btn:hover .term-tint-swatch,
+.term-tint-btn[aria-pressed="true"] .term-tint-swatch {
+  opacity: 1;
+}
 .struct-log-jump-error {
   color: var(--color-error);
 }
@@ -5004,8 +5026,8 @@ a.obs-pod-link:hover {
   font-weight: 500;
   padding: 0.3rem 0.625rem;
   border-radius: 9999px;
-  background: var(--color-primary);
-  color: var(--color-primary-content, #fff);
+  background: var(--log-tint);
+  color: #0a0a0f;
   border: none;
   cursor: pointer;
   box-shadow: 0 4px 16px var(--shadow-card);
@@ -5056,7 +5078,7 @@ a.obs-pod-link:hover {
   text-align: left;
   font-family: 'JetBrains Mono', ui-monospace, monospace;
   font-size: 0.75rem;
-  color: var(--text-bright);
+  color: var(--log-tint);
 }
 .log-step-toggle:hover {
   background: var(--hover-overlay);

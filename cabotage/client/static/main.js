@@ -2047,6 +2047,33 @@ function structLogAttachTailTracking(scrollEl, chipEl) {
   return state;
 }
 
+/* Shell and log boxes are white by default; this toggle colors them with the
+   accent instead. One saved pref; every box on the page follows it. */
+var TERMINAL_TINT_KEY = 'terminal-tint';
+function terminalTintIsAccent() {
+  return localStorage.getItem(TERMINAL_TINT_KEY) === 'accent';
+}
+function terminalTintToggle(onChange) {
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'struct-log-btn term-tint-btn';
+  btn.title = 'Color with the accent';
+  btn.innerHTML = '<span class="term-tint-swatch" aria-hidden="true"></span>Accent';
+  function sync() {
+    var on = terminalTintIsAccent();
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    onChange(on);
+  }
+  btn.addEventListener('click', function () {
+    if (terminalTintIsAccent()) localStorage.removeItem(TERMINAL_TINT_KEY);
+    else localStorage.setItem(TERMINAL_TINT_KEY, 'accent');
+    document.dispatchEvent(new Event('terminal-tint-change'));
+  });
+  document.addEventListener('terminal-tint-change', sync);
+  sync();
+  return btn;
+}
+
 function StructuredLogViewer(container, kind) {
   this.container = container;
   this.kind = kind; /* 'buildkit' | 'phases' */
@@ -2093,9 +2120,15 @@ StructuredLogViewer.prototype.buildDom = function () {
   rawToggle.setAttribute('aria-pressed', 'false');
   rawToggle.textContent = 'Raw';
 
+  var tintToggle = terminalTintToggle(function (on) {
+    if (on) root.dataset.tint = 'accent';
+    else delete root.dataset.tint;
+  });
+
   header.appendChild(stepCount);
   header.appendChild(jumpError);
   header.appendChild(spacer);
+  header.appendChild(tintToggle);
   header.appendChild(rawToggle);
 
   var body = document.createElement('div');
@@ -2763,18 +2796,23 @@ function initAppShell() {
   }
   var protocol = (window.location.protocol === 'https:') ? 'wss://' : 'ws://';
   var socket = new WebSocket(protocol + window.location.host + window.location.pathname + '/socket');
-  // xterm needs concrete colors, so resolve the accent to rgb for the cursor and selection.
-  // The terminal is always black; accents too dark to see on it (the "dark" preset) fall back to the foreground.
+  // xterm needs concrete colors, so resolve the tint to rgb. White by default; in accent
+  // mode the cursor, selection and ANSI blue (ls directories, prompts, git branches) take
+  // the accent's dark-mode text shade, since the terminal is always black.
   function terminalTheme() {
+    var theme = { background: '#000000', foreground: '#e2e2e9', cursor: '#e2e2e9', selectionBackground: 'rgba(226, 226, 233, 0.3)' };
+    if (!terminalTintIsAccent()) return theme;
     var ctx = document.createElement('canvas').getContext('2d');
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim();
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--accent-on-dark').trim();
     ctx.fillRect(0, 0, 1, 1);
     var p = ctx.getImageData(0, 0, 1, 1).data;
-    var lin = function(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
-    var luminance = 0.2126 * lin(p[0]) + 0.7152 * lin(p[1]) + 0.0722 * lin(p[2]);
-    // (L + 0.05) / 0.05 >= 3 is a 3:1 contrast ratio against black.
-    var rgb = luminance >= 0.1 ? p[0] + ', ' + p[1] + ', ' + p[2] : '226, 226, 233';
-    return { background: '#000000', foreground: '#e2e2e9', cursor: 'rgb(' + rgb + ')', selectionBackground: 'rgba(' + rgb + ', 0.3)' };
+    var rgb = p[0] + ', ' + p[1] + ', ' + p[2];
+    var bright = [0, 1, 2].map(function(i) { return Math.round(p[i] + (255 - p[i]) * 0.3); }).join(', ');
+    theme.cursor = 'rgb(' + rgb + ')';
+    theme.selectionBackground = 'rgba(' + rgb + ', 0.3)';
+    theme.blue = 'rgb(' + rgb + ')';
+    theme.brightBlue = 'rgb(' + bright + ')';
+    return theme;
   }
   var term = new Terminal({
     fontFamily: '"JetBrains Mono", "Cascadia Code", Menlo, monospace',
@@ -2783,8 +2821,10 @@ function initAppShell() {
     allowProposedApi: true,
     theme: terminalTheme()
   });
-  // The accent picker and theme toggle rewrite --color-primary on <html> without a reload.
-  new MutationObserver(function() { term.options.theme = terminalTheme(); })
+  function refreshTheme() { term.options.theme = terminalTheme(); }
+  document.getElementById('terminal-header').appendChild(terminalTintToggle(refreshTheme));
+  // The accent picker and theme toggle rewrite --accent-on-dark on <html> without a reload.
+  new MutationObserver(refreshTheme)
     .observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-accent'] });
   var attachAddon = new AttachAddon.AttachAddon(socket, true);
   wrap(attachAddon, '_sendData', function(original, data) { original('\x00' + data); });

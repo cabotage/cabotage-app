@@ -69,6 +69,8 @@
         else s.removeProperty('--color-primary-content');
         s.setProperty('--color-accent', p.accent);
         s.setProperty('--accent-text', p.accentText);
+        // Shell and log boxes stay black in every theme, so they read the dark-mode text shade.
+        s.setProperty('--accent-on-dark', ((mode === 'terminal' && preset.terminal) || preset.dark).accentText);
         s.setProperty('--hover-overlay', 'rgba(' + p.hoverRgb + ', ' + (mode === 'dark' ? '0.03' : '0.05') + ')');
         s.setProperty('--hover-overlay-strong', 'rgba(' + p.hoverRgb + ', ' + (mode === 'dark' ? '0.06' : '0.1') + ')');
         s.setProperty('--shadow-primary-glow', 'rgba(' + p.glowRgb + ', ' + (mode === 'dark' ? '0.25' : '0.2') + ')');
@@ -163,6 +165,7 @@
       --shadow-card: rgba(0,0,0,0.3);
       --shadow-primary-glow: rgba(124, 58, 237, 0.25);
       --accent-text: #a78bfa;
+      --accent-on-dark: #a78bfa;
     }
     [data-theme="light"] {
       color-scheme: light;
@@ -203,6 +206,7 @@
       --shadow-card: rgba(0,0,0,0.08);
       --shadow-primary-glow: rgba(124, 58, 237, 0.2);
       --accent-text: #7c3aed;
+      --accent-on-dark: #a78bfa;
     }
     [data-theme="terminal"] {
       color-scheme: dark;
@@ -242,6 +246,7 @@
       --shadow-card: rgba(0, 0, 0, 0.5);
       --shadow-primary-glow: rgba(51, 255, 51, 0.2);
       --accent-text: #33ff33;
+      --accent-on-dark: #33ff33;
     }
     </style>
 

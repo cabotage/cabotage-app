@@ -24,9 +24,12 @@
     <span class="text-sm text-base-content/40 font-mono">{{ application.slug }}</span>
   </div>
 
-  <div class="rounded-lg border border-base-300 overflow-hidden"
+  <div class="term-box rounded-lg border border-base-300 overflow-hidden"
        style="background: #000;
               padding: 0.25rem">
+    <div id="terminal-header" class="struct-log-header">
+      <span class="struct-log-spacer"></span>
+    </div>
     <div id="terminal" style="height: 65vh; min-height: 400px;"></div>
   </div>
 {% endblock content %}
