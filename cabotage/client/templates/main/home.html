@@ -294,7 +294,42 @@
            data-page="dashboard"
            data-dash
            data-signature="{{ status_signature }}"
-           data-refresh="{{ 1 if in_progress else 0 }}">
+           data-refresh="{{ 1 if in_progress else 0 }}"
+           data-layout="calm"
+           data-hide="counts roles slugs">
+        <script>
+          // Apply saved display settings before the page paints; the
+          // dashboard script at the end of the page reuses these helpers.
+          window.dashDisplay = (function (root) {
+            var KEY = 'cabotage:dashboard:display';
+            var DEFAULT_HIDE = { calm: ['counts', 'roles', 'slugs'], detailed: [] };
+            function load() {
+              var saved = null;
+              try { saved = JSON.parse(localStorage.getItem(KEY)); } catch (e) {}
+              saved = saved || {};
+              var hide = saved.hide || {};
+              return {
+                layout: saved.layout === 'detailed' ? 'detailed' : 'calm',
+                activity: saved.activity === true,
+                hide: {
+                  calm: Array.isArray(hide.calm) ? hide.calm : DEFAULT_HIDE.calm,
+                  detailed: Array.isArray(hide.detailed) ? hide.detailed : DEFAULT_HIDE.detailed,
+                },
+              };
+            }
+            function save(prefs) {
+              try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch (e) {}
+            }
+            function apply(prefs) {
+              root.setAttribute('data-layout', prefs.layout);
+              root.setAttribute('data-hide', prefs.hide[prefs.layout].join(' '));
+              if (prefs.activity) root.setAttribute('data-activity', '');
+              else root.removeAttribute('data-activity');
+            }
+            apply(load());
+            return { DEFAULT_HIDE: DEFAULT_HIDE, load: load, save: save, apply: apply };
+          })(document.currentScript.parentElement);
+        </script>
         <header class="dash-head">
           <div>
             <h1 class="text-xl font-semibold text-base-content">Dashboard</h1>
@@ -306,6 +341,40 @@
             </p>
           </div>
           <div class="dash-head-tools">
+            {#- Calm layout only: the deploy chart and recent deploys open on demand. -#}
+            <button type="button" class="dash-toggle" data-dash-activity aria-pressed="false"
+                    title="Show deploy chart and recent deploys">
+              {{ icon('activity', 'w-3.5 h-3.5') }}Activity
+            </button>
+            <div class="dash-display">
+              <button type="button" class="dash-toggle" data-dash-display-toggle aria-expanded="false" aria-haspopup="true">
+                {{ icon('settings', 'w-3.5 h-3.5') }}Display
+              </button>
+              <div class="dash-display-menu" data-dash-display-menu hidden>
+                <p class="dash-display-label">Layout</p>
+                <div class="dash-seg dash-display-layout" role="group" aria-label="Page layout">
+                  <button type="button" data-dash-layout="calm" aria-pressed="true">Calm</button>
+                  <button type="button" data-dash-layout="detailed" aria-pressed="false">Detailed</button>
+                </div>
+                <p class="dash-display-label">Sections</p>
+                <label><input type="checkbox" data-dash-hide-opt="kpis">Summary</label>
+                <label><input type="checkbox" data-dash-hide-opt="attention">Needs attention</label>
+                <label><input type="checkbox" data-dash-hide-opt="chart">Deploy chart</label>
+                <label><input type="checkbox" data-dash-hide-opt="recent">Recent deploys</label>
+                <p class="dash-display-label">Details</p>
+                <label><input type="checkbox" data-dash-hide-opt="counts">Project, app &amp; member counts</label>
+                <label><input type="checkbox" data-dash-hide-opt="health">Health bars</label>
+                <label><input type="checkbox" data-dash-hide-opt="roles">Role badges</label>
+                <label><input type="checkbox" data-dash-hide-opt="slugs">Slugs</label>
+                <label><input type="checkbox" data-dash-hide-opt="times">Last deploy times</label>
+                <label><input type="checkbox" data-dash-hide-opt="envs">Healthy environment chips</label>
+                <div class="dash-display-foot">
+                  <button type="button" data-dash-display-preset="minimal">Minimal</button>
+                  <button type="button" data-dash-display-preset="default">Default</button>
+                  <button type="button" data-dash-display-preset="all">Show all</button>
+                </div>
+              </div>
+            </div>
             {% if current_user.admin %}
               <nav class="dash-scope" aria-label="Dashboard scope">
                 <a href="{{ url_for('main.home') }}"
@@ -337,6 +406,37 @@
             <a href="{{ url_for('main.home') }}" class="dash-admin-band-exit">Back to my orgs</a>
           </div>
         {% endif %}
+
+        {#- Calm layout: a one-line summary and a failure banner stand in for
+            the summary cards and the "Needs attention" card. -#}
+        <div class="dash-calm" data-dash-region="calm">
+          <p class="dash-statline">
+            <button type="button" data-dash-open="orgs"><strong>{{ "{:,}".format(org_count) }}</strong> {{ 'org' if org_count == 1 else 'orgs' }}</button>
+            <button type="button" data-dash-open="projects"><strong>{{ "{:,}".format(project_count) }}</strong> {{ 'project' if project_count == 1 else 'projects' }}</button>
+            <button type="button" data-dash-open="apps"><strong>{{ "{:,}".format(app_count) }}</strong> {{ 'app' if app_count == 1 else 'apps' }}</button>
+            <button type="button" data-dash-open="deploys"><strong>{{ "{:,}".format(chart_succeeded) }}</strong> deploys in {{ chart_days }}d</button>
+            {% if in_progress %}
+              <button type="button" class="dash-statline-flag" data-status="deploying" data-dash-open="apps" data-dash-open-filter="in-progress">
+                {{ dot('deploying') }}{{ in_progress|length }} in progress
+              </button>
+            {% endif %}
+          </p>
+          {% if failing %}
+            <div class="dash-alert" role="status">
+              <span class="dash-alert-head">{{ icon('alert-triangle', 'w-4 h-4') }}{{ plural(failing|length, 'app') }} failing</span>
+              <span class="dash-alert-items">
+                {% for item in failing[:4] %}
+                  <a href="{{ item.url }}" class="dash-alert-item" title="{{ item.org.slug }} / {{ item.project.slug }}">
+                    {{ dot(item.status) }}{{ item.app.name }}<span>{{ status_labels[item.status]|lower }}</span>
+                  </a>
+                {% endfor %}
+                {% if failing|length > 4 %}
+                  <button type="button" class="dash-alert-more" data-dash-open="apps" data-dash-open-filter="failing">+{{ failing|length - 4 }} more</button>
+                {% endif %}
+              </span>
+            </div>
+          {% endif %}
+        </div>
 
         <div class="dash-kpis" data-dash-region="kpis">
           {% set org_admin_count = org_rows|selectattr('is_org_admin')|list|length %}
@@ -524,7 +624,7 @@
               {% endif %}
             </section>
 
-            <section class="dash-card">
+            <section class="dash-card dash-card-chart">
               <header class="dash-card-head">
                 <h2 class="dash-label">Deploys, last {{ chart_days }} days</h2>
               </header>
@@ -570,7 +670,7 @@
               </div>
             </section>
 
-            <section class="dash-card">
+            <section class="dash-card dash-card-recent">
               <header class="dash-card-head">
                 <h2 class="dash-label">Recent deploys</h2>
                 {% if deploys|length > recent_deploys|length %}
@@ -622,6 +722,34 @@
         var treeSearch = root.querySelector('[data-dash-search]');
         var treeState = { query: '', filter: 'all' };
         var treeSection = root.querySelector('.dash-main');
+
+        // Display settings (see the script at the top of the page): calm or
+        // detailed layout, the activity rail in the calm layout, and what each
+        // layout hides. Each layout keeps its own choices.
+        var display = window.dashDisplay;
+        var displayPrefs = display.load();
+        var MINIMAL_HIDE = ['kpis', 'chart', 'recent', 'counts', 'roles', 'slugs', 'times', 'envs'];
+        function syncDisplayControls() {
+          var hidden = displayPrefs.hide[displayPrefs.layout];
+          root.querySelectorAll('[data-dash-layout]').forEach(function (button) {
+            button.setAttribute('aria-pressed', String(button.getAttribute('data-dash-layout') === displayPrefs.layout));
+          });
+          root.querySelectorAll('[data-dash-activity]').forEach(function (button) {
+            button.setAttribute('aria-pressed', String(displayPrefs.activity));
+          });
+          root.querySelectorAll('[data-dash-hide-opt]').forEach(function (box) {
+            box.checked = hidden.indexOf(box.getAttribute('data-dash-hide-opt')) === -1;
+          });
+        }
+        function updateDisplay() {
+          display.apply(displayPrefs);
+          display.save(displayPrefs);
+          syncDisplayControls();
+        }
+        function setDisplayMenu(open) {
+          root.querySelector('[data-dash-display-toggle]').setAttribute('aria-expanded', String(open));
+          root.querySelector('[data-dash-display-menu]').hidden = !open;
+        }
 
         // List shows the expandable tree; grid shows one card per organization.
         function setView(view) {
@@ -766,6 +894,24 @@
         root.addEventListener('click', function (e) {
           var target = e.target;
           if (target.matches('[data-dash-sheet]')) return target.close(); // backdrop click
+          var layoutButton = target.closest('[data-dash-layout]');
+          if (layoutButton) {
+            displayPrefs.layout = layoutButton.getAttribute('data-dash-layout');
+            return updateDisplay();
+          }
+          if (target.closest('[data-dash-activity]')) {
+            displayPrefs.activity = !displayPrefs.activity;
+            return updateDisplay();
+          }
+          var displayToggle = target.closest('[data-dash-display-toggle]');
+          if (displayToggle) return setDisplayMenu(displayToggle.getAttribute('aria-expanded') !== 'true');
+          var preset = target.closest('[data-dash-display-preset]');
+          if (preset) {
+            var presets = { minimal: MINIMAL_HIDE, default: display.DEFAULT_HIDE[displayPrefs.layout], all: [] };
+            displayPrefs.hide[displayPrefs.layout] = presets[preset.getAttribute('data-dash-display-preset')].slice();
+            return updateDisplay();
+          }
+          if (!target.closest('.dash-display')) setDisplayMenu(false);
           var opener = target.closest('[data-dash-open]');
           if (opener) {
             return openSheet(opener.getAttribute('data-dash-open'), opener.getAttribute('data-dash-open-filter'));
@@ -822,6 +968,16 @@
           if (e.target.matches('[data-dash-sheet-search]')) filterSheet(e.target.closest('dialog'));
         });
 
+        root.addEventListener('change', function (e) {
+          if (!e.target.matches('[data-dash-hide-opt]')) return;
+          var hidden = [];
+          root.querySelectorAll('[data-dash-hide-opt]').forEach(function (box) {
+            if (!box.checked) hidden.push(box.getAttribute('data-dash-hide-opt'));
+          });
+          displayPrefs.hide[displayPrefs.layout] = hidden;
+          updateDisplay();
+        });
+
         treeSearch.addEventListener('input', function () {
           treeState.query = treeSearch.value.trim().toLowerCase();
           filterTree();
@@ -843,6 +999,7 @@
 
         // "/" focuses the search box of the open panel, or the tree's.
         document.addEventListener('keydown', function (e) {
+          if (e.key === 'Escape') setDisplayMenu(false);
           if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
           var t = e.target;
           if (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
@@ -869,7 +1026,7 @@
               var next = new DOMParser().parseFromString(html, 'text/html').querySelector('[data-dash]');
               if (!next) return;
               if (next.getAttribute('data-signature') !== root.getAttribute('data-signature')) {
-                ['kpis', 'tree', 'rail'].forEach(function (name) {
+                ['calm', 'kpis', 'tree', 'rail'].forEach(function (name) {
                   var selector = '[data-dash-region="' + name + '"]';
                   var current = root.querySelector(selector);
                   var fresh = next.querySelector(selector);
@@ -891,6 +1048,7 @@
         });
 
         try { setView(localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid'); } catch (err) {}
+        syncDisplayControls();
         restoreOpenOrgs();
         countTree();
         filterTree();
