@@ -22,17 +22,21 @@
 <style>
 /* Stages are the accent fading toward the card: build → release → deploy.
    Fading toward the surface, not the foreground, keeps them apart when the
-   accent is the foreground color (white accent, terminal theme).
+   accent is the foreground color (white accent, terminal theme). On dark
+   cards the accent gets a lightness floor so the near-black "dark" preset
+   stays as visible as the others.
    Status colors stay reserved for outcomes. */
 .pipe {
-  --pipe-image: var(--color-primary);
-  --pipe-release: color-mix(in oklab, var(--color-primary) 70%, var(--surface-card));
-  --pipe-deploy: color-mix(in oklab, var(--color-primary) 45%, var(--surface-card));
+  --pipe-base: oklch(from var(--color-primary) max(l, 0.55) c h);
+  --pipe-image: var(--pipe-base);
+  --pipe-release: color-mix(in oklab, var(--pipe-base) 70%, var(--surface-card));
+  --pipe-deploy: color-mix(in oklab, var(--pipe-base) 45%, var(--surface-card));
   --pipe-ok: var(--color-success);
   --pipe-fail: var(--color-error);
   --pipe-run: var(--color-warning);
   --pipe-mono: 'JetBrains Mono', ui-monospace, monospace;
 }
+[data-theme='light'] .pipe { --pipe-base: var(--color-primary); }
 .pipe .num { font-family: var(--pipe-mono); font-variant-numeric: tabular-nums; }
 
 .pipe-card { background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 0.75rem; }
