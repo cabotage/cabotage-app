@@ -1,3 +1,4 @@
+{% from "_macros.html" import icon %}
 {#
   Shared cost dashboard body. Each including template sets `data_url` before including this.
   Expects: data_url (str), dashboard_title (str), dashboard_subtitle (str)
@@ -236,9 +237,6 @@
 .cost-bd-sort { display: flex; gap: 0.25rem; }
 .cost-bd-sort button { font-size: 0.6875rem; color: var(--text-faint); padding: 0.125rem 0.5rem; border-radius: 0.3125rem; }
 .cost-bd-sort button:hover, .cost-bd-sort button.is-active { color: var(--text-bright); background: var(--surface-inset); }
-.cost-bd-filter { font-size: 0.75rem; color: var(--text-bright); background: var(--surface-inset); border: 1px solid var(--border-color); border-radius: 0.375rem;
-  padding: 0.25rem 0.625rem; width: 12rem; max-width: 100%; margin-left: auto; }
-.cost-bd-filter::placeholder { color: var(--text-faint); }
 .cost-bd-footer { padding: 0.625rem 1rem; border-top: 1px solid var(--border-color-subtle); text-align: center; }
 .cost-bd-show-all { font-size: 0.75rem; font-weight: 600; color: var(--color-primary); padding: 0.25rem 0.75rem; border-radius: 0.3125rem; }
 .cost-bd-show-all:hover { background: var(--surface-inset); }
@@ -310,6 +308,69 @@
   .cost-skel { animation: none; }
   .cost-bd-chevron, .cost-bd-summary { transition: none; }
 }
+
+/* ── Section rail: sticky jump bar under the topbar ──
+   Reads as a second tier of the topbar once stuck: same glass, same hairline.
+   The ink under the current chip glides between sections as you scroll. */
+.cost-rail { position: sticky; top: var(--topbar-h, 0px); z-index: 20; display: flex; align-items: center; gap: 0.75rem;
+  margin: 0 0 0.875rem; padding: 0.375rem 0; background: var(--topbar-bg);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  box-shadow: 0 1px 0 var(--border-color), 0 0 0 100vmax var(--topbar-bg); clip-path: inset(0 -100vmax -1px); }
+.cost-rail-chips { position: relative; display: flex; gap: 0.125rem; min-width: 0; flex: 1; overflow-x: auto;
+  scrollbar-width: none; mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent); }
+.cost-rail-chips::-webkit-scrollbar { display: none; }
+.cost-rail-chip { position: relative; display: inline-flex; align-items: center; gap: 0.375rem; flex: none; height: 1.875rem;
+  padding: 0 0.625rem; border-radius: 0.4375rem; font-size: 0.75rem; font-weight: 500; text-decoration: none; white-space: nowrap;
+  color: color-mix(in oklab, var(--color-base-content) 68%, transparent); transition: color 150ms ease-out, background-color 150ms ease-out; }
+.cost-rail-chip:hover { color: var(--text-bright); background: var(--hover-overlay); }
+.cost-rail-chip:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.cost-rail-chip[aria-current="location"] { color: var(--text-bright); }
+.cost-rail-chip.is-none { color: color-mix(in oklab, var(--color-base-content) 62%, transparent); }
+.cost-rail-n { font-family: var(--cost-mono); font-size: 0.625rem; font-variant-numeric: tabular-nums; padding: 0.0625rem 0.3125rem;
+  border-radius: 9999px; background: color-mix(in srgb, var(--color-primary) 18%, transparent); color: var(--accent-text); }
+.cost-rail-chip.is-none .cost-rail-n { background: var(--surface-inset); color: inherit; }
+.cost-rail-ink { position: absolute; left: 0; bottom: 0; height: 2px; width: 1px; border-radius: 2px; background: var(--color-primary);
+  transform-origin: left center; pointer-events: none; opacity: 0;
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease-out; }
+.cost-rail .page-find { flex: none; }
+.cost [data-rail] { scroll-margin-top: calc(var(--topbar-h, 0px) + var(--cost-rail-h, 0px) + 0.75rem); }
+@media (max-width: 639px) {
+  .cost-rail .page-find, .cost-rail .page-find input { width: 9rem; }
+  .cost-rail:focus-within .cost-rail-chips { display: none; }
+  .cost-rail:focus-within .page-find, .cost-rail:focus-within .page-find input { width: 100%; flex: 1; }
+}
+
+/* ── Long tables: column headers (and the open namespace) stay in view ── */
+.cost-sticky-table thead th { background: var(--surface-card); }
+@media (min-width: 768px) {
+  .cost-table-scroll.is-sticky { overflow-x: visible; }
+  .cost-sticky-table { border-collapse: separate; border-spacing: 0; }
+  .cost-sticky-table thead th { position: sticky; top: calc(var(--topbar-h, 0px) + var(--cost-rail-h, 0px)); z-index: 3;
+    border-bottom: 0; box-shadow: inset 0 -1px 0 var(--border-color); }
+  .cost-sticky-table tr.cost-wl-group.is-open > td { position: sticky; top: calc(var(--topbar-h, 0px) + var(--cost-rail-h, 0px) + var(--thead-h, 2.0625rem));
+    z-index: 2; background: var(--surface-card); }
+}
+
+/* ── Platform workloads, folded by namespace ── */
+.cost-wl-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.cost-wl-foldall { font-size: 0.75rem; font-weight: 500; padding: 0.25rem 0.5rem; border-radius: 0.375rem;
+  color: color-mix(in oklab, var(--color-base-content) 70%, transparent); }
+.cost-wl-foldall:hover { color: var(--text-bright); background: var(--hover-overlay); }
+.cost-wl-foldall:focus-visible, .cost-wl-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+tr.cost-wl-group > td { color: var(--text-bright); font-weight: 500; }
+tr.cost-wl-group:hover > td { background: var(--hover-overlay); }
+.cost-wl-toggle { display: inline-flex; align-items: center; gap: 0.5rem; max-width: 100%; text-align: left; color: inherit; font: inherit;
+  border-radius: 0.3125rem; }
+.cost-wl-chev { width: 0.875rem; height: 0.875rem; flex: none; color: var(--text-faint); transition: transform 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+.cost-wl-toggle[aria-expanded="true"] .cost-wl-chev { transform: rotate(90deg); }
+.cost-wl-count { font-size: 0.6875rem; font-weight: 400; color: color-mix(in oklab, var(--color-base-content) 62%, transparent); white-space: nowrap; }
+.cost-wl-ns { color: color-mix(in oklab, var(--color-base-content) 58%, transparent); }
+tr.cost-wl-child > td:first-child { padding-left: 2.125rem; }
+tr.cost-wl-child > td { color: var(--text-muted); }
+.cost-wl-name { overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) {
+  .cost-rail-ink, .cost-wl-chev, .cost-rail-chip { transition: none; }
+}
 @media (max-width: 480px) {
   .cost-head-tools button[type="submit"] { min-height: 2.75rem; }
   .cost-hero-total { font-size: 1.5rem; }
@@ -317,6 +378,7 @@
   .cost-chip { min-width: 5rem; padding: 0.3125rem 0.5rem; }
 }
 </style>
+{% include "_find_on_page.html" %}
 
 <div class="cost" id="cost-dashboard" data-url="{{ data_url }}" data-scope-kind="{{ scope_kind }}" data-environments='{{ (env_options or []) | tojson }}' data-env="{{ current_env_slug or '' }}">
   <div class="cost-head">
@@ -354,6 +416,17 @@
     </div>
   </div>
 
+  <nav class="cost-rail" id="cost-rail" aria-label="Page sections" hidden>
+    <div class="cost-rail-chips" id="cost-rail-chips"><span class="cost-rail-ink" aria-hidden="true"></span></div>
+    <label class="page-find">
+      {{ icon('search', '') }}
+      <span class="sr-only">Filter nodes, workloads and breakdowns</span>
+      <input type="search" id="cost-find" autocomplete="off" spellcheck="false" placeholder="Filter workloads, apps, orgs…">
+      <span class="page-find-count" id="cost-find-count" aria-live="polite"></span>
+      <kbd aria-hidden="true">/</kbd>
+    </label>
+  </nav>
+
   <section class="cost-card cost-explorer" aria-label="90-day history">
     <div class="cost-explorer-head">
       <span class="cost-label">90-day history &middot; drag to select a range, click for a single day</span>
@@ -371,7 +444,7 @@
   </div>
 
   <div id="cost-body" hidden>
-    <div class="cost-grid">
+    <div class="cost-grid" data-rail="Overview">
       <section class="cost-card cost-hero" aria-label="Cost over time">
         <div class="cost-hero-head">
           <div>
@@ -421,7 +494,7 @@
       </section>
     </div>
 
-    <section class="cost-card cost-calendar-card mb-3" aria-label="Daily cost, last 90 days">
+    <section class="cost-card cost-calendar-card mb-3" aria-label="Daily cost, last 90 days" data-rail="Daily">
       <span class="cost-section-title">Daily cost &middot; last 90 days &middot; click a day to select it</span>
       <div class="cost-calendar-wrap mt-3">
         <div class="cost-calendar-months" id="calendar-months"></div>
@@ -444,14 +517,14 @@
       </div>
     </section>
 
-    <section class="cost-card cost-calendar-card mb-3" aria-label="Cost by hour of day" id="hourheat-section" hidden>
+    <section class="cost-card cost-calendar-card mb-3" aria-label="Cost by hour of day" id="hourheat-section" data-rail="Daily" hidden>
       <span class="cost-section-title">When we spend &middot; hour of day (UTC)</span>
       <div class="cost-hourheatmap-wrap mt-3">
         <div class="cost-hourheatmap" id="hourheat-grid"></div>
       </div>
     </section>
 
-    <section class="cost-card cost-movers-card mb-3" aria-label="Biggest changes" id="movers-section" hidden>
+    <section class="cost-card cost-movers-card mb-3" aria-label="Biggest changes" id="movers-section" data-rail="Changes" hidden>
       <span class="cost-section-title">Biggest changes vs previous period</span>
       <div class="cost-movers-cols mt-3">
         <div>
@@ -466,13 +539,13 @@
     </section>
 
     {# ── Platform-only sections (scope_kind == 'platform'); hidden unless report.platform is present. ── #}
-    <section class="cost-card cost-platform-card" aria-label="Cluster compute reconciliation" id="platform-waterfall-section" hidden>
+    <section class="cost-card cost-platform-card" aria-label="Cluster compute reconciliation" id="platform-waterfall-section" data-rail="Cluster" hidden>
       <span class="cost-section-title">Where cluster compute goes</span>
       <div class="cost-note" id="platform-waterfall-note" style="text-align:left"></div>
       <div class="cost-platform-waterfall" id="platform-waterfall"></div>
     </section>
 
-    <section class="cost-card cost-platform-card" aria-label="AWS bill vs allocated" id="platform-aws-section" hidden>
+    <section class="cost-card cost-platform-card" aria-label="AWS bill vs allocated" id="platform-aws-section" data-rail="Cluster" hidden>
       <span class="cost-section-title">AWS bill vs. allocated</span>
       <div class="cost-note" id="platform-aws-note" style="text-align:left"></div>
       <div class="cost-table-scroll">
@@ -484,13 +557,13 @@
       </div>
     </section>
 
-    <section class="cost-card cost-platform-card" aria-label="Capacity vs requested vs used" id="platform-capacity-section" hidden>
+    <section class="cost-card cost-platform-card" aria-label="Capacity vs requested vs used" id="platform-capacity-section" data-rail="Cluster" hidden>
       <span class="cost-section-title">Capacity vs. requested vs. used</span>
       <div class="cost-legend" id="platform-capacity-legend"></div>
       <div class="cost-plot" data-chart="platform-capacity" style="height:180px"></div>
     </section>
 
-    <div class="cost-grid" id="platform-row2" hidden>
+    <div class="cost-grid" id="platform-row2" data-rail="Cluster" hidden>
       <section class="cost-card cost-platform-card" aria-label="Top organizations by cost">
         <span class="cost-section-title">Top organizations</span>
         <div class="cost-legend" id="platform-top-orgs-legend"></div>
@@ -502,7 +575,7 @@
       </section>
     </div>
 
-    <section class="cost-card cost-platform-card" aria-label="Nodes" id="platform-nodes-section" hidden>
+    <section class="cost-card cost-platform-card" aria-label="Nodes" id="platform-nodes-section" data-rail="Nodes" hidden>
       <div class="flex flex-wrap items-center justify-between gap-2">
         <span class="cost-section-title">Nodes</span>
         <div class="cost-node-legend">
@@ -512,8 +585,8 @@
         </div>
       </div>
       <div class="cost-node-warning" id="platform-nodes-warning" role="status" hidden></div>
-      <div class="cost-table-scroll">
-        <table class="cost-meters-table">
+      <div class="cost-table-scroll is-sticky">
+        <table class="cost-meters-table cost-sticky-table">
           <thead><tr><th>Node</th><th>CPU</th><th>Memory</th><th class="num">Node-hours</th><th class="num">Cost</th><th class="num">Idle</th></tr></thead>
           <tbody id="platform-nodes-body"></tbody>
           <tfoot id="platform-nodes-foot"></tfoot>
@@ -521,15 +594,18 @@
       </div>
     </section>
 
-    <section class="cost-card cost-platform-card" aria-label="Platform workloads" id="platform-components-section" hidden>
-      <span class="cost-section-title">Platform workloads</span>
+    <section class="cost-card cost-platform-card" aria-label="Platform workloads" id="platform-components-section" data-rail="Workloads" hidden>
+      <div class="cost-wl-head">
+        <span class="cost-section-title">Platform workloads</span>
+        <button type="button" class="cost-wl-foldall" id="platform-components-foldall" hidden>Expand all</button>
+      </div>
       {% if config.COST_AWS_ACTUALS_ENABLED %}
       <div class="cost-note" style="text-align:left">Pods that belong to no tenant. Their compute and volumes are part of shared overhead; their network is charged to tenants by bytes.</div>
       {% else %}
       <div class="cost-note" style="text-align:left">Pods that belong to no tenant. Only their compute is part of shared overhead.</div>
       {% endif %}
-      <div class="cost-table-scroll">
-        <table class="cost-meters-table">
+      <div class="cost-table-scroll is-sticky">
+        <table class="cost-meters-table cost-sticky-table">
           <thead><tr><th>Workload</th><th class="num">vCPU-hr</th><th class="num">GiB-hr</th><th class="num">Network GB</th><th class="num">Storage GiB-mo</th><th class="num">Cost</th></tr></thead>
           <tbody id="platform-components-body"></tbody>
         </table>
@@ -538,7 +614,7 @@
 
     <div id="breakdown-tables"></div>
 
-    <section class="cost-card mb-3" aria-label="Meters">
+    <section class="cost-card mb-3" aria-label="Meters" data-rail="Meters">
       <div class="p-4 pb-0"><span class="cost-section-title">Meters</span></div>
       <div class="cost-table-scroll">
         <table class="cost-meters-table">
@@ -560,6 +636,10 @@
   var root = document.getElementById('cost-dashboard');
   var dataUrl = root.dataset.url;
   var scopeKind = root.dataset.scopeKind;
+  var SPRITE = {{ url_for('static', filename='lucide-sprite.svg')|tojson }};
+  var find = window.pageFind;
+  // Terms from the page filter in the section rail; every filterable table reads these.
+  var findTerms = [];
 
   var CATEGORIES = [
     { key: 'compute', label: 'Compute', color: 'var(--cost-compute)' },
@@ -1664,9 +1744,13 @@
       return 0;
     });
   }
+  // Each breakdown section registers a refilter() so the page filter can
+  // re-run it in place; it returns how many rows matched.
+  var breakdownFinders = [];
   function renderBreakdownAccordions(report) {
     var container = document.getElementById('breakdown-tables');
     container.innerHTML = '';
+    breakdownFinders = [];
     Object.keys(report.breakdowns || {}).forEach(function(key) {
       container.appendChild(buildAccordionSection(key, report.breakdowns[key] || [], report));
     });
@@ -1676,9 +1760,9 @@
     var section = document.createElement('section');
     section.className = 'cost-card cost-bd-card mb-3';
     section.setAttribute('aria-label', label);
+    section.setAttribute('data-rail', label);
     section.innerHTML =
       '<div class="cost-bd-head"><span class="cost-section-title">' + esc(label) + '</span>' +
-      (rows.length > 15 ? '<input type="search" class="cost-bd-filter" data-filter placeholder="Filter ' + esc(label.toLowerCase()) + '…" aria-label="Filter ' + esc(label.toLowerCase()) + '">' : '') +
       '<div class="cost-bd-sort">' +
       '<button type="button" data-sort="cost" class="is-active">Cost</button>' +
       '<button type="button" data-sort="name">Name</button>' +
@@ -1686,7 +1770,6 @@
       '<div data-rows></div>' +
       (rows.length > 10 ? '<div class="cost-bd-footer"><button type="button" data-toggle-all hidden></button></div>' : '');
     var rowsEl = section.querySelector('[data-rows]');
-    var filterEl = section.querySelector('[data-filter]');
     var toggleBtn = section.querySelector('[data-toggle-all]');
 
     var bdSeries = report.series && report.series.breakdowns && report.series.breakdowns[key];
@@ -1713,12 +1796,17 @@
     var currentRows = rows;
     function draw(data) {
       currentRows = data;
-      if (!data.length) { rowsEl.innerHTML = '<div class="cost-note">Nothing here for this range.</div>'; return; }
+      if (!data.length) {
+        rowsEl.innerHTML = '<div class="cost-note">' +
+          (findTerms.length ? 'No ' + esc(label.toLowerCase()) + ' match.' : 'Nothing here for this range.') + '</div>';
+        return;
+      }
       rowsEl.innerHTML = data.map(function(row, i) {
         var deltaPct = fmtDelta(row.cost, row.previous_cost);
         var deltaCls = deltaPct == null ? '' : (deltaPct > 0 ? 'is-up' : deltaPct < 0 ? 'is-down' : '');
         var deltaText = deltaPct == null ? '—' : (deltaPct >= 0 ? '+' : '') + deltaPct.toFixed(0) + '%';
-        var nameHtml = row.url ? '<a href="' + esc(row.url) + '">' + esc(row.name) + '</a>' : '<span class="plain">' + esc(row.name) + '</span>';
+        var nameText = find.mark(row.name, findTerms);
+        var nameHtml = row.url ? '<a href="' + esc(row.url) + '">' + nameText + '</a>' : '<span class="plain">' + nameText + '</span>';
         var bodyHtml;
         if (row.meters && row.meters.length) {
           bodyHtml = '<table class="cost-bd-meters"><thead><tr><th>Meter</th><th class="num">Quantity</th><th class="num">Rate</th><th class="num">Cost</th></tr></thead><tbody>' +
@@ -1735,7 +1823,7 @@
           '<div class="cost-bd-summary">' +
           '<div class="cost-bd-name-wrap"><span class="cost-bd-chevron">▸</span><div class="cost-bd-name">' +
           '<div class="cost-bd-name-row">' + nameHtml + (row.deleted ? '<span class="cost-bd-deleted-badge">Deleted</span>' : '') + '</div>' +
-          (row.context ? '<span class="cost-bd-ctx">' + esc(row.context) + '</span>' : '') + '</div></div>' +
+          (row.context ? '<span class="cost-bd-ctx">' + find.mark(row.context, findTerms) + '</span>' : '') + '</div></div>' +
           sparkSvg(row.key) +
           '<div class="cost-bd-share"><div class="cost-bd-share-bar"><span style="width:' + Math.max(2, (row.share || 0) * 100).toFixed(1) + '%"></span></div>' +
           '<span class="num">' + fmtPct(row.share) + '</span></div>' +
@@ -1745,29 +1833,24 @@
       }).join('');
     }
     var activeSorted = rows;
-    var filterQuery = '';
     var expanded = false;
     function renderRows() {
-      var filtered = filterQuery
-        ? activeSorted.filter(function(r) { return (r.name || '').toLowerCase().indexOf(filterQuery) !== -1; })
+      var filtered = findTerms.length
+        ? activeSorted.filter(function(r) { return find.matches((r.name || '') + ' ' + (r.context || ''), findTerms); })
         : activeSorted;
-      var capped = !filterQuery && !expanded && filtered.length > 10;
+      var capped = !findTerms.length && !expanded && filtered.length > 10;
       draw(capped ? filtered.slice(0, 10) : filtered);
       if (toggleBtn) {
-        var showToggle = !filterQuery && activeSorted.length > 10;
+        var showToggle = !findTerms.length && activeSorted.length > 10;
         toggleBtn.hidden = !showToggle;
         if (showToggle) toggleBtn.textContent = expanded ? 'Show top 10' : 'Show all ' + activeSorted.length;
       }
+      return filtered.length;
     }
     renderRows();
+    breakdownFinders.push({ label: label, refilter: renderRows });
     if (toggleBtn) {
       toggleBtn.addEventListener('click', function() { expanded = !expanded; renderRows(); });
-    }
-    if (filterEl) {
-      filterEl.addEventListener('input', function() {
-        filterQuery = filterEl.value.trim().toLowerCase();
-        renderRows();
-      });
     }
     section.querySelectorAll('[data-sort]').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -1845,18 +1928,105 @@
         '<td class="num" title="Included in allocated: the daily correction from estimates to actuals">true-up ' + fmtMoney(aws.true_up) + '</td></tr>' +
       '<tr><td>Not allocated</td><td class="num">' + fmtMoney(Math.abs(aws.difference) < 0.005 ? 0 : aws.difference) + '</td><td></td></tr>';
   }
-  function renderPlatformComponents(components, section) {
-    var body = document.getElementById('platform-components-body');
-    components = components || [];
-    if (!components.length) { section.hidden = true; body.innerHTML = ''; return; }
-    section.hidden = false;
-    body.innerHTML = components.map(function(c) {
-      return '<tr><td>' + esc(c.name) + '</td><td class="num">' + fmtQty(c.cpu_billed_hours) + '</td>' +
-        '<td class="num">' + fmtQty(c.memory_billed_gib_hours) + '</td><td class="num">' + fmtQty(c.network_gb) + '</td>' +
-        '<td class="num">' + fmtQty(c.storage_gib_month) + '</td>' +
-        '<td class="num">' + fmtMoney(c.cost) + '<div class="cost-node-idle-share">' + fmtPct(c.share) + '</div></td></tr>';
-    }).join('');
+  // ── Platform workloads, folded by namespace ──
+  // Hundreds of pods read as a couple of dozen namespaces: each namespace is
+  // one subtotal row that unfolds to its workloads; a lone workload stays a
+  // plain row. The page filter opens every namespace with a match.
+  var workloads = { components: [], open: {} };
+  var WORKLOAD_SUMS = ['cpu_billed_hours', 'memory_billed_gib_hours', 'network_gb', 'storage_gib_month', 'cost', 'share'];
+  function workloadNs(name) {
+    var i = name.indexOf('/');
+    return i > 0 ? name.slice(0, i) : '';
   }
+  function workloadCells(c) {
+    return '<td class="num">' + fmtQty(c.cpu_billed_hours) + '</td>' +
+      '<td class="num">' + fmtQty(c.memory_billed_gib_hours) + '</td><td class="num">' + fmtQty(c.network_gb) + '</td>' +
+      '<td class="num">' + fmtQty(c.storage_gib_month) + '</td>' +
+      '<td class="num">' + fmtMoney(c.cost) + '<div class="cost-node-idle-share">' + fmtPct(c.share) + '</div></td>';
+  }
+  function workloadNameHtml(name, withNs) {
+    var i = name.indexOf('/');
+    if (i <= 0) return find.mark(name, findTerms);
+    return (withNs ? '<span class="cost-wl-ns">' + find.mark(name.slice(0, i + 1), findTerms) + '</span>' : '') +
+      find.mark(name.slice(i + 1), findTerms);
+  }
+  function renderPlatformComponents(components, section) {
+    workloads.components = components || [];
+    if (!workloads.components.length) {
+      section.hidden = true;
+      document.getElementById('platform-components-body').innerHTML = '';
+      return 0;
+    }
+    section.hidden = false;
+    return drawWorkloads();
+  }
+  function drawWorkloads() {
+    var body = document.getElementById('platform-components-body');
+    var foldAll = document.getElementById('platform-components-foldall');
+    var byNs = {}, groups = [];
+    workloads.components.forEach(function(c) {
+      var ns = workloadNs(c.name);
+      if (!byNs[ns]) { byNs[ns] = { ns: ns, items: [], total: {} }; groups.push(byNs[ns]); }
+      byNs[ns].items.push(c);
+    });
+    groups.forEach(function(g) {
+      WORKLOAD_SUMS.forEach(function(k) {
+        g.total[k] = g.items.reduce(function(acc, c) { return acc + (c[k] || 0); }, 0);
+      });
+      g.items.sort(function(a, b) { return (b.cost || 0) - (a.cost || 0); });
+    });
+    groups.sort(function(a, b) { return b.total.cost - a.total.cost; });
+    var filtering = findTerms.length > 0, matched = 0, html = '';
+    groups.forEach(function(g) {
+      var hits = filtering ? g.items.filter(function(c) { return find.matches(c.name, findTerms); }) : g.items;
+      if (!hits.length) return;
+      matched += hits.length;
+      if (!g.ns || g.items.length === 1) {
+        hits.forEach(function(c) {
+          html += '<tr><td class="cost-wl-name">' + workloadNameHtml(c.name, true) + '</td>' + workloadCells(c) + '</tr>';
+        });
+        return;
+      }
+      var open = filtering || !!workloads.open[g.ns];
+      html += '<tr class="cost-wl-group' + (open ? ' is-open' : '') + '"><td>' +
+        '<button type="button" class="cost-wl-toggle" data-ns="' + esc(g.ns) + '" aria-expanded="' + open + '"' + (filtering ? ' disabled' : '') + '>' +
+        '<svg class="cost-wl-chev" aria-hidden="true"><use href="' + SPRITE + '#chevron-right"></use></svg>' +
+        '<span>' + find.mark(g.ns, findTerms) + '</span>' +
+        '<span class="cost-wl-count">' + (filtering ? hits.length + ' of ' + g.items.length : g.items.length + ' workloads') + '</span>' +
+        '</button></td>' + workloadCells(g.total) + '</tr>';
+      if (open) {
+        hits.forEach(function(c) {
+          html += '<tr class="cost-wl-child"><td class="cost-wl-name">' + workloadNameHtml(c.name, false) + '</td>' + workloadCells(c) + '</tr>';
+        });
+      }
+    });
+    body.innerHTML = html || '<tr><td colspan="6" class="text-center" style="color:var(--text-muted)">No workloads match.</td></tr>';
+    var folders = groups.filter(function(g) { return g.ns && g.items.length > 1; }).map(function(g) { return g.ns; });
+    workloads.folders = folders;
+    foldAll.hidden = filtering || !folders.length;
+    foldAll.textContent = folders.some(function(ns) { return workloads.open[ns]; }) ? 'Collapse all' : 'Expand all';
+    var table = body.closest('table');
+    table.style.setProperty('--thead-h', table.tHead.getBoundingClientRect().height + 'px');
+    return matched;
+  }
+  document.getElementById('platform-components-body').addEventListener('click', function(e) {
+    var row = e.target.closest('tr.cost-wl-group');
+    if (!row) return;
+    var toggle = row.querySelector('.cost-wl-toggle');
+    if (toggle.disabled) return;
+    var ns = toggle.getAttribute('data-ns');
+    workloads.open[ns] = !workloads.open[ns];
+    drawWorkloads();
+    var again = document.querySelector('.cost-wl-toggle[data-ns="' + CSS.escape(ns) + '"]');
+    if (again && document.activeElement === document.body) again.focus({ preventScroll: true });
+    railSpy();
+  });
+  document.getElementById('platform-components-foldall').addEventListener('click', function() {
+    var open = !(workloads.folders || []).some(function(ns) { return workloads.open[ns]; });
+    (workloads.folders || []).forEach(function(ns) { workloads.open[ns] = open; });
+    drawWorkloads();
+    railSpy();
+  });
   function renderPlatformWaterfall(reconciliation, section) {
     var el = document.getElementById('platform-waterfall');
     if (!reconciliation) { section.hidden = true; return; }
@@ -2109,6 +2279,25 @@
       '</div>' +
       '<div class="cost-node-load-text num">' + esc(label) + '</div></div>';
   }
+  var shownNodes = [];
+  function nodeHaystack(n) { return [n.name, n.instance_type, n.capacity_type].join(' '); }
+  function drawNodeRows() {
+    var body = document.getElementById('platform-nodes-body');
+    var hits = shownNodes.filter(function(n) { return find.matches(nodeHaystack(n), findTerms); });
+    body.innerHTML = hits.map(function(n) {
+      var type = [n.instance_type, n.capacity_type].filter(Boolean).map(function(t) { return find.mark(t, findTerms); }).join(' · ');
+      var idleShare = n.cost ? n.idle_cost / n.cost : null;
+      return '<tr><td><div class="cost-node-name">' + find.mark(n.name, findTerms) + '</div>' +
+          '<div class="cost-node-type">' + (type || 'unknown type') + '</div></td>' +
+        '<td>' + nodeLoadHtml(n.cpu_used, n.cpu_requested, n.cpu_capacity, 'vCPU') + '</td>' +
+        '<td>' + nodeLoadHtml(n.memory_used, n.memory_requested, n.memory_gib, 'GiB') + '</td>' +
+        '<td class="num">' + fmtQty(n.node_hours) + '</td>' +
+        '<td class="num">' + (n.cost != null ? fmtMoney(n.cost) : 'unpriced') + '</td>' +
+        '<td class="num">' + fmtMoney(n.idle_cost) +
+          (idleShare != null && n.idle_cost != null ? '<div class="cost-node-idle-share">' + fmtPct(idleShare) + ' of node</div>' : '') + '</td></tr>';
+    }).join('') || (shownNodes.length ? '<tr><td colspan="6" class="text-center" style="color:var(--text-muted)">No nodes match.</td></tr>' : '');
+    return hits.length;
+  }
   function renderPlatformNodes(nodes, inventory, section) {
     var body = document.getElementById('platform-nodes-body');
     var foot = document.getElementById('platform-nodes-foot');
@@ -2122,22 +2311,12 @@
     }
     warning.hidden = !problems.length;
     warning.textContent = problems.join(' ');
-    if (!nodes.length && !problems.length) { section.hidden = true; body.innerHTML = ''; foot.innerHTML = ''; return; }
+    shownNodes = nodes;
+    if (!nodes.length && !problems.length) { section.hidden = true; body.innerHTML = ''; foot.innerHTML = ''; return 0; }
     section.hidden = false;
-    body.innerHTML = nodes.map(function(n) {
-      var type = [n.instance_type, n.capacity_type].filter(Boolean).map(esc).join(' · ');
-      var idleShare = n.cost ? n.idle_cost / n.cost : null;
-      return '<tr><td><div class="cost-node-name">' + esc(n.name) + '</div>' +
-          '<div class="cost-node-type">' + (type || 'unknown type') + '</div></td>' +
-        '<td>' + nodeLoadHtml(n.cpu_used, n.cpu_requested, n.cpu_capacity, 'vCPU') + '</td>' +
-        '<td>' + nodeLoadHtml(n.memory_used, n.memory_requested, n.memory_gib, 'GiB') + '</td>' +
-        '<td class="num">' + fmtQty(n.node_hours) + '</td>' +
-        '<td class="num">' + (n.cost != null ? fmtMoney(n.cost) : 'unpriced') + '</td>' +
-        '<td class="num">' + fmtMoney(n.idle_cost) +
-          (idleShare != null && n.idle_cost != null ? '<div class="cost-node-idle-share">' + fmtPct(idleShare) + ' of node</div>' : '') + '</td></tr>';
-    }).join('');
+    var matched = drawNodeRows();
     var priced = nodes.filter(function(n) { return n.cost != null; });
-    if (!priced.length) { foot.innerHTML = ''; return; }
+    if (!priced.length) { foot.innerHTML = ''; return matched; }
     var sum = function(key) { return priced.reduce(function(acc, n) { return acc + (n[key] || 0); }, 0); };
     var totalCost = sum('cost'), totalIdle = sum('idle_cost');
     foot.innerHTML = '<tr><td colspan="3">' + priced.length + ' priced ' + (priced.length === 1 ? 'node' : 'nodes') + '</td>' +
@@ -2366,6 +2545,152 @@
     if (!hasSeries && !hasCost) return 'no cost data has been collected for this range yet';
     return null;
   }
+  // ── Section rail + page filter ──
+  // One chip per visible [data-rail] label (several cards may share one).
+  // The current section is whichever chip's first card has crossed under
+  // the rail; its ink glides there. The filter narrows nodes, workloads and
+  // every breakdown at once and puts the match count on each chip.
+  var rail = document.getElementById('cost-rail');
+  var railChipsEl = document.getElementById('cost-rail-chips');
+  var railInk = railChipsEl.querySelector('.cost-rail-ink');
+  var findInput = document.getElementById('cost-find');
+  var findCount = document.getElementById('cost-find-count');
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var railChips = [], railActive = null, railLockUntil = 0, railHashDone = false;
+
+  function isShown(el) { return !el.hidden && el.offsetParent !== null; }
+  function railSlug(label) { return label.toLowerCase().replace(/[^a-z0-9]+/g, '-'); }
+  function railFloor() {
+    return (parseFloat(getComputedStyle(document.body).getPropertyValue('--topbar-h')) || 0) + rail.offsetHeight;
+  }
+  function chipTop(chip) {
+    var tops = chip.members.filter(isShown).map(function(m) { return m.getBoundingClientRect().top; });
+    return tops.length ? Math.min.apply(null, tops) : Infinity;
+  }
+  if ('ResizeObserver' in window) {
+    new ResizeObserver(function() { root.style.setProperty('--cost-rail-h', rail.offsetHeight + 'px'); }).observe(rail);
+  }
+
+  function setRailActive(chip) {
+    if (chip === railActive) return;
+    railActive = chip;
+    railChips.forEach(function(c) {
+      if (c === chip) c.el.setAttribute('aria-current', 'location'); else c.el.removeAttribute('aria-current');
+    });
+    if (!chip) { railInk.style.opacity = '0'; return; }
+    railInk.style.opacity = '1';
+    railInk.style.transform = 'translateX(' + chip.el.offsetLeft + 'px) scaleX(' + chip.el.offsetWidth + ')';
+    // Keep the current chip inside the strip when it scrolls sideways.
+    var strip = railChipsEl, left = chip.el.offsetLeft, right = left + chip.el.offsetWidth;
+    if (left < strip.scrollLeft || right > strip.scrollLeft + strip.clientWidth - 24) {
+      strip.scrollTo({ left: Math.max(0, left - 24), behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+    }
+  }
+  function railSpy() {
+    if (rail.hidden || !railChips.length || Date.now() < railLockUntil) return;
+    var line = railFloor() + 32, active = railChips[0];
+    railChips.forEach(function(c) { if (chipTop(c) <= line) active = c; });
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+      active = railChips[railChips.length - 1];
+    }
+    setRailActive(active);
+  }
+  function railJump(chip, smooth) {
+    var top = chipTop(chip);
+    if (top === Infinity) return;
+    setRailActive(chip);
+    var animate = smooth && !reduceMotion.matches;
+    railLockUntil = animate ? Date.now() + 1200 : 0;
+    window.scrollTo({ top: Math.max(0, top + window.scrollY - railFloor() - 12), behavior: animate ? 'smooth' : 'auto' });
+    var url = new URL(location.href);
+    url.hash = chip.slug;
+    history.replaceState(null, '', url);
+  }
+  function buildRail() {
+    var byLabel = {};
+    railChips = [];
+    root.querySelectorAll('#cost-body [data-rail]').forEach(function(el) {
+      if (!isShown(el)) return;
+      var label = el.getAttribute('data-rail');
+      if (!byLabel[label]) { byLabel[label] = { label: label, slug: railSlug(label), members: [] }; railChips.push(byLabel[label]); }
+      byLabel[label].members.push(el);
+    });
+    railChipsEl.querySelectorAll('.cost-rail-chip').forEach(function(el) { el.remove(); });
+    railChips.forEach(function(c) {
+      c.el = document.createElement('a');
+      c.el.className = 'cost-rail-chip';
+      c.el.href = '#' + c.slug;
+      c.el.dataset.slug = c.slug;
+      c.el.innerHTML = '<span>' + esc(c.label) + '</span><span class="cost-rail-n" hidden></span>';
+      railChipsEl.insertBefore(c.el, railInk);
+    });
+    rail.hidden = railChips.length < 2;
+    railActive = null;
+    applyFind();
+    if (!railHashDone) {
+      railHashDone = true;
+      var slug = location.hash.slice(1);
+      var target = railChips.filter(function(c) { return c.slug === slug; })[0];
+      if (target) { railJump(target, false); return; }
+    }
+    railSpy();
+  }
+
+  function applyFind() {
+    findTerms = find.terms(findInput.value);
+    var counts = {};
+    if (state.report && !document.getElementById('cost-body').hidden) {
+      if (shownNodes.length) counts.Nodes = drawNodeRows();
+      if (workloads.components.length) counts.Workloads = drawWorkloads();
+      breakdownFinders.forEach(function(f) { counts[f.label] = f.refilter(); });
+    }
+    var total = 0;
+    Object.keys(counts).forEach(function(k) { total += counts[k]; });
+    railChips.forEach(function(c) {
+      var n = c.el.querySelector('.cost-rail-n');
+      var counted = findTerms.length > 0 && Object.prototype.hasOwnProperty.call(counts, c.label);
+      n.hidden = !counted;
+      if (counted) n.textContent = counts[c.label];
+      c.el.classList.toggle('is-none', counted && counts[c.label] === 0);
+    });
+    findCount.textContent = findTerms.length ? String(total) : '';
+    findCount.title = findTerms.length ? total + (total === 1 ? ' match' : ' matches') : '';
+    // Chip widths change with their counts; re-seat the ink.
+    railActive = null;
+    railSpy();
+    return counts;
+  }
+  function syncFindUrl() {
+    var url = new URL(location.href);
+    if (findInput.value.trim()) url.searchParams.set('q', findInput.value.trim());
+    else url.searchParams.delete('q');
+    history.replaceState(null, '', url);
+  }
+
+  var spyFrame = 0;
+  window.addEventListener('scroll', function() {
+    if (!spyFrame) spyFrame = requestAnimationFrame(function() { spyFrame = 0; railSpy(); });
+  }, { passive: true });
+  window.addEventListener('scrollend', function() { railLockUntil = 0; railSpy(); });
+  railChipsEl.addEventListener('click', function(e) {
+    var a = e.target.closest('.cost-rail-chip');
+    if (!a) return;
+    e.preventDefault();
+    var chip = railChips.filter(function(c) { return c.slug === a.dataset.slug; })[0];
+    if (chip) railJump(chip, true);
+  });
+  findInput.value = new URLSearchParams(location.search).get('q') || '';
+  findInput.addEventListener('input', function() { applyFind(); syncFindUrl(); });
+  // Enter jumps to the first section holding a match.
+  findInput.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    var counts = applyFind();
+    var hit = railChips.filter(function(c) { return counts[c.label] > 0; })[0];
+    if (hit) railJump(hit, true);
+  });
+  find.bindSlash(findInput);
+
   function renderAll() {
     var report = state.report;
     var extent = report.extent_series;
@@ -2385,6 +2710,7 @@
     renderBreakdownAccordions(report);
     renderMeters(report.meters || []);
     renderRates(report);
+    buildRail();
   }
   var loadSeq = 0;
   function loadMain() {
@@ -2399,6 +2725,7 @@
       document.getElementById('cost-empty').hidden = !emptyReason;
       document.getElementById('cost-body').hidden = !!emptyReason;
       if (emptyReason) {
+        rail.hidden = true;
         document.getElementById('cost-empty-text').textContent = 'No cost data: ' + emptyReason + '.';
         renderFreshness(report.freshness);
         return;
