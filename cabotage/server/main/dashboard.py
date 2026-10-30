@@ -490,14 +490,13 @@ def _newest_deploys(
             status = "succeeded"
         else:
             status = "running"
-        metadata = cast("dict[str, object]", deployment.deploy_metadata or {})
         rows.append(
             DeployRow(
                 id=deployment.id,
                 status=status,
                 # sqlalchemy_utils' Timestamp declares `created` as a Column.
                 created=cast("datetime.datetime", deployment.created),
-                automatic=bool(metadata.get("auto_deploy")),
+                automatic=deployment.trigger_type == "auto",
                 url=url_for(
                     "user.deployment_detail",
                     org_slug=where.org.slug,
