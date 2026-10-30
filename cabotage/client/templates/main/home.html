@@ -414,19 +414,20 @@
             <button type="button" data-dash-open="projects"><strong>{{ "{:,}".format(project_count) }}</strong> {{ 'project' if project_count == 1 else 'projects' }}</button>
             <button type="button" data-dash-open="apps"><strong>{{ "{:,}".format(app_count) }}</strong> {{ 'app' if app_count == 1 else 'apps' }}</button>
             <button type="button" data-dash-open="deploys"><strong>{{ "{:,}".format(chart_succeeded) }}</strong> deploys in {{ chart_days }}d</button>
-            {% if in_progress %}
+            {% set in_progress_app_count = status_totals.get('building', 0) + status_totals.get('deploying', 0) %}
+            {% if in_progress_app_count %}
               <button type="button" class="dash-statline-flag" data-status="deploying" data-dash-open="apps" data-dash-open-filter="in-progress">
-                {{ dot('deploying') }}{{ in_progress|length }} in progress
+                {{ dot('deploying') }}{{ in_progress_app_count }} in progress
               </button>
             {% endif %}
           </p>
           {% if failing %}
             <div class="dash-alert" role="status">
-              <span class="dash-alert-head">{{ icon('alert-triangle', 'w-4 h-4') }}{{ plural(failing|length, 'app') }} failing</span>
+              <span class="dash-alert-head">{{ icon('alert-triangle', 'w-4 h-4') }}{{ plural(failing_app_count, 'app') }} failing</span>
               <span class="dash-alert-items">
                 {% for item in failing[:4] %}
                   <a href="{{ item.url }}" class="dash-alert-item" title="{{ item.org.slug }} / {{ item.project.slug }}">
-                    {{ dot(item.status) }}{{ item.app.name }}<span>{{ status_labels[item.status]|lower }}</span>
+                    {{ dot(item.status) }}{{ item.app.name }}{% if item.environment %} <span class="dash-mono">{{ item.environment.slug }}</span>{% endif %}<span>{{ status_labels[item.status]|lower }}</span>
                   </a>
                 {% endfor %}
                 {% if failing|length > 4 %}
