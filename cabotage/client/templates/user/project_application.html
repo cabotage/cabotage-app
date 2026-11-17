@@ -920,6 +920,9 @@
                   <a href="{{ url_for('user.project_application_logs_view', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none) }}?process={{ process_name }}"
                      class="btn btn-ghost btn-xs process-log-btn gap-1"
                      title="View {{ process_name }} logs">{{ icon('terminal', 'w-3 h-3') }} Logs</a>
+                  <a href="{{ url_for('user.application_audit_log', org_slug=application.project.organization.slug, project_slug=application.project.slug, app_slug=application.slug, env_slug=environment.slug if environment else none, process=process_name) }}"
+                     class="btn btn-ghost btn-xs gap-1"
+                     title="View {{ process_name }} audit history">{{ icon('clock', 'w-3 h-3') }} History</a>
                 </div>
               </div>
             {% endfor %}
