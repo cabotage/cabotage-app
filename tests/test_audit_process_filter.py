@@ -116,7 +116,7 @@ def test_process_filter_keeps_only_that_process(audit_client):
     assert "process: worker" in html
 
 
-def test_process_filter_pill_and_pagination_carry_the_filter(audit_client):
+def test_process_filter_shows_a_removable_pill(audit_client):
     client, url = audit_client
     html = client.get(url + "?process=web").get_data(as_text=True)
     assert _rows(html) == 1
