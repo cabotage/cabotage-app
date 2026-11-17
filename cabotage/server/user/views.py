@@ -5249,8 +5249,12 @@ def _render_audit_log(scope_filter, template_context):
     per_page = 30
     verb_filter = [v for v in request.args.get("verb", "").split(",") if v]
     type_filter = [t for t in request.args.get("type", "").split(",") if t]
+    process_filter = request.args.get("process", "").strip()
 
     q = AuditLog.query.filter(scope_filter)
+    if process_filter:
+        # Scale events record per-process changes keyed by process name.
+        q = q.filter(AuditLog.raw_data["changes"].has_key(process_filter))
     if verb_filter:
         q = q.filter(AuditLog.verb.in_(verb_filter))
     if type_filter:
@@ -5282,6 +5286,9 @@ def _render_audit_log(scope_filter, template_context):
         verb_q = verb_q.filter(AuditLog.object_type.in_(type_filter))
     if verb_filter:
         type_q = type_q.filter(AuditLog.verb.in_(verb_filter))
+    if process_filter:
+        verb_q = verb_q.filter(AuditLog.raw_data["changes"].has_key(process_filter))
+        type_q = type_q.filter(AuditLog.raw_data["changes"].has_key(process_filter))
 
     all_verbs = sorted(
         r[0] for r in verb_q.with_entities(AuditLog.verb).distinct() if r[0]
@@ -5304,6 +5311,7 @@ def _render_audit_log(scope_filter, template_context):
         older_before=entries[-1].id if entries and has_older else None,
         verb_filter=verb_filter,
         type_filter=type_filter,
+        process_filter=process_filter,
         all_verbs=all_verbs,
         all_types=all_types,
         **template_context,

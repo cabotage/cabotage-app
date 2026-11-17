@@ -67,6 +67,12 @@
   <div class="audit-filters" data-audit-filters>
     {# Active filter pills #}
     <div class="audit-filter-pills">
+      {% if process_filter %}
+        <span class="badge badge-secondary gap-1" data-filter-type="process" data-filter-value="{{ process_filter }}">
+          process: {{ process_filter }}
+          <button type="button" class="audit-filter-remove">{{ icon('x', 'w-2.5 h-2.5') }}</button>
+        </span>
+      {% endif %}
       {% for t in type_filter %}
         <span class="badge badge-accent gap-1" data-filter-type="type" data-filter-value="{{ t }}">
           {{ t }}
@@ -99,7 +105,7 @@
         </ul>
       </div>
 
-      {% if verb_filter or type_filter %}
+      {% if verb_filter or type_filter or process_filter %}
         <a href="{{ audit_url }}{% if env_slug is defined and env_slug %}?env_slug={{ env_slug }}{% endif %}"
            class="btn btn-ghost btn-xs text-base-content/50 gap-1">{{ icon('x', 'w-2.5 h-2.5') }} clear</a>
       {% endif %}
@@ -111,6 +117,7 @@
     var base = '{{ audit_url }}';
     var verbs = {{ verb_filter|tojson }};
     var types = {{ type_filter|tojson }};
+    var processName = {{ process_filter|tojson }};
     var envSlug = {{ (env_slug or '')|tojson }};
     var before = {{ ((entries[0].id + 1)|tojson) if entries else 'null' }};
 
@@ -120,6 +127,7 @@
       if (before) params.push('before=' + before);
       if (verbs.length) params.push('verb=' + verbs.join(','));
       if (types.length) params.push('type=' + types.join(','));
+      if (processName) params.push('process=' + encodeURIComponent(processName));
       window.location = base + (params.length ? '?' + params.join('&') : '');
     }
 
@@ -143,6 +151,11 @@
         var pill = btn.closest('[data-filter-type]');
         var filterType = pill.dataset.filterType;
         var value = pill.dataset.filterValue;
+        if (filterType === 'process') {
+          processName = '';
+          navigate();
+          return;
+        }
         var arr = filterType === 'verb' ? verbs : types;
         var idx = arr.indexOf(value);
         if (idx >= 0) arr.splice(idx, 1);
@@ -275,13 +288,13 @@
     {% if has_newer or has_older %}
       <div class="flex items-center justify-between mt-4">
         {% if has_newer %}
-          <a href="?after={{ newer_after }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+          <a href="?after={{ newer_after }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if process_filter %}&process={{ process_filter|urlencode }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
              class="btn btn-ghost btn-sm gap-1">{{ icon('arrow-left', 'w-3.5 h-3.5') }} Newer</a>
         {% else %}
           <span></span>
         {% endif %}
         {% if has_older %}
-          <a href="?before={{ older_before }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
+          <a href="?before={{ older_before }}{% if verb_filter %}&verb={{ verb_filter|join(',') }}{% endif %}{% if type_filter %}&type={{ type_filter|join(',') }}{% endif %}{% if process_filter %}&process={{ process_filter|urlencode }}{% endif %}{% if env_slug %}&env_slug={{ env_slug }}{% endif %}"
              class="btn btn-ghost btn-sm gap-1">Older {{ icon('chevron-right', 'w-3.5 h-3.5') }}</a>
         {% else %}
           <span></span>
